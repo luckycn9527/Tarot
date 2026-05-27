@@ -1,0 +1,27 @@
+<template>
+  <svg
+    xmlns="http://www.w3.org/2000/svg"
+    :width="size"
+    :height="size"
+    viewBox="0 0 24 24"
+    :fill="fill"
+    :stroke="color"
+    :stroke-width="strokeWidth"
+    stroke-linecap="round"
+    stroke-linejoin="round"
+  >
+    <path d="M12 6v6l3.644 1.822" />
+    <path d="M16 19h6" />
+    <path d="M19 16v6" />
+    <path d="M21.92 13.267a10 10 0 1 0-8.653 8.653" />
+  </svg>
+</template>
+
+<script setup>
+defineProps({
+  size: { type: [String, Number], default: 24 },
+  color: { type: String, default: 'currentColor' },
+  fill: { type: String, default: 'none' },
+  strokeWidth: { type: [String, Number], default: 2 },
+});
+</script>

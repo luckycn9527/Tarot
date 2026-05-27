@@ -1,0 +1,27 @@
+<template>
+  <svg
+    xmlns="http://www.w3.org/2000/svg"
+    :width="size"
+    :height="size"
+    viewBox="0 0 24 24"
+    :fill="fill"
+    :stroke="color"
+    :stroke-width="strokeWidth"
+    stroke-linecap="round"
+    stroke-linejoin="round"
+  >
+    <path d="M12 10v2.2l1.6 1" />
+    <path d="m16.13 7.66-.81-4.05a2 2 0 0 0-2-1.61h-2.68a2 2 0 0 0-2 1.61l-.78 4.05" />
+    <path d="m7.88 16.36.8 4a2 2 0 0 0 2 1.61h2.72a2 2 0 0 0 2-1.61l.81-4.05" />
+    <circle cx="12" cy="12" r="6" />
+  </svg>
+</template>
+
+<script setup>
+defineProps({
+  size: { type: [String, Number], default: 24 },
+  color: { type: String, default: 'currentColor' },
+  fill: { type: String, default: 'none' },
+  strokeWidth: { type: [String, Number], default: 2 },
+});
+</script>

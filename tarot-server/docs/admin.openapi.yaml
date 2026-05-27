@@ -1,0 +1,245 @@
+openapi: 3.0.3
+info:
+  title: Tarot Admin API
+  version: 1.0.0
+  description: 管理后台接口（统计、用户、牌背、卡面、塔罗师提示词、反馈）
+servers:
+  - url: /api
+tags:
+  - name: AdminAuth
+  - name: AdminUsers
+  - name: AdminConfig
+  - name: AdminStats
+  - name: AdminFeedback
+paths:
+  /admin/stats:
+    get:
+      tags: [AdminStats]
+      summary: 数据概览统计
+      security: [{ bearerAuth: [] }]
+      responses:
+        "200":
+          description: 成功
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  totalUsers: { type: integer }
+                  todayUsers: { type: integer }
+                  totalReadings: { type: integer }
+                  todayReadings: { type: integer }
+                  totalFeedback: { type: integer }
+                  pendingFeedback: { type: integer }
+  /admin/feedback:
+    get:
+      tags: [AdminFeedback]
+      summary: 分页查询反馈
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - in: query
+          name: page
+          schema: { type: integer, default: 1 }
+        - in: query
+          name: pageSize
+          schema: { type: integer, default: 20 }
+        - in: query
+          name: status
+          schema: { type: string, enum: [pending, processing, resolved, closed] }
+      responses:
+        "200":
+          description: 成功
+  /admin/feedback/{id}:
+    patch:
+      tags: [AdminFeedback]
+      summary: 回复反馈
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: integer }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [adminReply]
+              properties:
+                adminReply: { type: string }
+                status: { type: string, enum: [processing, resolved, closed], default: resolved }
+      responses:
+        "200":
+          description: 回复成功
+  /admin/auth/login:
+    post:
+      tags: [AdminAuth]
+      summary: 管理员登录
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [username, password]
+              properties:
+                username: { type: string, minLength: 3, maxLength: 64 }
+                password: { type: string, minLength: 6, maxLength: 100 }
+      responses:
+        "200":
+          description: 登录成功
+        "401":
+          description: 登录失败
+  /admin/users:
+    get:
+      tags: [AdminUsers]
+      summary: 分页查询用户
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - in: query
+          name: page
+          schema: { type: integer, default: 1 }
+        - in: query
+          name: pageSize
+          schema: { type: integer, default: 20 }
+        - in: query
+          name: keyword
+          schema: { type: string }
+      responses:
+        "200":
+          description: 成功
+  /admin/users/{id}:
+    patch:
+      tags: [AdminUsers]
+      summary: 更新用户可配置信息
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: integer }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                nickname: { type: string }
+                avatar: { type: string }
+                membership: { type: string, enum: [free, vip] }
+                membership_expires_at: { type: string, format: date-time, nullable: true }
+                remaining_free_quota: { type: integer, minimum: 0 }
+      responses:
+        "200":
+          description: 更新成功
+  /admin/config/card-backs:
+    get:
+      tags: [AdminConfig]
+      summary: 读取牌背配置
+      security: [{ bearerAuth: [] }]
+      responses:
+        "200":
+          description: 成功
+    put:
+      tags: [AdminConfig]
+      summary: 批量保存牌背配置
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [items]
+              properties:
+                items:
+                  type: array
+                  items:
+                    type: object
+                    required: [code, name, isActive, sortOrder]
+                    properties:
+                      code: { type: string }
+                      name: { type: string }
+                      assetUrl: { type: string, nullable: true }
+                      isActive: { type: boolean }
+                      sortOrder: { type: integer }
+      responses:
+        "200":
+          description: 保存成功
+  /admin/config/cards:
+    get:
+      tags: [AdminConfig]
+      summary: 读取卡面配置
+      security: [{ bearerAuth: [] }]
+      responses:
+        "200":
+          description: 成功
+    put:
+      tags: [AdminConfig]
+      summary: 批量保存卡面配置
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [items]
+              properties:
+                items:
+                  type: array
+                  items:
+                    type: object
+                    required: [id, name, nameEn, uprightKeywords, reversedKeywords, yesNoTendency, isActive]
+                    properties:
+                      id: { type: integer, minimum: 0, maximum: 77 }
+                      name: { type: string }
+                      nameEn: { type: string }
+                      uprightKeywords: { type: string }
+                      reversedKeywords: { type: string }
+                      yesNoTendency: { type: string, enum: [yes, no, neutral] }
+                      imageUrl: { type: string, nullable: true }
+                      isActive: { type: boolean }
+      responses:
+        "200":
+          description: 保存成功
+  /admin/config/readers-prompts:
+    get:
+      tags: [AdminConfig]
+      summary: 读取塔罗师提示词配置
+      security: [{ bearerAuth: [] }]
+      responses:
+        "200":
+          description: 成功
+    put:
+      tags: [AdminConfig]
+      summary: 批量保存塔罗师提示词配置
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [items]
+              properties:
+                items:
+                  type: array
+                  items:
+                    type: object
+                    required: [readerCode, systemPrompt, greeting]
+                    properties:
+                      readerCode: { type: string }
+                      systemPrompt: { type: string }
+                      greeting: { type: string }
+      responses:
+        "200":
+          description: 保存成功
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT

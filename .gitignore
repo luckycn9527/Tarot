@@ -1,0 +1,48 @@
+# Dependencies
+node_modules/
+**/node_modules/
+
+# Build output
+dist/
+**/dist/
+
+# Environment variables (sensitive!)
+.env
+.env.local
+.env.*.local
+**/.env
+**/.env.local
+**/.env.*.local
+
+# Runtime user uploads (kept out of repo)
+tarot-server/uploads/
+
+# Logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Editor / IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS files
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Local Kiro / agent state
+.claude/
+.playwright-mcp/
+
+# TypeScript build info
+*.tsbuildinfo
+
+# Optional caches
+.cache/
+.parcel-cache/
+.eslintcache

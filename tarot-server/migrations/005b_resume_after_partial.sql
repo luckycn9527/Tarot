@@ -1,0 +1,39 @@
+-- 005b: 当 005 在 tombstones 外键处失败后，从本文件续跑（勿在未执行 005 前半段时单独执行）
+USE tarot_qa;
+
+SET FOREIGN_KEY_CHECKS = 0;
+
+ALTER TABLE tombstones
+  MODIFY COLUMN tarot_card_id SMALLINT UNSIGNED NULL COMMENT '占卜用塔罗牌ID 0-77',
+  MODIFY COLUMN hexagram_id TINYINT UNSIGNED NULL COMMENT '周易卦象ID 1-64';
+
+ALTER TABLE tombstones
+  ADD CONSTRAINT fk_tombstone_tarot FOREIGN KEY (tarot_card_id) REFERENCES reference_tarot_cards(id) ON DELETE SET NULL,
+  ADD CONSTRAINT fk_tombstone_hex FOREIGN KEY (hexagram_id) REFERENCES reference_hexagrams(id) ON DELETE SET NULL;
+
+ALTER TABLE daily_fortune_cache
+  MODIFY COLUMN card_id SMALLINT UNSIGNED NOT NULL,
+  ADD COLUMN updated_at DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3) ON UPDATE CURRENT_TIMESTAMP(3) AFTER created_at;
+
+ALTER TABLE daily_fortune_cache
+  ADD CONSTRAINT fk_dfc_card FOREIGN KEY (card_id) REFERENCES reference_tarot_cards(id) ON DELETE RESTRICT;
+
+ALTER TABLE refresh_tokens
+  ADD COLUMN updated_at DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3) ON UPDATE CURRENT_TIMESTAMP(3) AFTER created_at;
+
+ALTER TABLE invitation_codes
+  ADD COLUMN updated_at DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3) ON UPDATE CURRENT_TIMESTAMP(3) AFTER created_at;
+
+ALTER TABLE invitation_redemptions
+  ADD COLUMN updated_at DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3) ON UPDATE CURRENT_TIMESTAMP(3) AFTER created_at;
+
+ALTER TABLE user_shares
+  ADD COLUMN updated_at DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3) ON UPDATE CURRENT_TIMESTAMP(3) AFTER created_at;
+
+ALTER TABLE user_settings
+  ADD COLUMN created_at DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3) AFTER user_id;
+
+ALTER TABLE feedback
+  MODIFY COLUMN type ENUM('bug','feature','complaint','other','suggestion') NOT NULL DEFAULT 'other';
+
+SET FOREIGN_KEY_CHECKS = 1;

@@ -1,0 +1,1177 @@
+{
+  "_metadata": {
+    "source": "https://tarotqa.com",
+    "extracted_from": [
+      "https://tarotqa.com/assets/tarot-cards-CIwsxaV_.js",
+      "https://tarotqa.com/assets/TarotCardDetail-sb2Vx9w5.js",
+      "https://tarotqa.com/assets/SingleCardUnderstanding--VTSz4-a.js",
+      "https://tarotqa.com/assets/YesNoSingleCardResult-DGLLy4os.js",
+      "https://tarotqa.com/assets/YesNoThreeCard-Cl9lAE4C.js",
+      "https://tarotqa.com/assets/spreads-BE9G_S99.js",
+      "https://tarotqa.com/assets/tarotUtils-BOKfn_4q.js"
+    ],
+    "image_cdn_pattern": "https://cdn.tarotqa.com/images-optimized/tarot/{nameEn_with_underscores}.webp",
+    "image_cdn_helper_pattern": "g('images-optimized/tarot/${nameEn.replace(/ /g,'_')}.webp')",
+    "note_yes_no_classification": "Yes/No classification is NOT stored client-side. It is computed SERVER-SIDE via POST /api/yes-no-tarot. The SingleCardUnderstanding component only shows example cards as illustrations.",
+    "note_three_card_yes_no": "Three-card Yes/No uses the standard reading flow with spread id 'yes-no' and sends to POST /api/session then /api/reading/cards-selected"
+  },
+  "tarotUtils": {
+    "source": "tarotUtils-BOKfn_4q.js",
+    "getFontClass": "returns 'font-sans japanese' for ja, 'font-sans chinese' for zh-CN/zh-TW, 'font-sans' for others",
+    "slugify": "card nameEn -> lowercase, replace _ with -, replace spaces with -"
+  },
+  "cards": [
+    {
+      "id": 0,
+      "name": "愚者",
+      "nameEn": "The_Fool",
+      "imageUrl": "https://cdn.tarotqa.com/images-optimized/tarot/The_Fool.webp",
+      "galleryPath": "/gallery/card/the-fool",
+      "arcana": "major",
+      "keywordsEn": {
+        "upright": "New beginnings, free spirit, infinite potential, adventurous courage, authentic nature",
+        "reversed": "Recklessness, lack of planning, reality avoidance, childish behavior, hidden risks"
+      },
+      "yesNoHint": "neutral",
+      "yesNoNote": "New beginnings (yes) or reckless behavior (no) - shown as NEUTRAL example on SingleCardUnderstanding page"
+    },
+    {
+      "id": 1,
+      "name": "魔术师",
+      "nameEn": "The_Magician",
+      "imageUrl": "https://cdn.tarotqa.com/images-optimized/tarot/The_Magician.webp",
+      "galleryPath": "/gallery/card/the-magician",
+      "arcana": "major",
+      "keywordsEn": {
+        "upright": "Creativity, resource integration, willpower, effective communication, energy transformation",
+        "reversed": "Energy dispersion, deception, talent misuse, communication blockage, manipulation"
+      }
+    },
+    {
+      "id": 2,
+      "name": "女祭司",
+      "nameEn": "The_High_Priestess",
+      "imageUrl": "https://cdn.tarotqa.com/images-optimized/tarot/The_High_Priestess.webp",
+      "galleryPath": "/gallery/card/the-high-priestess",
+      "arcana": "major",
+      "keywordsEn": {
+        "upright": "Intuition, esoteric knowledge, subconscious, observation, spiritual awakening",
+        "reversed": "Hidden truths, confused instincts, emotional turbulence, over-reliance on intuition"
+      }
+    },
+    {
+      "id": 3,
+      "name": "女皇",
+      "nameEn": "The_Empress",
+      "imageUrl": "https://cdn.tarotqa.com/images-optimized/tarot/The_Empress.webp",
+      "galleryPath": "/gallery/card/the-empress",
+      "arcana": "major",
+      "keywordsEn": {
+        "upright": "Fertility, motherhood, creativity, sensual pleasure, natural abundance",
+        "reversed": "Overindulgence, blocked creativity, dependency, fertility issues"
+      }
+    },
+    {
+      "id": 4,
+      "name": "皇帝",
+      "nameEn": "The_Emperor",
+      "imageUrl": "https://cdn.tarotqa.com/images-optimized/tarot/The_Emperor.webp",
+      "galleryPath": "/gallery/card/the-emperor",
+      "arcana": "major",
+      "keywordsEn": {
+        "upright": "Authority, order, discipline, leadership, strategic planning",
+        "reversed": "Tyranny, rigidity, power abuse, control issues, system collapse"
+      }
+    },
+    {
+      "id": 5,
+      "name": "教皇",
+      "nameEn": "The_Hierophant",
+      "imageUrl": "https://cdn.tarotqa.com/images-optimized/tarot/The_Hierophant.webp",
+      "galleryPath": "/gallery/card/the-hierophant",
+      "arcana": "major",
+      "keywordsEn": {
+        "upright": "Tradition, ritual, moral codes, spiritual guidance, social norms",
+        "reversed": "Dogmatism, mental constraints, rebellion against tradition"
+      }
+    },
+    {
+      "id": 6,
+      "name": "恋人",
+      "nameEn": "The_Lovers",
+      "imageUrl": "https://cdn.tarotqa.com/images-optimized/tarot/The_Lovers.webp",
+      "galleryPath": "/gallery/card/the-lovers",
+      "arcana": "major",
+      "keywordsEn": {
+        "upright": "Love connection, crucial decision, soul resonance, yin-yang balance",
+        "reversed": "Relationship imbalance, indecision, value conflict, emotional turmoil"
+      }
+    },
+    {
+      "id": 7,
+      "name": "战车",
+      "nameEn": "The_Chariot",
+      "imageUrl": "https://cdn.tarotqa.com/images-optimized/tarot/The_Chariot.webp",
+      "galleryPath": "/gallery/card/the-chariot",
+      "arcana": "major",
+      "keywordsEn": {
+        "upright": "Willpower triumph, self-control, goal achievement, duality reconciliation",
+        "reversed": "Direction loss, energy drain, control failure, conflict escalation"
+      }
+    },
+    {
+      "id": 8,
+      "name": "力量",
+      "nameEn": "Strength",
+      "imageUrl": "https://cdn.tarotqa.com/images-optimized/tarot/Strength.webp",
+      "galleryPath": "/gallery/card/strength",
+      "arcana": "major",
+      "keywordsEn": {
+        "upright": "Inner strength, soft overcoming hard, instinct mastery, courage, patience",
+        "reversed": "Power abuse, self-doubt, impulsive loss of control, weak will"
+      }
+    },
+    {
+      "id": 9,
+      "name": "隐士",
+      "nameEn": "The_Hermit",
+      "imageUrl": "https://cdn.tarotqa.com/images-optimized/tarot/The_Hermit.webp",
+      "galleryPath": "/gallery/card/the-hermit",
+      "arcana": "major",
+      "keywordsEn": {
+        "upright": "Introspection, wisdom pursuit, solitary growth, spiritual guidance",
+        "reversed": "Self-isolation, reality avoidance, excessive seclusion, guidance refusal"
+      },
+      "yesNoHint": "neutral",
+      "yesNoNote": "Inner wisdom needed before deciding - shown as NEUTRAL example on SingleCardUnderstanding page"
+    },
+    {
+      "id": 10,
+      "name": "命运之轮",
+      "nameEn": "Wheel_of_Fortune",
+      "imageUrl": "https://cdn.tarotqa.com/images-optimized/tarot/Wheel_of_Fortune.webp",
+      "galleryPath": "/gallery/card/wheel-of-fortune",
+      "arcana": "major",
+      "keywordsEn": {
+        "upright": "Destiny shift, cyclical patterns, opportunity capture, karma",
+        "reversed": "Chaotic loss of control, resisting change, missed chances, karmic debt"
+      }
+    },
+    {
+      "id": 11,
+      "name": "正义",
+      "nameEn": "Justice",
+      "imageUrl": "https://cdn.tarotqa.com/images-optimized/tarot/Justice.webp",
+      "galleryPath": "/gallery/card/justice",
+      "arcana": "major",
+      "keywordsEn": {
+        "upright": "Karmic retribution, fair judgment, moral accountability, legal matters",
+        "reversed": "Judicial injustice, responsibility avoidance, biased influence"
+      },
+      "yesNoHint": "neutral",
+      "yesNoNote": "Fair outcome if you've been honest - shown as NEUTRAL example on SingleCardUnderstanding page"
+    },
+    {
+      "id": 12,
+      "name": "倒吊人",
+      "nameEn": "The_Hanged_Man",
+      "imageUrl": "https://cdn.tarotqa.com/images-optimized/tarot/The_Hanged_Man.webp",
+      "galleryPath": "/gallery/card/the-hanged-man",
+      "arcana": "major",
+      "keywordsEn": {
+        "upright": "Sacrificial devotion, perspective shift, passive growth, contemplation",
+        "reversed": "Futile sacrifice, resistance to change, mental rigidity, reality avoidance"
+      }
+    },
+    {
+      "id": 13,
+      "name": "死神",
+      "nameEn": "Death",
+      "imageUrl": "https://cdn.tarotqa.com/images-optimized/tarot/Death.webp",
+      "galleryPath": "/gallery/card/death",
+      "arcana": "major",
+      "keywordsEn": {
+        "upright": "Transformative ending, inevitable change, profound metamorphosis",
+        "reversed": "Resisting change, stagnant decay, false renewal, unhealed trauma"
+      }
+    },
+    {
+      "id": 14,
+      "name": "节制",
+      "nameEn": "Temperance",
+      "imageUrl": "https://cdn.tarotqa.com/images-optimized/tarot/Temperance.webp",
+      "galleryPath": "/gallery/card/temperance",
+      "arcana": "major",
+      "keywordsEn": {
+        "upright": "Harmony, balance, transformation, moderation, spiritual integration",
+        "reversed": "Imbalance, excess, extremism, energy blockage, failed transformation"
+      }
+    },
+    {
+      "id": 15,
+      "name": "恶魔",
+      "nameEn": "The_Devil",
+      "imageUrl": "https://cdn.tarotqa.com/images-optimized/tarot/The_Devil.webp",
+      "galleryPath": "/gallery/card/the-devil",
+      "arcana": "major",
+      "keywordsEn": {
+        "upright": "Desire bondage, material obsession, power manipulation, fear",
+        "reversed": "Breaking chains, desire awakening, self-liberation, spiritual recovery"
+      },
+      "yesNoHint": "no",
+      "yesNoNote": "Trapped energy, not the right time - shown as STRONG NO example on SingleCardUnderstanding page"
+    },
+    {
+      "id": 16,
+      "name": "塔",
+      "nameEn": "The_Tower",
+      "imageUrl": "https://cdn.tarotqa.com/images-optimized/tarot/The_Tower.webp",
+      "galleryPath": "/gallery/card/the-tower",
+      "arcana": "major",
+      "keywordsEn": {
+        "upright": "Sudden upheaval, paradigm shift, forced awakening, falsehood collapse",
+        "reversed": "Resisting change, delayed eruption, false stability, suppressed crisis"
+      },
+      "yesNoHint": "no",
+      "yesNoNote": "Dramatic change, avoid for now - shown as STRONG NO example on SingleCardUnderstanding page"
+    },
+    {
+      "id": 17,
+      "name": "星星",
+      "nameEn": "The_Star",
+      "imageUrl": "https://cdn.tarotqa.com/images-optimized/tarot/The_Star.webp",
+      "galleryPath": "/gallery/card/the-star",
+      "arcana": "major",
+      "keywordsEn": {
+        "upright": "Renewed hope, creative flow, emotional healing, cosmic connection",
+        "reversed": "Fading hope, creative block, energy imbalance, shaken faith"
+      },
+      "yesNoHint": "yes",
+      "yesNoNote": "Hope and divine guidance favor you - shown as STRONG YES example on SingleCardUnderstanding page"
+    },
+    {
+      "id": 18,
+      "name": "月亮",
+      "nameEn": "The_Moon",
+      "imageUrl": "https://cdn.tarotqa.com/images-optimized/tarot/The_Moon.webp",
+      "galleryPath": "/gallery/card/the-moon",
+      "arcana": "major",
+      "keywordsEn": {
+        "upright": "Subconscious flux, intuitive awakening, fearful illusions, emotional cycles",
+        "reversed": "Truth revealed, fears overcome, intuition clarified, illusion dispelled"
+      }
+    },
+    {
+      "id": 19,
+      "name": "太阳",
+      "nameEn": "The_Sun",
+      "imageUrl": "https://cdn.tarotqa.com/images-optimized/tarot/The_Sun.webp",
+      "galleryPath": "/gallery/card/the-sun",
+      "arcana": "major",
+      "keywordsEn": {
+        "upright": "Joyful success, abundant vitality, truth revealed, healthy growth, positive optimism",
+        "reversed": "Blind optimism, stunted growth, energy depletion, obscured truth"
+      },
+      "yesNoHint": "yes",
+      "yesNoNote": "Overwhelming success and joy - shown as STRONG YES example on SingleCardUnderstanding page"
+    },
+    {
+      "id": 20,
+      "name": "审判",
+      "nameEn": "Judgement",
+      "imageUrl": "https://cdn.tarotqa.com/images-optimized/tarot/Judgement.webp",
+      "galleryPath": "/gallery/card/judgement",
+      "arcana": "major",
+      "keywordsEn": {
+        "upright": "Soul awakening, karmic settlement, crucial turning point, rebirth",
+        "reversed": "Refusing the call, unresolved karma, self-denial, repeating cycles"
+      }
+    },
+    {
+      "id": 21,
+      "name": "世界",
+      "nameEn": "The_World",
+      "imageUrl": "https://cdn.tarotqa.com/images-optimized/tarot/The_World.webp",
+      "galleryPath": "/gallery/card/the-world",
+      "arcana": "major",
+      "keywordsEn": {
+        "upright": "Fulfillment, cycle completion, cosmic harmony, soul integration, new beginnings",
+        "reversed": "Unfinished business, stagnant cycles, integration difficulties, excessive perfectionism, delayed closure"
+      }
+    },
+    {
+      "id": 22,
+      "name": "权杖王牌",
+      "nameEn": "Ace_of_Wands",
+      "imageUrl": "https://cdn.tarotqa.com/images-optimized/tarot/Ace_of_Wands.webp",
+      "galleryPath": "/gallery/card/ace-of-wands",
+      "arcana": "minor",
+      "suit": "wands",
+      "rank": "ace",
+      "keywordsEn": {
+        "upright": "New opportunity, creative explosion, venture launch, passionate ignition",
+        "reversed": "Motivation loss, creative drought, delayed start, energy blockage"
+      }
+    },
+    {
+      "id": 23,
+      "name": "权杖二",
+      "nameEn": "Two_of_Wands",
+      "imageUrl": "https://cdn.tarotqa.com/images-optimized/tarot/Two_of_Wands.webp",
+      "galleryPath": "/gallery/card/two-of-wands",
+      "arcana": "minor",
+      "suit": "wands",
+      "rank": "2",
+      "keywordsEn": {
+        "upright": "Future planning, latent opportunities, strategic decisions",
+        "reversed": "Indecision, missed chances, limited perspective, passive waiting"
+      }
+    },
+    {
+      "id": 24,
+      "name": "权杖三",
+      "nameEn": "Three_of_Wands",
+      "imageUrl": "https://cdn.tarotqa.com/images-optimized/tarot/Three_of_Wands.webp",
+      "galleryPath": "/gallery/card/three-of-wands",
+      "arcana": "minor",
+      "suit": "wands",
+      "rank": "3",
+      "keywordsEn": {
+        "upright": "Strategic planning, cross-domain collaboration, future vision",
+        "reversed": "Progress delays, limited vision, collaboration breakdown"
+      }
+    },
+    {
+      "id": 25,
+      "name": "权杖四",
+      "nameEn": "Four_of_Wands",
+      "imageUrl": "https://cdn.tarotqa.com/images-optimized/tarot/Four_of_Wands.webp",
+      "galleryPath": "/gallery/card/four-of-wands",
+      "arcana": "minor",
+      "suit": "wands",
+      "rank": "4",
+      "keywordsEn": {
+        "upright": "Celebration, domestic harmony, career stability, sharing success",
+        "reversed": "Unstable foundation, delayed celebration, family discord"
+      }
+    },
+    {
+      "id": 26,
+      "name": "权杖五",
+      "nameEn": "Five_of_Wands",
+      "imageUrl": "https://cdn.tarotqa.com/images-optimized/tarot/Five_of_Wands.webp",
+      "galleryPath": "/gallery/card/five-of-wands",
+      "arcana": "minor",
+      "suit": "wands",
+      "rank": "5",
+      "keywordsEn": {
+        "upright": "Divergent opinions, competitive friction, energy clash, breakthrough growth",
+        "reversed": "Pointless disputes, resource drain, goal confusion, conflict avoidance"
+      }
+    },
+    {
+      "id": 27,
+      "name": "权杖六",
+      "nameEn": "Six_of_Wands",
+      "imageUrl": "https://cdn.tarotqa.com/images-optimized/tarot/Six_of_Wands.webp",
+      "galleryPath": "/gallery/card/six-of-wands",
+      "arcana": "minor",
+      "suit": "wands",
+      "rank": "6",
+      "keywordsEn": {
+        "upright": "Public recognition, triumphant victory, achievement celebration",
+        "reversed": "False glory, excessive arrogance, team division, achievement disputed"
+      }
+    },
+    {
+      "id": 28,
+      "name": "权杖七",
+      "nameEn": "Seven_of_Wands",
+      "imageUrl": "https://cdn.tarotqa.com/images-optimized/tarot/Seven_of_Wands.webp",
+      "galleryPath": "/gallery/card/seven-of-wands",
+      "arcana": "minor",
+      "suit": "wands",
+      "rank": "7",
+      "keywordsEn": {
+        "upright": "Firm stance, active defense, competitive resistance, test of resolve",
+        "reversed": "Wavering position, conflict avoidance, overwhelmed, abandoning ground"
+      }
+    },
+    {
+      "id": 29,
+      "name": "权杖八",
+      "nameEn": "Eight_of_Wands",
+      "imageUrl": "https://cdn.tarotqa.com/images-optimized/tarot/Eight_of_Wands.webp",
+      "galleryPath": "/gallery/card/eight-of-wands",
+      "arcana": "minor",
+      "suit": "wands",
+      "rank": "8",
+      "keywordsEn": {
+        "upright": "Rapid progress, information transfer, travel luck, energy surge",
+        "reversed": "Delays, communication breakdowns, energy blockages, impulsive decisions"
+      }
+    },
+    {
+      "id": 30,
+      "name": "权杖九",
+      "nameEn": "Nine_of_Wands",
+      "imageUrl": "https://cdn.tarotqa.com/images-optimized/tarot/Nine_of_Wands.webp",
+      "galleryPath": "/gallery/card/nine-of-wands",
+      "arcana": "minor",
+      "suit": "wands",
+      "rank": "9",
+      "keywordsEn": {
+        "upright": "Holding ground, experienced defense, enduring stamina, vigilance",
+        "reversed": "Over-defensiveness, exhaustion, paranoia, isolated entrapment"
+      }
+    },
+    {
+      "id": 31,
+      "name": "权杖十",
+      "nameEn": "Ten_of_Wands",
+      "imageUrl": "https://cdn.tarotqa.com/images-optimized/tarot/Ten_of_Wands.webp",
+      "galleryPath": "/gallery/card/ten-of-wands",
+      "arcana": "minor",
+      "suit": "wands",
+      "rank": "10",
+      "keywordsEn": {
+        "upright": "Overload, excessive responsibility, burnout, lost purpose",
+        "reversed": "Releasing burdens, delegation, setting boundaries, restoring balance"
+      }
+    },
+    {
+      "id": 32,
+      "name": "权杖侍者",
+      "nameEn": "Page_of_Wands",
+      "imageUrl": "https://cdn.tarotqa.com/images-optimized/tarot/Page_of_Wands.webp",
+      "galleryPath": "/gallery/card/page-of-wands",
+      "arcana": "minor",
+      "suit": "wands",
+      "rank": "page",
+      "keywordsEn": {
+        "upright": "New opportunity exploration, energy surge, creative sprout",
+        "reversed": "Reckless impulse, unfinished projects, poor planning, scattered energy"
+      }
+    },
+    {
+      "id": 33,
+      "name": "权杖骑士",
+      "nameEn": "Knight_of_Wands",
+      "imageUrl": "https://cdn.tarotqa.com/images-optimized/tarot/Knight_of_Wands.webp",
+      "galleryPath": "/gallery/card/knight-of-wands",
+      "arcana": "minor",
+      "suit": "wands",
+      "rank": "knight",
+      "keywordsEn": {
+        "upright": "Swift action, adventurous spirit, passionate exuberance, impulsive energy",
+        "reversed": "Reckless impulse, impatience, unfinished projects, scattered focus"
+      }
+    },
+    {
+      "id": 34,
+      "name": "权杖皇后",
+      "nameEn": "Queen_of_Wands",
+      "imageUrl": "https://cdn.tarotqa.com/images-optimized/tarot/Queen_of_Wands.webp",
+      "galleryPath": "/gallery/card/queen-of-wands",
+      "arcana": "minor",
+      "suit": "wands",
+      "rank": "queen",
+      "keywordsEn": {
+        "upright": "Radiant vitality, goal-oriented, confident leadership, creative passion",
+        "reversed": "Domineering, scattered energy, overconfidence, mood swings"
+      }
+    },
+    {
+      "id": 35,
+      "name": "权杖国王",
+      "nameEn": "King_of_Wands",
+      "imageUrl": "https://cdn.tarotqa.com/images-optimized/tarot/King_of_Wands.webp",
+      "galleryPath": "/gallery/card/king-of-wands",
+      "arcana": "minor",
+      "suit": "wands",
+      "rank": "king",
+      "keywordsEn": {
+        "upright": "Charismatic leadership, entrepreneurial drive, visionary inspiration",
+        "reversed": "Authoritarianism, scattered energy, grandiose ambitions, impulsive decisions"
+      }
+    },
+    {
+      "id": 36,
+      "name": "圣杯王牌",
+      "nameEn": "Ace_of_Cups",
+      "imageUrl": "https://cdn.tarotqa.com/images-optimized/tarot/Ace_of_Cups.webp",
+      "galleryPath": "/gallery/card/ace-of-cups",
+      "arcana": "minor",
+      "suit": "cups",
+      "rank": "ace",
+      "keywordsEn": {
+        "upright": "Emotional beginning, openness, love, compassion, intuition",
+        "reversed": "Emotional blockage, spiritual blockage, emotional loss, loneliness"
+      },
+      "yesNoHint": "yes",
+      "yesNoNote": "New emotional beginnings await - shown as STRONG YES example on SingleCardUnderstanding page"
+    },
+    {
+      "id": 37,
+      "name": "圣杯二",
+      "nameEn": "Two_of_Cups",
+      "imageUrl": "https://cdn.tarotqa.com/images-optimized/tarot/Two_of_Cups.webp",
+      "galleryPath": "/gallery/card/two-of-cups",
+      "arcana": "minor",
+      "suit": "cups",
+      "rank": "2",
+      "keywordsEn": {
+        "upright": "Emotional resonance, balanced relationships, cooperation, unity",
+        "reversed": "Emotional imbalance, relationship tension, misunderstanding"
+      }
+    },
+    {
+      "id": 38,
+      "name": "圣杯三",
+      "nameEn": "Three_of_Cups",
+      "imageUrl": "https://cdn.tarotqa.com/images-optimized/tarot/Three_of_Cups.webp",
+      "galleryPath": "/gallery/card/three-of-cups",
+      "arcana": "minor",
+      "suit": "cups",
+      "rank": "3",
+      "keywordsEn": {
+        "upright": "Celebration, friendship, unity, socializing, support",
+        "reversed": "Isolation, misunderstanding, social fatigue, emotional distance"
+      }
+    },
+    {
+      "id": 39,
+      "name": "圣杯四",
+      "nameEn": "Four_of_Cups",
+      "imageUrl": "https://cdn.tarotqa.com/images-optimized/tarot/Four_of_Cups.webp",
+      "galleryPath": "/gallery/card/four-of-cups",
+      "arcana": "minor",
+      "suit": "cups",
+      "rank": "4",
+      "keywordsEn": {
+        "upright": "Emotional numbness, opportunity neglect, self-isolation, inner reflection",
+        "reversed": "Re-engagement, accepting new chances, breaking apathy, emotional renewal"
+      }
+    },
+    {
+      "id": 40,
+      "name": "圣杯五",
+      "nameEn": "Five_of_Cups",
+      "imageUrl": "https://cdn.tarotqa.com/images-optimized/tarot/Five_of_Cups.webp",
+      "galleryPath": "/gallery/card/five-of-cups",
+      "arcana": "minor",
+      "suit": "cups",
+      "rank": "5",
+      "keywordsEn": {
+        "upright": "Loss, regret, sorrow, focus on loss, neglect of opportunities",
+        "reversed": "Recovery, hope, acceptance, moving forward, rediscovery"
+      }
+    },
+    {
+      "id": 41,
+      "name": "圣杯六",
+      "nameEn": "Six_of_Cups",
+      "imageUrl": "https://cdn.tarotqa.com/images-optimized/tarot/Six_of_Cups.webp",
+      "galleryPath": "/gallery/card/six-of-cups",
+      "arcana": "minor",
+      "suit": "cups",
+      "rank": "6",
+      "keywordsEn": {
+        "upright": "Nostalgia, childhood, innocence, simple pleasures, old friends",
+        "reversed": "Escaping reality, excessive nostalgia, stagnation, refusal to grow"
+      }
+    },
+    {
+      "id": 42,
+      "name": "圣杯七",
+      "nameEn": "Seven_of_Cups",
+      "imageUrl": "https://cdn.tarotqa.com/images-optimized/tarot/Seven_of_Cups.webp",
+      "galleryPath": "/gallery/card/seven-of-cups",
+      "arcana": "minor",
+      "suit": "cups",
+      "rank": "7",
+      "keywordsEn": {
+        "upright": "Fantasy, choices, possibilities, temptations, decision-making",
+        "reversed": "Clarity, reality, focus, difficulty choosing, avoidance"
+      }
+    },
+    {
+      "id": 43,
+      "name": "圣杯八",
+      "nameEn": "Eight_of_Cups",
+      "imageUrl": "https://cdn.tarotqa.com/images-optimized/tarot/Eight_of_Cups.webp",
+      "galleryPath": "/gallery/card/eight-of-cups",
+      "arcana": "minor",
+      "suit": "cups",
+      "rank": "8",
+      "keywordsEn": {
+        "upright": "Abandonment, pursuit, transformation, self-discovery, inner calling",
+        "reversed": "Avoidance, fear of change, stagnation, refusal to grow, inner conflict"
+      }
+    },
+    {
+      "id": 44,
+      "name": "圣杯九",
+      "nameEn": "Nine_of_Cups",
+      "imageUrl": "https://cdn.tarotqa.com/images-optimized/tarot/Nine_of_Cups.webp",
+      "galleryPath": "/gallery/card/nine-of-cups",
+      "arcana": "minor",
+      "suit": "cups",
+      "rank": "9",
+      "keywordsEn": {
+        "upright": "Satisfaction, wish fulfillment, achievement, happiness, gratitude",
+        "reversed": "Dissatisfaction, overindulgence, emptiness, disappointment"
+      }
+    },
+    {
+      "id": 45,
+      "name": "圣杯十",
+      "nameEn": "Ten_of_Cups",
+      "imageUrl": "https://cdn.tarotqa.com/images-optimized/tarot/Ten_of_Cups.webp",
+      "galleryPath": "/gallery/card/ten-of-cups",
+      "arcana": "minor",
+      "suit": "cups",
+      "rank": "10",
+      "keywordsEn": {
+        "upright": "Family happiness, emotional fulfillment, harmony, lasting happiness",
+        "reversed": "Family discord, emotional loss, fleeting happiness, disconnection"
+      }
+    },
+    {
+      "id": 46,
+      "name": "圣杯侍者",
+      "nameEn": "Page_of_Cups",
+      "imageUrl": "https://cdn.tarotqa.com/images-optimized/tarot/Page_of_Cups.webp",
+      "galleryPath": "/gallery/card/page-of-cups",
+      "arcana": "minor",
+      "suit": "cups",
+      "rank": "page",
+      "keywordsEn": {
+        "upright": "New experiences, creativity, curiosity, openness, receptivity",
+        "reversed": "Immaturity, emotional immaturity, blocked creativity, closed-mindedness"
+      }
+    },
+    {
+      "id": 47,
+      "name": "圣杯骑士",
+      "nameEn": "Knight_of_Cups",
+      "imageUrl": "https://cdn.tarotqa.com/images-optimized/tarot/Knight_of_Cups.webp",
+      "galleryPath": "/gallery/card/knight-of-cups",
+      "arcana": "minor",
+      "suit": "cups",
+      "rank": "knight",
+      "keywordsEn": {
+        "upright": "Romance, pursuit of dreams, emotional expression, courage, idealism",
+        "reversed": "Fantasy, emotional instability, escapism, indecision, lack of commitment"
+      }
+    },
+    {
+      "id": 48,
+      "name": "圣杯皇后",
+      "nameEn": "Queen_of_Cups",
+      "imageUrl": "https://cdn.tarotqa.com/images-optimized/tarot/Queen_of_Cups.webp",
+      "galleryPath": "/gallery/card/queen-of-cups",
+      "arcana": "minor",
+      "suit": "cups",
+      "rank": "queen",
+      "keywordsEn": {
+        "upright": "Emotional depth, intuition, compassion, understanding, care",
+        "reversed": "Emotional instability, oversensitivity, dependency, emotional manipulation"
+      }
+    },
+    {
+      "id": 49,
+      "name": "圣杯国王",
+      "nameEn": "King_of_Cups",
+      "imageUrl": "https://cdn.tarotqa.com/images-optimized/tarot/King_of_Cups.webp",
+      "galleryPath": "/gallery/card/king-of-cups",
+      "arcana": "minor",
+      "suit": "cups",
+      "rank": "king",
+      "keywordsEn": {
+        "upright": "Emotional balance, wisdom, leadership, maturity, support",
+        "reversed": "Emotional repression, manipulation, emotional instability, control"
+      }
+    },
+    {
+      "id": 50,
+      "name": "宝剑王牌",
+      "nameEn": "Ace_of_Swords",
+      "imageUrl": "https://cdn.tarotqa.com/images-optimized/tarot/Ace_of_Swords.webp",
+      "galleryPath": "/gallery/card/ace-of-swords",
+      "arcana": "minor",
+      "suit": "swords",
+      "rank": "ace",
+      "keywordsEn": {
+        "upright": "Mental clarity, breakthrough, truth, new ideas, intellectual power",
+        "reversed": "Confusion, mental blockage, misinformation, poor judgment"
+      }
+    },
+    {
+      "id": 51,
+      "name": "宝剑二",
+      "nameEn": "Two_of_Swords",
+      "imageUrl": "https://cdn.tarotqa.com/images-optimized/tarot/Two_of_Swords.webp",
+      "galleryPath": "/gallery/card/two-of-swords",
+      "arcana": "minor",
+      "suit": "swords",
+      "rank": "2",
+      "keywordsEn": {
+        "upright": "Decision, balance, inner conflict, hesitation",
+        "reversed": "Confusion, avoidance, indecision, pressure"
+      }
+    },
+    {
+      "id": 52,
+      "name": "宝剑三",
+      "nameEn": "Three_of_Swords",
+      "imageUrl": "https://cdn.tarotqa.com/images-optimized/tarot/Three_of_Swords.webp",
+      "galleryPath": "/gallery/card/three-of-swords",
+      "arcana": "minor",
+      "suit": "swords",
+      "rank": "3",
+      "keywordsEn": {
+        "upright": "Heartache, sorrow, separation, loss",
+        "reversed": "Healing, forgiveness, recovery, release"
+      }
+    },
+    {
+      "id": 53,
+      "name": "宝剑四",
+      "nameEn": "Four_of_Swords",
+      "imageUrl": "https://cdn.tarotqa.com/images-optimized/tarot/Four_of_Swords.webp",
+      "galleryPath": "/gallery/card/four-of-swords",
+      "arcana": "minor",
+      "suit": "swords",
+      "rank": "4",
+      "keywordsEn": {
+        "upright": "Rest, recovery, reflection, repose",
+        "reversed": "Restlessness, anxiety, burnout, slow recovery"
+      }
+    },
+    {
+      "id": 54,
+      "name": "宝剑五",
+      "nameEn": "Five_of_Swords",
+      "imageUrl": "https://cdn.tarotqa.com/images-optimized/tarot/Five_of_Swords.webp",
+      "galleryPath": "/gallery/card/five-of-swords",
+      "arcana": "minor",
+      "suit": "swords",
+      "rank": "5",
+      "keywordsEn": {
+        "upright": "Conflict, cost of victory, discord, dispute",
+        "reversed": "Reconciliation, understanding, cooperation, letting go"
+      },
+      "yesNoHint": "no",
+      "yesNoNote": "Conflict and defeat likely - shown as STRONG NO example on SingleCardUnderstanding page"
+    },
+    {
+      "id": 55,
+      "name": "宝剑六",
+      "nameEn": "Six_of_Swords",
+      "imageUrl": "https://cdn.tarotqa.com/images-optimized/tarot/Six_of_Swords.webp",
+      "galleryPath": "/gallery/card/six-of-swords",
+      "arcana": "minor",
+      "suit": "swords",
+      "rank": "6",
+      "keywordsEn": {
+        "upright": "Transition, moving forward, release, change",
+        "reversed": "Stagnation, difficulty, avoidance, delay"
+      }
+    },
+    {
+      "id": 56,
+      "name": "宝剑七",
+      "nameEn": "Seven_of_Swords",
+      "imageUrl": "https://cdn.tarotqa.com/images-optimized/tarot/Seven_of_Swords.webp",
+      "galleryPath": "/gallery/card/seven-of-swords",
+      "arcana": "minor",
+      "suit": "swords",
+      "rank": "7",
+      "keywordsEn": {
+        "upright": "Strategy, stealth, caution, planning",
+        "reversed": "Revelation, honesty, openness, consequences"
+      }
+    },
+    {
+      "id": 57,
+      "name": "宝剑八",
+      "nameEn": "Eight_of_Swords",
+      "imageUrl": "https://cdn.tarotqa.com/images-optimized/tarot/Eight_of_Swords.webp",
+      "galleryPath": "/gallery/card/eight-of-swords",
+      "arcana": "minor",
+      "suit": "swords",
+      "rank": "8",
+      "keywordsEn": {
+        "upright": "Bondage, restriction, helplessness, predicament",
+        "reversed": "Liberation, freedom, breakthrough, resolution"
+      }
+    },
+    {
+      "id": 58,
+      "name": "宝剑九",
+      "nameEn": "Nine_of_Swords",
+      "imageUrl": "https://cdn.tarotqa.com/images-optimized/tarot/Nine_of_Swords.webp",
+      "galleryPath": "/gallery/card/nine-of-swords",
+      "arcana": "minor",
+      "suit": "swords",
+      "rank": "9",
+      "keywordsEn": {
+        "upright": "Anxiety, fear, insomnia, inner conflict",
+        "reversed": "Release, comfort, hope, resolution"
+      },
+      "yesNoHint": "no",
+      "yesNoNote": "Anxiety and worry ahead - shown as STRONG NO example on SingleCardUnderstanding page"
+    },
+    {
+      "id": 59,
+      "name": "宝剑十",
+      "nameEn": "Ten_of_Swords",
+      "imageUrl": "https://cdn.tarotqa.com/images-optimized/tarot/Ten_of_Swords.webp",
+      "galleryPath": "/gallery/card/ten-of-swords",
+      "arcana": "minor",
+      "suit": "swords",
+      "rank": "10",
+      "keywordsEn": {
+        "upright": "Ending, rebirth, pain, setback",
+        "reversed": "Recovery, hope, rebuilding, release"
+      }
+    },
+    {
+      "id": 60,
+      "name": "宝剑侍者",
+      "nameEn": "Page_of_Swords",
+      "imageUrl": "https://cdn.tarotqa.com/images-optimized/tarot/Page_of_Swords.webp",
+      "galleryPath": "/gallery/card/page-of-swords",
+      "arcana": "minor",
+      "suit": "swords",
+      "rank": "page",
+      "keywordsEn": {
+        "upright": "Curiosity, intellect, exploration, learning",
+        "reversed": "Immaturity, recklessness, misunderstanding, delay"
+      }
+    },
+    {
+      "id": 61,
+      "name": "宝剑骑士",
+      "nameEn": "Knight_of_Swords",
+      "imageUrl": "https://cdn.tarotqa.com/images-optimized/tarot/Knight_of_Swords.webp",
+      "galleryPath": "/gallery/card/knight-of-swords",
+      "arcana": "minor",
+      "suit": "swords",
+      "rank": "knight",
+      "keywordsEn": {
+        "upright": "Action, determination, focus, decisiveness",
+        "reversed": "Impulsiveness, recklessness, loss of control, delay"
+      }
+    },
+    {
+      "id": 62,
+      "name": "宝剑皇后",
+      "nameEn": "Queen_of_Swords",
+      "imageUrl": "https://cdn.tarotqa.com/images-optimized/tarot/Queen_of_Swords.webp",
+      "galleryPath": "/gallery/card/queen-of-swords",
+      "arcana": "minor",
+      "suit": "swords",
+      "rank": "queen",
+      "keywordsEn": {
+        "upright": "Wisdom, independence, rationality, objectivity",
+        "reversed": "Coldness, isolation, prejudice, misunderstanding"
+      }
+    },
+    {
+      "id": 63,
+      "name": "宝剑国王",
+      "nameEn": "King_of_Swords",
+      "imageUrl": "https://cdn.tarotqa.com/images-optimized/tarot/King_of_Swords.webp",
+      "galleryPath": "/gallery/card/king-of-swords",
+      "arcana": "minor",
+      "suit": "swords",
+      "rank": "king",
+      "keywordsEn": {
+        "upright": "Authority, rationality, decision-making, objectivity",
+        "reversed": "Tyranny, coldness, prejudice, misunderstanding"
+      }
+    },
+    {
+      "id": 64,
+      "name": "钱币王牌",
+      "nameEn": "Ace_of_Pentacles",
+      "imageUrl": "https://cdn.tarotqa.com/images-optimized/tarot/Ace_of_Pentacles.webp",
+      "galleryPath": "/gallery/card/ace-of-pentacles",
+      "arcana": "minor",
+      "suit": "pentacles",
+      "rank": "ace",
+      "keywordsEn": {
+        "upright": "New opportunities, prosperity, wealth, material success, stability",
+        "reversed": "Missed opportunities, financial instability, material lack"
+      }
+    },
+    {
+      "id": 65,
+      "name": "钱币二",
+      "nameEn": "Two_of_Pentacles",
+      "imageUrl": "https://cdn.tarotqa.com/images-optimized/tarot/Two_of_Pentacles.webp",
+      "galleryPath": "/gallery/card/two-of-pentacles",
+      "arcana": "minor",
+      "suit": "pentacles",
+      "rank": "2",
+      "keywordsEn": {
+        "upright": "Balance, adaptability, flexibility, management, priorities",
+        "reversed": "Imbalance, chaos, stress, unclear priorities, overcommitment"
+      }
+    },
+    {
+      "id": 66,
+      "name": "钱币三",
+      "nameEn": "Three_of_Pentacles",
+      "imageUrl": "https://cdn.tarotqa.com/images-optimized/tarot/Three_of_Pentacles.webp",
+      "galleryPath": "/gallery/card/three-of-pentacles",
+      "arcana": "minor",
+      "suit": "pentacles",
+      "rank": "3",
+      "keywordsEn": {
+        "upright": "Collaboration, teamwork, collective wisdom, joint effort, success",
+        "reversed": "Lack of cooperation, team discord, isolation, misunderstanding"
+      }
+    },
+    {
+      "id": 67,
+      "name": "钱币四",
+      "nameEn": "Four_of_Pentacles",
+      "imageUrl": "https://cdn.tarotqa.com/images-optimized/tarot/Four_of_Pentacles.webp",
+      "galleryPath": "/gallery/card/four-of-pentacles",
+      "arcana": "minor",
+      "suit": "pentacles",
+      "rank": "4",
+      "keywordsEn": {
+        "upright": "Control, conservatism, security, stability, resistance to change",
+        "reversed": "Letting go, openness, generosity, change, release"
+      }
+    },
+    {
+      "id": 68,
+      "name": "钱币五",
+      "nameEn": "Five_of_Pentacles",
+      "imageUrl": "https://cdn.tarotqa.com/images-optimized/tarot/Five_of_Pentacles.webp",
+      "galleryPath": "/gallery/card/five-of-pentacles",
+      "arcana": "minor",
+      "suit": "pentacles",
+      "rank": "5",
+      "keywordsEn": {
+        "upright": "Lack, hardship, isolation, challenge, support",
+        "reversed": "Recovery, hope, support, improvement, overcoming"
+      }
+    },
+    {
+      "id": 69,
+      "name": "钱币六",
+      "nameEn": "Six_of_Pentacles",
+      "imageUrl": "https://cdn.tarotqa.com/images-optimized/tarot/Six_of_Pentacles.webp",
+      "galleryPath": "/gallery/card/six-of-pentacles",
+      "arcana": "minor",
+      "suit": "pentacles",
+      "rank": "6",
+      "keywordsEn": {
+        "upright": "Generosity, sharing, balance, giving, receiving",
+        "reversed": "Imbalance, selfishness, stinginess, dependency, loss"
+      }
+    },
+    {
+      "id": 70,
+      "name": "钱币七",
+      "nameEn": "Seven_of_Pentacles",
+      "imageUrl": "https://cdn.tarotqa.com/images-optimized/tarot/Seven_of_Pentacles.webp",
+      "galleryPath": "/gallery/card/seven-of-pentacles",
+      "arcana": "minor",
+      "suit": "pentacles",
+      "rank": "7",
+      "keywordsEn": {
+        "upright": "Patience, evaluation, planning, waiting, progress",
+        "reversed": "Anxiety, disappointment, lack of progress, waste, impatience"
+      }
+    },
+    {
+      "id": 71,
+      "name": "钱币八",
+      "nameEn": "Eight_of_Pentacles",
+      "imageUrl": "https://cdn.tarotqa.com/images-optimized/tarot/Eight_of_Pentacles.webp",
+      "galleryPath": "/gallery/card/eight-of-pentacles",
+      "arcana": "minor",
+      "suit": "pentacles",
+      "rank": "8",
+      "keywordsEn": {
+        "upright": "Diligence, skill enhancement, focus, effort, achievement",
+        "reversed": "Laziness, lack of skill, distraction, failure, stagnation"
+      }
+    },
+    {
+      "id": 72,
+      "name": "钱币九",
+      "nameEn": "Nine_of_Pentacles",
+      "imageUrl": "https://cdn.tarotqa.com/images-optimized/tarot/Nine_of_Pentacles.webp",
+      "galleryPath": "/gallery/card/nine-of-pentacles",
+      "arcana": "minor",
+      "suit": "pentacles",
+      "rank": "9",
+      "keywordsEn": {
+        "upright": "Independence, achievement, material wealth, enjoyment, success",
+        "reversed": "Dependency, material lack, loneliness, loss, failure"
+      }
+    },
+    {
+      "id": 73,
+      "name": "钱币十",
+      "nameEn": "Ten_of_Pentacles",
+      "imageUrl": "https://cdn.tarotqa.com/images-optimized/tarot/Ten_of_Pentacles.webp",
+      "galleryPath": "/gallery/card/ten-of-pentacles",
+      "arcana": "minor",
+      "suit": "pentacles",
+      "rank": "10",
+      "keywordsEn": {
+        "upright": "Family prosperity, material fulfillment, achievement, happiness",
+        "reversed": "Family discord, material lack, loss, failure, loneliness"
+      },
+      "yesNoHint": "yes",
+      "yesNoNote": "Material and spiritual abundance - shown as STRONG YES example on SingleCardUnderstanding page"
+    },
+    {
+      "id": 74,
+      "name": "钱币侍者",
+      "nameEn": "Page_of_Pentacles",
+      "imageUrl": "https://cdn.tarotqa.com/images-optimized/tarot/Page_of_Pentacles.webp",
+      "galleryPath": "/gallery/card/page-of-pentacles",
+      "arcana": "minor",
+      "suit": "pentacles",
+      "rank": "page",
+      "keywordsEn": {
+        "upright": "New opportunities, learning, growth, curiosity, material world",
+        "reversed": "Laziness, lack of motivation, distraction, failure, stagnation"
+      }
+    },
+    {
+      "id": 75,
+      "name": "钱币骑士",
+      "nameEn": "Knight_of_Pentacles",
+      "imageUrl": "https://cdn.tarotqa.com/images-optimized/tarot/Knight_of_Pentacles.webp",
+      "galleryPath": "/gallery/card/knight-of-pentacles",
+      "arcana": "minor",
+      "suit": "pentacles",
+      "rank": "knight",
+      "keywordsEn": {
+        "upright": "Diligence, responsibility, focus, effort, steadfastness",
+        "reversed": "Laziness, lack of motivation, distraction, failure, stagnation"
+      }
+    },
+    {
+      "id": 76,
+      "name": "钱币皇后",
+      "nameEn": "Queen_of_Pentacles",
+      "imageUrl": "https://cdn.tarotqa.com/images-optimized/tarot/Queen_of_Pentacles.webp",
+      "galleryPath": "/gallery/card/queen-of-pentacles",
+      "arcana": "minor",
+      "suit": "pentacles",
+      "rank": "queen",
+      "keywordsEn": {
+        "upright": "Abundance, care, mastery, material world, success",
+        "reversed": "Material lack, indifference, loss, failure, loneliness"
+      }
+    },
+    {
+      "id": 77,
+      "name": "钱币国王",
+      "nameEn": "King_of_Pentacles",
+      "imageUrl": "https://cdn.tarotqa.com/images-optimized/tarot/King_of_Pentacles.webp",
+      "galleryPath": "/gallery/card/king-of-pentacles",
+      "arcana": "minor",
+      "suit": "pentacles",
+      "rank": "king",
+      "keywordsEn": {
+        "upright": "Success, stability, mastery, material world, goals",
+        "reversed": "Material lack, loss, failure, loneliness, turmoil"
+      }
+    }
+  ],
+  "yesNoExamplesFromUI": {
+    "_source": "SingleCardUnderstanding--VTSz4-a.js - displayed as illustrative examples on the yes-no-tarot page",
+    "strongYesCards": [
+      {"nameEn": "The_Sun", "meaning": "Overwhelming success and joy", "id": 19},
+      {"nameEn": "The_Star", "meaning": "Hope and divine guidance favor you", "id": 17},
+      {"nameEn": "Ace_of_Cups", "meaning": "New emotional beginnings await", "id": 36},
+      {"nameEn": "Ten_of_Pentacles", "meaning": "Material and spiritual abundance", "id": 73}
+    ],
+    "strongNoCards": [
+      {"nameEn": "The_Tower", "meaning": "Dramatic change, avoid for now", "id": 16},
+      {"nameEn": "Five_of_Swords", "meaning": "Conflict and defeat likely", "id": 54},
+      {"nameEn": "Nine_of_Swords", "meaning": "Anxiety and worry ahead", "id": 58},
+      {"nameEn": "The_Devil", "meaning": "Trapped energy, not the right time", "id": 15}
+    ],
+    "neutralCards": [
+      {"nameEn": "The_Fool", "meaning": "New beginnings (yes) or reckless behavior (no)", "id": 0},
+      {"nameEn": "Justice", "meaning": "Fair outcome if you've been honest", "id": 11},
+      {"nameEn": "The_Hermit", "meaning": "Inner wisdom needed before deciding", "id": 9}
+    ]
+  },
+  "threeCardYesNoInterpretation": {
+    "_source": "YesNoThreeCard-Cl9lAE4C.js and spreads-BE9G_S99.js",
+    "rules": [
+      {"scenario": "All Three Cards Positive", "result": "Definite YES", "description": "The universe strongly supports your path forward"},
+      {"scenario": "Two Positive, One Negative", "result": "Likely YES", "description": "Success is probable, but requires effort and patience"},
+      {"scenario": "Mixed Energies", "result": "Conditional YES", "description": "Outcome depends entirely on your actions and choices"},
+      {"scenario": "Two Negative, One Positive", "result": "Likely NO", "description": "Significant obstacles outweigh positive influences"},
+      {"scenario": "All Three Cards Negative", "result": "Definite NO", "description": "Strong universal resistance to your current path"}
+    ],
+    "spreadConfig": {
+      "id": "yes-no",
+      "name": "是否牌阵",
+      "cardCount": 3,
+      "positions": ["卡牌一", "卡牌二", "卡牌三"]
+    }
+  },
+  "apiEndpoints": {
+    "singleCardYesNo": "POST /api/yes-no-tarot",
+    "singleCardPayload": {"question": "string", "card": {"name": "string", "nameEn": "string", "isReversed": "boolean"}, "language": "string"},
+    "threeCardSession": "POST /api/session",
+    "threeCardCardsSelected": "POST /api/reading/cards-selected",
+    "sharedReading": "GET /api/reading/shared/:sessionId"
+  },
+  "imageUrls": {
+    "cardFrontPattern": "https://cdn.tarotqa.com/images-optimized/tarot/{Card_Name}.webp",
+    "cardFrontExamples": [
+      "https://cdn.tarotqa.com/images-optimized/tarot/The_Fool.webp",
+      "https://cdn.tarotqa.com/images-optimized/tarot/Ace_of_Cups.webp",
+      "https://cdn.tarotqa.com/images-optimized/tarot/King_of_Pentacles.webp"
+    ],
+    "cardBackDefault": "https://res.cloudinary.com/dussqavmy/image/upload/landing/home-images-001-sm.webp",
+    "cdnHelper": "g(path) -> https://cdn.tarotqa.com/{path}",
+    "cloudinaryHelper": "l(filename, folder) -> https://res.cloudinary.com/dussqavmy/image/upload/{folder}/{filename}"
+  },
+  "suitMapping": {
+    "major": {"idRange": [0, 21], "count": 22},
+    "wands": {"idRange": [22, 35], "count": 14, "element": "Fire"},
+    "cups": {"idRange": [36, 49], "count": 14, "element": "Water"},
+    "swords": {"idRange": [50, 63], "count": 14, "element": "Air"},
+    "pentacles": {"idRange": [64, 77], "count": 14, "element": "Earth"}
+  },
+  "cardNameLocalization": {
+    "_note": "Card names are localized via i18n keys in the main bundle",
+    "majorArcanaKey": "reading.cards.major.{id}",
+    "minorArcanaKey": "reading.cards.{suit}.{rank}",
+    "rankMapping": {
+      "ace": "ace",
+      "two": "2",
+      "three": "3",
+      "four": "4",
+      "five": "5",
+      "six": "6",
+      "seven": "7",
+      "eight": "8",
+      "nine": "9",
+      "ten": "10",
+      "page": "page",
+      "knight": "knight",
+      "queen": "queen",
+      "king": "king"
+    }
+  }
+}
