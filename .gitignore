@@ -14,9 +14,6 @@ dist/
 **/.env.local
 **/.env.*.local
 
-# Runtime user uploads (kept out of repo)
-tarot-server/uploads/
-
 # Logs
 *.log
 npm-debug.log*
