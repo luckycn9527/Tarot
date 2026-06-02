@@ -14,17 +14,39 @@ dotenv.config();
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 
+const HOST = process.env.DB_HOST || 'localhost';
+const PORT = Number(process.env.DB_PORT) || 3306;
+const USER = process.env.DB_USER || 'root';
+const PASS = process.env.DB_PASSWORD || '';
+const DB = process.env.DB_NAME || 'tarot_qa';
+
+const baseConfig = {
+  host: HOST,
+  port: PORT,
+  user: USER,
+  password: PASS,
+  multipleStatements: true,
+};
+
 async function migrateAll() {
-  const connection = await createConnection({
-    host: process.env.DB_HOST || 'localhost',
-    port: Number(process.env.DB_PORT) || 3306,
-    user: process.env.DB_USER || 'root',
-    password: process.env.DB_PASSWORD || '',
-    multipleStatements: true,
-  });
+  // 1. 确保数据库存在
+  {
+    const conn = await createConnection(baseConfig);
+    try {
+      await conn.query(
+        `CREATE DATABASE IF NOT EXISTS \`${DB}\` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci`,
+      );
+      console.log(`[✓] Database '${DB}' ensured`);
+    } finally {
+      await conn.end();
+    }
+  }
+
+  // 2. 连接指定数据库
+  const connection = await createConnection({ ...baseConfig, database: DB });
 
   try {
-    // 创建迁移追踪表
+    // 3. 创建迁移追踪表
     await connection.query(`
       CREATE TABLE IF NOT EXISTS migrations (
         id INT AUTO_INCREMENT PRIMARY KEY,
@@ -43,7 +65,10 @@ async function migrateAll() {
       return;
     }
 
-    const [rows] = await connection.query('SELECT name FROM migrations') as [Array<{ name: string }>, unknown];
+    const [rows] = (await connection.query('SELECT name FROM migrations')) as [
+      Array<{ name: string }>,
+      unknown,
+    ];
     const done = new Set(rows.map((r) => r.name));
 
     let applied = 0;
@@ -63,7 +88,9 @@ async function migrateAll() {
       applied++;
     }
 
-    console.log(`\nDone. Applied: ${applied}, Skipped: ${skipped}, Total: ${files.length}`);
+    console.log(
+      `\nDone. Applied: ${applied}, Skipped: ${skipped}, Total: ${files.length}`,
+    );
   } finally {
     await connection.end();
   }
