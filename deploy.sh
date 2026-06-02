@@ -66,15 +66,6 @@ check_node() {
   fi
 }
 
-check_mysql() {
-  if ! command -v mysql &>/dev/null; then
-    warn "未找到 mysql 命令行工具，跳过自动数据库操作"
-    warn "请确保 MySQL 服务已运行且数据库已初始化"
-    return 1
-  fi
-  return 0
-}
-
 # 生成随机密钥 (32 字节 hex)
 gen_secret() {
   if command -v openssl &>/dev/null; then
@@ -119,43 +110,12 @@ check_env() {
 
 # ===== 数据库迁移 =====
 do_migrate() {
-  info "执行数据库迁移..."
-  if ! check_mysql; then
-    warn "无法自动执行迁移，请手动执行以下 SQL 文件 (按文件名顺序):"
-    for f in "$BACKEND_DIR"/migrations/*.sql; do
-      echo "  mysql -u root -p 数据库名 < $f"
-    done
-    return
-  fi
-
-  local db_host db_port db_user db_pass db_name
-  db_host=$(grep -E '^DB_HOST=' "$BACKEND_DIR/.env" | cut -d= -f2)
-  db_port=$(grep -E '^DB_PORT=' "$BACKEND_DIR/.env" | cut -d= -f2)
-  db_user=$(grep -E '^DB_USER=' "$BACKEND_DIR/.env" | cut -d= -f2)
-  db_pass=$(grep -E '^DB_PASSWORD=' "$BACKEND_DIR/.env" | cut -d= -f2)
-  db_name=$(grep -E '^DB_NAME=' "$BACKEND_DIR/.env" | cut -d= -f2)
-
-  db_host=${db_host:-localhost}
-  db_port=${db_port:-3306}
-  db_user=${db_user:-root}
-  db_name=${db_name:-tarot_qa}
-
-  # 确保数据库存在
-  info "  确保数据库 $db_name 存在..."
-  mysql -h"$db_host" -P"$db_port" -u"$db_user" -p"$db_pass" \
-    -e "CREATE DATABASE IF NOT EXISTS \`$db_name\` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;" 2>/dev/null || {
-    err "  创建数据库失败，请检查 .env 中的数据库账号密码"
+  info "执行数据库迁移 (Node.js，无需 mysql 命令行工具)..."
+  cd "$BACKEND_DIR"
+  npx tsx src/scripts/migrateAll.ts || {
+    err "数据库迁移失败，请检查 .env 中的数据库连接配置"
     exit 1
   }
-
-  for f in "$BACKEND_DIR"/migrations/*.sql; do
-    local fname
-    fname=$(basename "$f")
-    info "  迁移: $fname"
-    mysql -h"$db_host" -P"$db_port" -u"$db_user" -p"$db_pass" "$db_name" < "$f" 2>/dev/null || {
-      warn "  $fname 执行失败 (可能已执行过，可忽略)"
-    }
-  done
   log "数据库迁移完成"
 }
 
@@ -181,7 +141,7 @@ do_build() {
 
   info "构建前端 (Vite → dist/)..."
   cd "$FRONTEND_DIR"
-  npx vue-tsc -b && npx vite build
+  npm run build:prod
   log "前端构建完成 → dist/"
 
   # 确保 uploads 目录存在
