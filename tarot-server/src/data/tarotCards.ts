@@ -7,10 +7,11 @@ export interface TarotCard {
   yesNoTendency: 'yes' | 'no' | 'neutral'
 }
 
-export const CDN_BASE = 'https://cdn.tarotqa.com/images-optimized/tarot'
+/** 牌面默认走本地 uploads 静态目录（公有领域 RWS 牌面，随仓库分发） */
+export const CDN_BASE = '/uploads/cards'
 
 export function getCardImageUrl(nameEn: string): string {
-  return `${CDN_BASE}/${nameEn.replace(/ /g, '_')}.webp`
+  return `${CDN_BASE}/${nameEn.replace(/ /g, '_')}.jpg`
 }
 
 export function getCardSlug(nameEn: string): string {
