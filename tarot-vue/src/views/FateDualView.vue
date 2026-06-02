@@ -81,9 +81,7 @@ const selectedCards = computed(() =>
   selectedIndices.value.map((i) => deck.value[i]).filter(Boolean),
 )
 
-type FateCategory = { value: 'love' | 'career' | 'wealth'; label: string; sub: string; aura: 'love' | 'career' | 'wealth' }
 const spreadPositions = computed(() => tm('pages.fateDual.spreadPositions') as string[])
-const categories = computed(() => tm('pages.fateDual.categories') as FateCategory[])
 
 const birthDateWheelTouched = ref(false)
 const questionFieldFocused = ref(false)
@@ -215,7 +213,6 @@ async function onChoose(choice: 'stable' | 'adventure') {
   }
 }
 
-const categoryLabel = computed(() => categories.value.find((c) => c.value === category.value)?.label ?? t('pages.fateDual.categoryDefault'))
 const finalResultParagraphs = computed(() => {
   const raw = finalResult.value.trim(); if (!raw) return []
   const byBlank = raw.split(/\n{2,}/).map((s) => s.trim()).filter(Boolean)
