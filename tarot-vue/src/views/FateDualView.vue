@@ -10,6 +10,9 @@ import { useShuffle } from '@/composables/useShuffle'
 import { useCardBack } from '@/composables/useCardBack'
 import FateDualAnalyzingRitual from '@/components/FateDualAnalyzingRitual.vue'
 import FateSacredDatetime from '@/components/FateSacredDatetime.vue'
+import { Solar } from 'lunar-javascript'
+
+void FateSacredDatetime
 
 const route = useRoute()
 const router = useRouter()
@@ -20,23 +23,45 @@ const { isLoggedIn, isInitialized, user } = useAuth()
 type Step = 'form' | 'pick' | 'analyzing' | 'dual' | 'submitting' | 'done'
 
 const step = ref<Step>('form')
-const birthDate = ref('')
-const birthTime = ref('')
+const birthDate = ref('1999-04-21')
+const birthTime = ref('12:00')
 const question = ref('')
 const category = ref<'love' | 'career' | 'wealth'>('career')
 
+const birthYear = ref<number | null>(1999)
+const birthMonth = ref<number | null>(4)
+const birthDay = ref<number | null>(21)
+const birthHour = ref<number | null>(12)
+const birthMinute = ref<number | null>(0)
+const birthPlace = ref('中国·北京市')
+const gender = ref<'male' | 'female'>('male')
+const solarCorrection = ref(false)
+const chartType = ref<'bazi' | 'ziwei'>('bazi')
+
+type DomainKey = 'love' | 'career' | 'wealth' | 'health' | 'relationship' | 'decision'
+const selectedDomain = ref<DomainKey>('career')
+const domainOptions: { key: DomainKey; label: string; sub: string; category: 'love' | 'career' | 'wealth' | null }[] = [
+  { key: 'love', label: '感情', sub: '缠绵情感', category: 'love' },
+  { key: 'career', label: '事业', sub: '发展方向', category: 'career' },
+  { key: 'wealth', label: '财运', sub: '财富机遇', category: 'wealth' },
+  { key: 'health', label: '健康', sub: '身心状态', category: null },
+  { key: 'relationship', label: '人际', sub: '关系解析', category: null },
+  { key: 'decision', label: '抉择', sub: '人生选择', category: null },
+]
+
+const exploreCards: { key: string; title: string; sub: string }[] = [
+  { key: 'love-merge', title: '感情合盘', sub: '缘分解析' },
+  { key: 'year-fortune', title: '流年运势', sub: '年运轨迹' },
+  { key: 'career-pattern', title: '事业格局', sub: '发展潜能' },
+  { key: 'wealth-code', title: '财富密码', sub: '财富机遇' },
+  { key: 'health-guide', title: '健康指引', sub: '身心平衡' },
+  { key: 'destiny-report', title: '命运报告', sub: '深度解读' },
+]
+
 interface AnalyzePayload {
   conflictId: number
-  bazi: {
-    keywords: string[]
-    luckTrend: string | null
-    fiveElements: Record<string, string> | null
-    analysis: string
-  }
-  tarot: {
-    cards: { name: string; nameEn: string; position: string; reversed: boolean }[]
-    analysis: string
-  }
+  bazi: { keywords: string[]; luckTrend: string | null; fiveElements: Record<string, string> | null; analysis: string }
+  tarot: { cards: { name: string; nameEn: string; position: string; reversed: boolean }[]; analysis: string }
   conflict: { type: string; level: string | null; summary: string }
   branches: { stable: string; adventure: string }
 }
@@ -57,34 +82,23 @@ const selectedCards = computed(() =>
 )
 
 type FateCategory = { value: 'love' | 'career' | 'wealth'; label: string; sub: string; aura: 'love' | 'career' | 'wealth' }
-
 const spreadPositions = computed(() => tm('pages.fateDual.spreadPositions') as string[])
 const categories = computed(() => tm('pages.fateDual.categories') as FateCategory[])
 
-/** 必须拨动过日期轮轴才视为已择日（避免空白提交） */
 const birthDateWheelTouched = ref(false)
 const questionFieldFocused = ref(false)
 const altarPanelMounted = ref(false)
 const ctaInvoking = ref(false)
 const ctaBusyLabel = ref(false)
 
-onMounted(() => {
-  requestAnimationFrame(() => {
-    altarPanelMounted.value = true
-  })
-})
+onMounted(() => { requestAnimationFrame(() => { altarPanelMounted.value = true }) })
 
 watch(
   [isInitialized, isLoggedIn],
   ([init, logged]) => {
     if (!init) return
-    if (!logged) {
-      void router.replace({ path: '/login', query: { redirect: route.fullPath } })
-      return
-    }
-    // 自动填充档案中已保存的生辰（若有）
+    if (!logged) { void router.replace({ path: '/login', query: { redirect: route.fullPath } }); return }
     if (user.value?.birthday && !birthDate.value) {
-      // birthday 可能是 ISO 格式 "1999-04-21T16:00:00.000Z"，截取 YYYY-MM-DD
       birthDate.value = user.value.birthday.slice(0, 10)
       birthDateWheelTouched.value = true
     }
@@ -93,142 +107,127 @@ watch(
 )
 
 function resetFlow() {
-  step.value = 'form'
-  analysis.value = null
-  finalResult.value = ''
-  choiceMade.value = null
-  selectedIndices.value = []
-  birthDateWheelTouched.value = false
-  ctaInvoking.value = false
-  ctaBusyLabel.value = false
+  step.value = 'form'; analysis.value = null; finalResult.value = ''; choiceMade.value = null
+  selectedIndices.value = []; birthDateWheelTouched.value = false; ctaInvoking.value = false; ctaBusyLabel.value = false
 }
 
 function goToPick() {
-  if (!birthDateWheelTouched.value || !birthDate.value) {
-    toast.error(t('pages.fateDual.toastPickBirth'))
-    return
-  }
-  if (question.value.trim().length < 5) {
-    toast.error(t('pages.fateDual.toastQuestionMin'))
-    return
-  }
-  selectedIndices.value = []
-  step.value = 'pick'
-  ctaInvoking.value = false
-  ctaBusyLabel.value = false
-  void nextTick(() => {
-    shuffle()
-    void loadCardBack(true)
-  })
+  if (!birthDateWheelTouched.value || !birthDate.value) { toast.error(t('pages.fateDual.toastPickBirth')); return }
+  if (question.value.trim().length < 5) { toast.error(t('pages.fateDual.toastQuestionMin')); return }
+  selectedIndices.value = []; step.value = 'pick'; ctaInvoking.value = false; ctaBusyLabel.value = false
+  void nextTick(() => { shuffle(); void loadCardBack(true) })
 }
 
-function onDateWheelCommit() {
-  birthDateWheelTouched.value = true
+function onDateWheelCommit() { birthDateWheelTouched.value = true }
+
+function pad2(n: number) { return n < 10 ? `0${n}` : `${n}` }
+
+watch(birthDate, (s) => {
+  const [y, m, d] = (s || '').split('-').map(Number)
+  if (y && m && d) { if (birthYear.value !== y) birthYear.value = y; if (birthMonth.value !== m) birthMonth.value = m; if (birthDay.value !== d) birthDay.value = d }
+}, { immediate: true })
+
+watch(birthTime, (s) => {
+  const [hh, mm] = (s || '').split(':').map(Number)
+  if (!Number.isNaN(hh) && hh !== undefined) { if (birthHour.value !== hh) birthHour.value = hh; if (birthMinute.value !== (Number.isNaN(mm) ? 0 : mm)) birthMinute.value = Number.isNaN(mm) ? 0 : mm }
+}, { immediate: true })
+
+function commitBirthDate() {
+  const y = birthYear.value, m = birthMonth.value, d = birthDay.value
+  if (y && m && d) { const maxDay = new Date(y, m, 0).getDate(); const safeDay = Math.min(Math.max(1, d), maxDay); if (safeDay !== d) birthDay.value = safeDay; birthDate.value = `${y}-${pad2(m)}-${pad2(safeDay)}`; onDateWheelCommit() }
 }
+
+function commitBirthTime() {
+  const h = birthHour.value ?? 0, mm = birthMinute.value ?? 0
+  const safeH = Math.min(Math.max(0, h), 23), safeM = Math.min(Math.max(0, mm), 59)
+  if (safeH !== birthHour.value) birthHour.value = safeH; if (safeM !== birthMinute.value) birthMinute.value = safeM
+  birthTime.value = `${pad2(safeH)}:${pad2(safeM)}`
+}
+
+const baziPillars = computed(() => {
+  const y = birthYear.value, m = birthMonth.value, d = birthDay.value
+  if (!y || !m || !d) return null
+  try {
+    const solar = Solar.fromYmdHms(y, m, d, birthHour.value ?? 12, birthMinute.value ?? 0, 0)
+    const ec = solar.getLunar().getEightChar()
+    return { year: ec.getYear(), month: ec.getMonth(), day: ec.getDay(), time: ec.getTime() }
+  } catch { return null }
+})
+
+const STEM_ELEMENT: Record<string, string> = { 甲: '木', 乙: '木', 丙: '火', 丁: '火', 戊: '土', 己: '土', 庚: '金', 辛: '金', 壬: '水', 癸: '水' }
+const BRANCH_ELEMENT: Record<string, string> = { 子: '水', 丑: '土', 寅: '木', 卯: '木', 辰: '土', 巳: '火', 午: '火', 未: '土', 申: '金', 酉: '金', 戌: '土', 亥: '水' }
+function ganzhiElements(gz: string): string {
+  if (!gz || gz.length < 2) return ''
+  return `${STEM_ELEMENT[gz[0]] ?? ''} ${BRANCH_ELEMENT[gz[1]] ?? ''}`.trim()
+}
+
+function selectDomain(opt: { key: DomainKey; category: 'love' | 'career' | 'wealth' | null }) {
+  selectedDomain.value = opt.key
+  if (opt.category) { category.value = opt.category } else { toast.info('该领域即将开放，已沿用当前主问域') }
+}
+
+function onExploreCard() { toast.info('该探索功能即将开放') }
 
 function invokeCtaRitual() {
   if (ctaInvoking.value) return
-  if (!birthDateWheelTouched.value || !birthDate.value) {
-    toast.error(t('pages.fateDual.toastPickBirth'))
-    return
-  }
-  if (question.value.trim().length < 5) {
-    toast.error(t('pages.fateDual.toastQuestionMin'))
-    return
-  }
-  ctaInvoking.value = true
-  ctaBusyLabel.value = true
-  window.setTimeout(() => {
-    ctaBusyLabel.value = false
-    goToPick()
-  }, 1500)
+  if (!birthDateWheelTouched.value || !birthDate.value) { toast.error(t('pages.fateDual.toastPickBirth')); return }
+  if (question.value.trim().length < 5) { toast.error(t('pages.fateDual.toastQuestionMin')); return }
+  ctaInvoking.value = true; ctaBusyLabel.value = true
+  window.setTimeout(() => { ctaBusyLabel.value = false; goToPick() }, 1500)
 }
 
 function scrollStrip(direction: 'left' | 'right') {
-  const el = stripRef.value
-  if (!el) return
-  const step = Math.min(400, Math.max(160, Math.round(el.clientWidth * 0.65)))
-  el.scrollBy({ left: direction === 'left' ? -step : step, behavior: 'smooth' })
+  const el = stripRef.value; if (!el) return
+  const step2 = Math.min(400, Math.max(160, Math.round(el.clientWidth * 0.65)))
+  el.scrollBy({ left: direction === 'left' ? -step2 : step2, behavior: 'smooth' })
 }
 
 function selectPickCard(deckIndex: number) {
-  if (allThreePicked.value) return
-  if (selectedIndices.value.includes(deckIndex)) return
+  if (allThreePicked.value) return; if (selectedIndices.value.includes(deckIndex)) return
   selectedIndices.value = [...selectedIndices.value, deckIndex]
 }
-
-function resetPickSelection() {
-  selectedIndices.value = []
-}
+function resetPickSelection() { selectedIndices.value = [] }
 
 async function runAnalyzeWithPickedCards() {
-  if (!allThreePicked.value || selectedCards.value.length !== 3) {
-    toast.error(t('pages.fateDual.toastPickThree'))
-    return
-  }
+  if (!allThreePicked.value || selectedCards.value.length !== 3) { toast.error(t('pages.fateDual.toastPickThree')); return }
   step.value = 'analyzing'
   try {
     const res = await api.post('/fate/analyze', {
-      birth_date: birthDate.value,
-      birth_time: birthTime.value || undefined,
-      question: question.value.trim(),
-      category: category.value,
+      birth_date: birthDate.value, birth_time: birthTime.value || undefined,
+      question: question.value.trim(), category: category.value,
       card_ids: selectedCards.value.map((s) => s.card.id),
       orientations: selectedCards.value.map((s) => (s.isReversed ? 'reversed' : 'upright')),
     })
-    if (!res.data.success) {
-      toast.error(res.data.message || t('pages.fateDual.toastAnalyzeFail'))
-      step.value = 'pick'
-      return
-    }
-    analysis.value = res.data.data as AnalyzePayload
-    step.value = 'dual'
+    if (!res.data.success) { toast.error(res.data.message || t('pages.fateDual.toastAnalyzeFail')); step.value = 'pick'; return }
+    analysis.value = res.data.data as AnalyzePayload; step.value = 'dual'
   } catch (e: unknown) {
     const msg = (e as { response?: { data?: { message?: string } } }).response?.data?.message
-    toast.error(msg || t('pages.fateDual.toastAnalyzeRetry'))
-    step.value = 'pick'
+    toast.error(msg || t('pages.fateDual.toastAnalyzeRetry')); step.value = 'pick'
   }
 }
 
 async function onChoose(choice: 'stable' | 'adventure') {
-  if (!analysis.value) return
-  step.value = 'submitting'
-  choiceMade.value = choice
+  if (!analysis.value) return; step.value = 'submitting'; choiceMade.value = choice
   try {
-    const res = await api.post('/fate/choose', {
-      conflict_id: analysis.value.conflictId,
-      choice: choice === 'stable' ? 'stable' : 'adventure',
-    })
-    if (!res.data.success) {
-      toast.error(res.data.message || t('pages.fateDual.toastSubmitFail'))
-      step.value = 'dual'
-      return
-    }
+    const res = await api.post('/fate/choose', { conflict_id: analysis.value.conflictId, choice: choice === 'stable' ? 'stable' : 'adventure' })
+    if (!res.data.success) { toast.error(res.data.message || t('pages.fateDual.toastSubmitFail')); step.value = 'dual'; return }
     const data = res.data.data as { result: string; alreadyChosen?: boolean }
-    finalResult.value = data.result
-    step.value = 'done'
+    finalResult.value = data.result; step.value = 'done'
     if (data.alreadyChosen) toast.success(t('pages.fateDual.toastHistoryShown'))
   } catch (e: unknown) {
     const msg = (e as { response?: { data?: { message?: string } } }).response?.data?.message
-    toast.error(msg || t('pages.fateDual.toastSubmitFail'))
-    step.value = 'dual'
+    toast.error(msg || t('pages.fateDual.toastSubmitFail')); step.value = 'dual'
   }
 }
 
-const categoryLabel = computed(
-  () => categories.value.find((c) => c.value === category.value)?.label ?? t('pages.fateDual.categoryDefault'),
-)
-
-/** 终页正文：优先按空行分段，否则按单行拆段 */
+const categoryLabel = computed(() => categories.value.find((c) => c.value === category.value)?.label ?? t('pages.fateDual.categoryDefault'))
 const finalResultParagraphs = computed(() => {
-  const raw = finalResult.value.trim()
-  if (!raw) return []
+  const raw = finalResult.value.trim(); if (!raw) return []
   const byBlank = raw.split(/\n{2,}/).map((s) => s.trim()).filter(Boolean)
   if (byBlank.length > 1) return byBlank
   return raw.split('\n').map((s) => s.trim()).filter(Boolean)
 })
 
-/** 五行块配色（与东方栏呼应） */
 function elementBlockClass(key: string): string {
   const map: Record<string, string> = {
     金: 'rounded-xl border p-3 bg-gradient-to-b from-amber-500/15 to-amber-950/40 border-amber-500/30',
@@ -239,1302 +238,813 @@ function elementBlockClass(key: string): string {
   }
   return map[key] ?? 'rounded-xl border p-3 bg-white/[0.04] border-white/10'
 }
-
 function splitDisplayParagraphs(text: string): string[] {
-  const raw = text.trim()
-  if (!raw) return []
+  const raw = text.trim(); if (!raw) return []
   const byBlank = raw.split(/\n{2,}/).map((s) => s.trim()).filter(Boolean)
-  if (byBlank.length > 1) return byBlank
-  return [raw]
+  if (byBlank.length > 1) return byBlank; return [raw]
 }
 
-type ShichenKey = 'zi' | 'chou' | 'yin' | 'mao' | 'chen' | 'si' | 'wu' | 'wei' | 'shen' | 'you' | 'xu' | 'hai'
-
-function shichenKeyFromHour(h: number): ShichenKey {
-  if (h === 23 || h === 0) return 'zi'
-  if (h >= 1 && h < 3) return 'chou'
-  if (h >= 3 && h < 5) return 'yin'
-  if (h >= 5 && h < 7) return 'mao'
-  if (h >= 7 && h < 9) return 'chen'
-  if (h >= 9 && h < 11) return 'si'
-  if (h >= 11 && h < 13) return 'wu'
-  if (h >= 13 && h < 15) return 'wei'
-  if (h >= 15 && h < 17) return 'shen'
-  if (h >= 17 && h < 19) return 'you'
-  if (h >= 19 && h < 21) return 'xu'
-  if (h >= 21 && h < 23) return 'hai'
-  return 'zi'
-}
-
-function shichenLabelForHour(h: number): string {
-  const key = shichenKeyFromHour(h)
-  return t(`pages.fateDual.shichen.${key}`)
-}
-
-/** 生辰展示文案（日期为公历；时辰对照传统十二时辰） */
 const birthDateOracle = computed(() => {
   if (!birthDate.value) return t('pages.fateDual.birthDatePending')
   const [y, m, d] = birthDate.value.split('-').map(Number)
   if (!y || !m || !d) return ''
-  return t('pages.fateDual.birthDateAnchored', {
-    y,
-    m: String(m).padStart(2, '0'),
-    d: String(d).padStart(2, '0'),
-  })
+  return t('pages.fateDual.birthDateAnchored', { y, m: String(m).padStart(2, '0'), d: String(d).padStart(2, '0') })
 })
-
 const birthTimeOracle = computed(() => {
   if (!birthTime.value) return t('pages.fateDual.birthTimeDefault')
-  const [hh, mm] = birthTime.value.split(':')
-  const h = Number(hh)
+  const [hh] = birthTime.value.split(':'); const h = Number(hh)
   if (Number.isNaN(h)) return birthTime.value
-  const sc = shichenLabelForHour(h)
-  return t('pages.fateDual.birthTimeOracle', { hh, mm: mm || '00', sc })
+  return birthTime.value
 })
 </script>
 
 <template>
-  <div
-    class="fate-altar-page relative min-h-[100dvh] min-h-screen overflow-x-hidden bg-[#0A0512] text-[#E2D9F3]"
-    :class="step === 'form' ? 'fate-altar-page--form' : 'fate-altar-page--inner'"
-  >
-    <!-- 深渊背景：径向渐变 + 星轨微粒 + 巨型罗盘（慢旋） -->
-    <div class="pointer-events-none fixed inset-0 -z-20 bg-[radial-gradient(circle_at_50%_42%,#160B24_0%,#0A0512_62%,#050208_100%)]" />
-    <div class="pointer-events-none fixed inset-0 -z-20 fate-altar-drift" aria-hidden="true" />
-    <div
-      class="pointer-events-none fixed inset-0 -z-10 flex items-center justify-center motion-reduce:animate-none"
-      aria-hidden="true"
-    >
-      <svg
-        class="fate-mega-wheel w-full max-w-[min(92vw,760px)] text-[#D4AF37] motion-reduce:animate-none sm:max-w-[min(95vw,720px)]"
-        viewBox="0 0 400 400"
-        fill="none"
-        xmlns="http://www.w3.org/2000/svg"
-      >
-        <defs>
-          <linearGradient id="fateWheelGrad" x1="0%" y1="0%" x2="100%" y2="100%">
-            <stop offset="0%" stop-color="#8A2BE2" stop-opacity="0.35" />
-            <stop offset="100%" stop-color="#4169E1" stop-opacity="0.3" />
-          </linearGradient>
-        </defs>
-        <circle cx="200" cy="200" r="188" stroke="currentColor" stroke-opacity="0.11" stroke-width="0.7" />
-        <circle cx="200" cy="200" r="152" stroke="url(#fateWheelGrad)" stroke-width="0.55" />
-        <circle cx="200" cy="200" r="118" stroke="currentColor" stroke-opacity="0.08" stroke-width="0.45" />
-        <circle cx="200" cy="200" r="56" stroke="currentColor" stroke-opacity="0.06" stroke-width="0.4" />
-        <g transform="translate(200,200)">
-          <g v-for="k in 8" :key="k" :transform="'rotate(' + (k - 1) * 45 + ')'">
-            <line
-              x1="0"
-              y1="0"
-              x2="0"
-              y2="-186"
-              stroke="currentColor"
-              stroke-opacity="0.065"
-              stroke-width="0.65"
-            />
-          </g>
-        </g>
-        <g transform="translate(200,200)" stroke="currentColor" stroke-opacity="0.05" stroke-width="0.5">
-          <polygon points="0,-72 62.35,36 -62.35,36" />
-          <polygon points="0,72 -62.35,-36 62.35,-36" />
-        </g>
-      </svg>
-    </div>
+  <div class="fate-page" :class="step === 'form' ? 'fate-page--form' : 'fate-page--inner'">
+    <!-- 深空背景 -->
+    <div class="fate-bg-deep" aria-hidden="true" />
+    <div class="fate-bg-stars" aria-hidden="true" />
 
-    <div class="relative z-10 mx-auto max-w-5xl">
-      <header
-        class="flex flex-col items-center gap-3 text-center"
-        :class="step === 'form' ? 'mb-4 sm:mb-5' : 'mb-10 sm:mb-12'"
-      >
-        <template v-if="step !== 'form'">
-          <p class="text-xs tracking-[0.28em] text-[#D4AF37]/55">FATE DUAL</p>
-          <h1 class="font-serif text-3xl font-semibold tracking-[0.12em] text-[#E2D9F3] sm:text-4xl">{{ t('pages.fateDual.heroTitle') }}</h1>
-          <p class="max-w-lg text-sm leading-relaxed text-[#8A7E9F]">
-            {{ t('pages.fateDual.tagline') }}
-          </p>
-        </template>
-        <RouterLink
-          v-if="step === 'form'"
-          to="/fate-dual/history"
-          class="self-end text-xs text-[#8A7E9F] transition-colors hover:text-[#D4AF37]/85"
-        >
-          {{ t('pages.fateDual.historyLinkForm') }}
-        </RouterLink>
-        <RouterLink
-          v-else
-          to="/fate-dual/history"
-          class="text-xs text-[#D4AF37]/65 transition-colors hover:text-[#D4AF37]"
-        >
-          {{ t('pages.fateDual.historyLinkInner') }}
-        </RouterLink>
+    <!-- ═══════ FORM 步骤：全屏三栏仪表盘 ═══════ -->
+    <div v-if="step === 'form'" class="fate-dashboard" :class="{ 'fate-dashboard--entered': altarPanelMounted }">
+      <!-- 顶部标题 -->
+      <header class="fate-hero-header">
+        <h1 class="fate-hero-title">命 运 轨 迹</h1>
+        <p class="fate-hero-sub">东方命理 · 西方星象 · AI 洞察</p>
       </header>
 
-      <!-- Step: 祭坛表单（重构：顶部英雄标题 + 三段式布局） -->
-      <div
-        v-if="step === 'form'"
-        class="fate-form-altar relative mx-auto max-w-[min(96vw,1180px)]"
-        :class="{ 'fate-altar-panel--entered': altarPanelMounted }"
-      >
-        <!-- 英雄标题区 -->
-        <div class="mb-8 text-center sm:mb-10">
-          <p class="mb-3 text-[10px] uppercase tracking-[0.45em] text-[#D4AF37]/60">{{ t('pages.fateDual.formKicker') }}</p>
-          <h1 class="font-serif text-3xl font-semibold tracking-[0.18em] text-[#E2D9F3] sm:text-4xl lg:text-5xl">
-            {{ t('pages.fateDual.formHeroTitle') }}
-          </h1>
-          <p class="mx-auto mt-3 max-w-md text-sm leading-relaxed text-[#8A7E9F]/80">
-            {{ t('pages.fateDual.tagline') }}
-          </p>
-          <div class="mx-auto mt-4 h-px w-32 bg-gradient-to-r from-transparent via-[#D4AF37]/40 to-transparent" />
-        </div>
+      <!-- 三栏主体 -->
+      <div class="fate-main-grid" :class="ctaInvoking ? 'opacity-30 pointer-events-none' : ''">
+        <!-- ─── 左栏：出生信息 ─── -->
+        <section class="fate-panel fate-panel-left" aria-labelledby="fate-birth-h">
+          <div class="fate-panel-header">
+            <h2 id="fate-birth-h" class="fate-panel-title">出生信息</h2>
+            <p class="fate-panel-sub">开启你的命运轨迹</p>
+          </div>
 
-        <div
-          class="transition-opacity duration-500 ease-out"
-          :class="ctaInvoking ? 'pointer-events-none opacity-[0.28]' : 'opacity-100'"
-        >
-          <!-- 三段式：命盘 | 问题 | 领域 -->
-          <div class="grid grid-cols-1 gap-6 lg:grid-cols-12 lg:gap-8">
+          <!-- 公历生日 -->
+          <div class="fate-field">
+            <label class="fate-label">公历生日</label>
+            <div class="fate-input-row">
+              <input v-model.number="birthYear" type="number" min="1900" max="2100" placeholder="1999" class="fate-input fate-input--year" aria-label="年" @change="commitBirthDate">
+              <span class="fate-unit">年</span>
+              <input v-model.number="birthMonth" type="number" min="1" max="12" placeholder="04" class="fate-input fate-input--md" aria-label="月" @change="commitBirthDate">
+              <span class="fate-unit">月</span>
+              <input v-model.number="birthDay" type="number" min="1" max="31" placeholder="21" class="fate-input fate-input--md" aria-label="日" @change="commitBirthDate">
+              <span class="fate-unit">日</span>
+              <svg class="fate-row-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18" stroke-linecap="round"/></svg>
+            </div>
+          </div>
 
-            <!-- 左：命盘时空（占 7 列） -->
-            <section class="fate-altar-glass min-h-0 min-w-0 rounded-2xl p-4 sm:p-5 lg:col-span-7" aria-labelledby="fate-anchor-title">
-              <div class="mb-3 flex items-center gap-2.5">
-                <svg class="h-5 w-5 text-[#D4AF37]/70" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true">
-                  <circle cx="12" cy="12" r="10" />
-                  <path d="M12 2v4M12 18v4M2 12h4M18 12h4" stroke-linecap="round" />
-                </svg>
-                <div>
-                  <h2 id="fate-anchor-title" class="font-serif text-base tracking-[0.2em] text-[#E2D9F3] sm:text-lg">
-                    {{ t('pages.fateDual.sectionAnchorTitle') }}
-                  </h2>
-                  <p class="text-[10px] leading-snug text-[#8A7E9F]">{{ t('pages.fateDual.sectionAnchorHint') }}</p>
-                </div>
-              </div>
-              <FateSacredDatetime v-model:birth-date="birthDate" v-model:birth-time="birthTime" @date-commit="onDateWheelCommit" />
-            </section>
+          <!-- 出生时间 -->
+          <div class="fate-field">
+            <label class="fate-label">出生时间</label>
+            <div class="fate-input-row">
+              <input :value="birthHour ?? ''" type="number" min="0" max="23" placeholder="12" class="fate-input fate-input--md" aria-label="时" @input="birthHour = Number(($event.target as HTMLInputElement).value)" @change="commitBirthTime">
+              <span class="fate-colon">:</span>
+              <input :value="birthMinute != null ? pad2(birthMinute) : ''" type="text" inputmode="numeric" maxlength="2" placeholder="00" class="fate-input fate-input--md" aria-label="分" @input="birthMinute = Number(($event.target as HTMLInputElement).value)" @change="commitBirthTime">
+              <svg class="fate-row-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            </div>
+          </div>
 
-            <!-- 右：问题 + 领域（占 5 列） -->
-            <aside class="flex min-h-0 min-w-0 flex-col gap-5 lg:col-span-5">
-              <!-- 问题卡片 -->
-              <div class="fate-altar-glass flex-1 rounded-2xl p-4 sm:p-5">
-                <div class="mb-3 flex items-center gap-2">
-                  <svg class="h-5 w-5 text-[#8A2BE2]/70" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true">
-                    <path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z" stroke-linecap="round" stroke-linejoin="round" />
-                  </svg>
-                  <label class="text-xs tracking-[0.2em] text-[#E2D9F3]/90">{{ t('pages.fateDual.questionLabel') }}</label>
-                </div>
-                <textarea
-                  v-model="question"
-                  rows="4"
-                  maxlength="300"
-                  :placeholder="t('pages.fateDual.questionPh')"
-                  class="fate-question-sink w-full resize-none rounded-xl border border-transparent bg-[rgba(255,255,255,0.02)] px-3 py-3 font-serif text-sm leading-relaxed text-[#E2D9F3] placeholder:text-[#8A7E9F]/55 focus:border-[#8A2BE2]/25 focus:outline-none focus:ring-0"
-                  style="min-height: 120px"
-                  :class="{ 'fate-question-sink--breath': questionFieldFocused || question.length > 0 }"
-                  @focus="questionFieldFocused = true"
-                  @blur="questionFieldFocused = false"
-                />
-              </div>
+          <!-- 出生地 -->
+          <div class="fate-field">
+            <label class="fate-label">出生地</label>
+            <div class="fate-input-row">
+              <input v-model="birthPlace" type="text" placeholder="中国·北京市" class="fate-input fate-input--text" aria-label="出生地">
+              <svg class="fate-row-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M12 21s7-6.3 7-11a7 7 0 10-14 0c0 4.7 7 11 7 11z" stroke-linejoin="round"/><circle cx="12" cy="10" r="2.5"/></svg>
+            </div>
+          </div>
 
-              <!-- 领域卡片 -->
-              <div class="fate-altar-glass rounded-2xl p-4 sm:p-5">
-                <div class="mb-3 flex items-center gap-2">
-                  <svg class="h-5 w-5 text-[#D4AF37]/70" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true">
-                    <path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z" stroke-linejoin="round" />
-                  </svg>
-                  <p class="text-xs tracking-[0.2em] text-[#E2D9F3]/90">{{ t('pages.fateDual.domainLabel') }}</p>
-                </div>
-                <div class="grid grid-cols-3 gap-2.5">
-                  <button
-                    v-for="c in categories"
-                    :key="c.value"
-                    type="button"
-                    class="fate-mystic-badge group relative flex cursor-pointer flex-col items-center gap-1.5 rounded-xl border px-2 py-4 transition-all duration-200"
-                    :class="[
-                      category === c.value
-                        ? `fate-mystic-badge--on fate-mystic-badge--${c.aura}`
-                        : 'fate-mystic-badge--off border-white/[0.06] bg-[#160B24]/40',
-                    ]"
-                    @click="category = c.value"
-                  >
-                <!-- 感情：双星 -->
-                <svg
-                  v-if="c.aura === 'love'"
-                  class="h-7 w-7 text-[#E2D9F3]/80"
-                  viewBox="0 0 48 48"
-                  fill="none"
-                  aria-hidden="true"
-                >
-                  <circle cx="16" cy="24" r="6" stroke="currentColor" stroke-width="1.2" />
-                  <circle cx="32" cy="24" r="6" stroke="currentColor" stroke-width="1.2" />
-                  <path d="M22 24c2 2 4 2 6 0" stroke="currentColor" stroke-width="1" stroke-linecap="round" />
-                </svg>
-                <!-- 事业：权杖阶梯 -->
-                <svg
-                  v-else-if="c.aura === 'career'"
-                  class="h-7 w-7 text-[#E2D9F3]/80"
-                  viewBox="0 0 48 48"
-                  fill="none"
-                  aria-hidden="true"
-                >
-                  <path d="M24 8v32M18 38h12" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" />
-                  <path d="M16 30h4v6h-4zM22 24h4v12h-4zM28 18h4v18h-4z" stroke="currentColor" stroke-width="1" />
-                </svg>
-                <!-- 财运：金币 -->
-                <svg
-                  v-else
-                  class="h-7 w-7 text-[#E2D9F3]/80"
-                  viewBox="0 0 48 48"
-                  fill="none"
-                  aria-hidden="true"
-                >
-                  <circle cx="24" cy="24" r="14" stroke="currentColor" stroke-width="1.2" />
-                  <circle cx="24" cy="24" r="9" stroke="currentColor" stroke-width="0.9" stroke-opacity="0.5" />
-                  <path
-                    d="M24 17v14M17 24h14"
-                    stroke="currentColor"
-                    stroke-width="0.9"
-                    stroke-linecap="round"
-                    opacity="0.6"
-                  />
-                </svg>
-                <span class="text-center font-serif text-[11px] leading-tight text-[#E2D9F3]">{{ c.label }}</span>
-                <span class="hidden text-[9px] text-[#8A7E9F]/80 sm:inline">{{ c.sub }}</span>
+          <!-- 性别 -->
+          <div class="fate-field">
+            <label class="fate-label">性别</label>
+            <div class="fate-gender-row">
+              <button type="button" class="fate-gender cursor-pointer" :class="gender === 'male' ? 'fate-gender--on' : ''" @click="gender = 'male'">
+                <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="10" cy="14" r="5"/><path d="M15 9l5-5M15 4h5v5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                男
               </button>
-                </div>
-              </div>
-            </aside>
+              <button type="button" class="fate-gender cursor-pointer" :class="gender === 'female' ? 'fate-gender--on' : ''" @click="gender = 'female'">
+                <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="12" cy="8" r="5"/><path d="M12 13v8M9 18h6" stroke-linecap="round"/></svg>
+                女
+              </button>
+            </div>
           </div>
-        </div>
 
-        <!-- 召唤 CTA（全宽贴底，独立于卡片之外） -->
-        <div class="relative mt-8 sm:mt-10">
-          <div class="mx-auto h-px w-full max-w-lg bg-gradient-to-r from-transparent via-[#D4AF37]/20 to-transparent" />
-          <div class="pt-6 sm:pt-8">
-          <div
-            class="pointer-events-none absolute inset-0 -z-10 rounded-[34px] opacity-0 blur-xl transition-opacity duration-500"
-            :class="ctaInvoking ? 'opacity-70 fate-cta-nova' : ''"
-            aria-hidden="true"
-          />
-          <button
-            type="button"
-            class="fate-cta-summon relative z-[1] flex h-16 w-full cursor-pointer items-center justify-center overflow-hidden rounded-[32px] text-base font-semibold tracking-wide text-[#E2D9F3] transition-all duration-200"
-            :class="ctaInvoking ? 'fate-cta-summon--pulse scale-[1.02]' : 'hover:brightness-110'"
-            :disabled="ctaInvoking"
-            @click="invokeCtaRitual"
-          >
-            <span class="fate-cta-summon-border motion-reduce:animate-none" aria-hidden="true" />
-            <span class="fate-cta-summon-inner relative flex flex-col items-center justify-center gap-0.5 px-4">
-              <span class="font-serif text-lg sm:text-[1.15rem]">
-                {{ ctaBusyLabel ? t('pages.fateDual.ctaBusy') : t('pages.fateDual.ctaIdle') }}
-              </span>
-            </span>
-          </button>
-          <p class="mx-auto mt-4 max-w-sm text-center text-[11px] leading-relaxed text-[#555]">
-            {{ t('pages.fateDual.ctaFootnote') }}
-          </p>
+          <!-- 真太阳时校正 -->
+          <div class="fate-field fate-toggle-field">
+            <span class="fate-label mb-0">真太阳时校正</span>
+            <button type="button" role="switch" :aria-checked="solarCorrection" class="fate-switch cursor-pointer" :class="solarCorrection ? 'fate-switch--on' : ''" @click="solarCorrection = !solarCorrection">
+              <span class="fate-switch-knob" />
+            </button>
           </div>
-        </div>
+
+          <!-- CTA -->
+          <button type="button" class="fate-cta cursor-pointer" :disabled="ctaInvoking" @click="invokeCtaRitual">
+            <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M12 3l2.09 5.26L20 9l-4 4 1 6-5-3-5 3 1-6-4-4 5.91-.74L12 3z" stroke-linejoin="round"/></svg>
+            {{ ctaBusyLabel ? '正在生成…' : '生成命盘' }}
+          </button>
+          <p class="fate-cta-hint">解读你的命运轨迹</p>
+        </section>
+
+        <!-- ─── 中栏：星盘 ─── -->
+        <section class="fate-center" aria-label="命运星盘">
+          <div class="fate-orrery-container">
+            <!-- 四柱徽章 -->
+            <div class="fate-pillar fate-pillar--tl">
+              <span class="fate-pillar-label">年柱</span>
+              <span class="fate-pillar-gz">{{ baziPillars ? baziPillars.year : '—' }}</span>
+            </div>
+            <div class="fate-pillar fate-pillar--tr">
+              <span class="fate-pillar-label">月柱</span>
+              <span class="fate-pillar-gz">{{ baziPillars ? baziPillars.month : '—' }}</span>
+            </div>
+            <div class="fate-pillar fate-pillar--bl">
+              <span class="fate-pillar-label">日柱</span>
+              <span class="fate-pillar-gz">{{ baziPillars ? baziPillars.day : '—' }}</span>
+            </div>
+            <div class="fate-pillar fate-pillar--br">
+              <span class="fate-pillar-label">时柱</span>
+              <span class="fate-pillar-gz">{{ baziPillars ? baziPillars.time : '—' }}</span>
+            </div>
+
+            <!-- 星盘本体 -->
+            <div class="fate-orrery" aria-hidden="true">
+              <!-- 静态星点 -->
+              <svg class="fate-stars-svg" viewBox="0 0 400 400" fill="none">
+                <g fill="#F5E9FF">
+                  <circle cx="24" cy="40" r="1.1" opacity="0.55"/><circle cx="62" cy="18" r="0.8" opacity="0.35"/>
+                  <circle cx="96" cy="54" r="1.3" opacity="0.6"/><circle cx="182" cy="44" r="1" opacity="0.5"/>
+                  <circle cx="228" cy="22" r="0.9" opacity="0.42"/><circle cx="274" cy="48" r="1.2" opacity="0.58"/>
+                  <circle cx="356" cy="58" r="1.1" opacity="0.5"/><circle cx="380" cy="96" r="0.8" opacity="0.36"/>
+                  <circle cx="18" cy="148" r="1.2" opacity="0.55"/><circle cx="30" cy="244" r="1" opacity="0.46"/>
+                  <circle cx="42" cy="346" r="1.2" opacity="0.54"/><circle cx="150" cy="384" r="1" opacity="0.48"/>
+                  <circle cx="262" cy="386" r="1.1" opacity="0.52"/><circle cx="362" cy="338" r="1.2" opacity="0.56"/>
+                  <circle cx="388" cy="180" r="1" opacity="0.48"/><circle cx="110" cy="282" r="1" opacity="0.46"/>
+                </g>
+              </svg>
+              <!-- 轨道网格 -->
+              <svg class="fate-grid-svg" viewBox="0 0 400 400" fill="none">
+                <g stroke="#C4A8FF" stroke-opacity="0.06" stroke-width="0.5">
+                  <g v-for="k in 12" :key="'s'+k" :transform="'rotate('+(k-1)*30+' 200 200)'"><line x1="200" y1="22" x2="200" y2="196"/></g>
+                </g>
+                <ellipse cx="200" cy="200" rx="48" ry="47" stroke="#A78BFA" stroke-opacity="0.18" stroke-width="0.8"/>
+                <ellipse cx="200" cy="200" rx="84" ry="81" stroke="#D4AF37" stroke-opacity="0.12" stroke-width="0.7"/>
+                <ellipse cx="200" cy="200" rx="120" ry="114" stroke="#A78BFA" stroke-opacity="0.14" stroke-width="0.6"/>
+                <ellipse cx="200" cy="200" rx="156" ry="146" stroke="#8A2BE2" stroke-opacity="0.1" stroke-width="0.6"/>
+                <ellipse cx="200" cy="200" rx="184" ry="170" stroke="#D4AF37" stroke-opacity="0.1" stroke-width="0.55"/>
+                <ellipse cx="200" cy="200" rx="198" ry="186" stroke="#A78BFA" stroke-opacity="0.08" stroke-width="0.5"/>
+                <g stroke="#D4AF37" stroke-opacity="0.08" stroke-width="0.5" fill="none">
+                  <polyline points="96,54 182,44 274,48 318,28"/><polyline points="30,244 74,300 150,300 206,372"/>
+                </g>
+              </svg>
+              <!-- 中心星球 + 环 -->
+              <div class="fate-core"/><div class="fate-ring"/>
+              <!-- 公转轨道 -->
+              <div class="fate-orb fate-orb--1"><span class="fate-dot fate-dot--gold"/></div>
+              <div class="fate-orb fate-orb--2"><span class="fate-dot fate-dot--violet"/><span class="fate-dot fate-dot--mini-gold"/></div>
+              <div class="fate-orb fate-orb--3"><span class="fate-dot fate-dot--blue"/></div>
+              <div class="fate-orb fate-orb--4"><span class="fate-dot fate-dot--pale"/><span class="fate-dot fate-dot--mini-blue"/></div>
+              <div class="fate-orb fate-orb--5"><span class="fate-dot fate-dot--amber"/></div>
+              <div class="fate-orb fate-orb--6"><span class="fate-dot fate-dot--violet-sm"/></div>
+            </div>
+          </div>
+          <!-- 命盘类型切换 -->
+          <div class="fate-chart-tabs">
+            <button type="button" class="fate-tab cursor-pointer" :class="chartType === 'bazi' ? 'fate-tab--on' : ''" @click="chartType = 'bazi'">八字命盘</button>
+            <button type="button" class="fate-tab cursor-not-allowed opacity-50" disabled>紫微斗数</button>
+          </div>
+        </section>
+
+        <!-- ─── 右栏：AI 命理助手 ─── -->
+        <aside class="fate-panel fate-panel-right" aria-labelledby="fate-ai-h">
+          <div class="fate-panel-header">
+            <h2 id="fate-ai-h" class="fate-panel-title">AI 命理助手</h2>
+            <p class="fate-panel-sub">此刻，你最想了解什么？</p>
+          </div>
+
+          <!-- 领域 2×3 -->
+          <div class="fate-domains">
+            <button v-for="opt in domainOptions" :key="opt.key" type="button" class="fate-domain cursor-pointer" :class="selectedDomain === opt.key ? 'fate-domain--on' : ''" @click="selectDomain(opt)">
+              <svg v-if="opt.key === 'love'" class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M12 20s-7-4.6-7-9.5A3.5 3.5 0 0112 7a3.5 3.5 0 017 3.5C19 15.4 12 20 12 20z" stroke-linejoin="round"/></svg>
+              <svg v-else-if="opt.key === 'career'" class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="3" y="7" width="18" height="13" rx="2"/><path d="M9 7V5a2 2 0 012-2h2a2 2 0 012 2v2" stroke-linecap="round"/></svg>
+              <svg v-else-if="opt.key === 'wealth'" class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="12" cy="12" r="8"/><path d="M12 8v8M9.5 10.5h3.2a1.5 1.5 0 010 3H10m0 0h3.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+              <svg v-else-if="opt.key === 'health'" class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M3 12h4l2-5 3 10 2-5h4" stroke-linecap="round" stroke-linejoin="round"/></svg>
+              <svg v-else-if="opt.key === 'relationship'" class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="9" cy="8" r="3"/><path d="M3 20a6 6 0 0112 0M16 7a3 3 0 010 6M18 20a6 6 0 00-3-5.2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+              <svg v-else class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M12 4v6m0 0l-5 10M12 10l5 10" stroke-linecap="round" stroke-linejoin="round"/><circle cx="12" cy="4" r="1.6"/></svg>
+              <span class="fate-domain-name">{{ opt.label }}</span>
+              <span class="fate-domain-desc">{{ opt.sub }}</span>
+            </button>
+          </div>
+
+          <!-- 向宇宙提问 -->
+          <div class="fate-ask">
+            <p class="fate-ask-title">向宇宙提问</p>
+            <p class="fate-ask-hint">输入你想了解的问题，AI 方位解读命运的指引</p>
+            <div class="fate-ask-box">
+              <textarea v-model="question" rows="3" maxlength="200" placeholder="例如：我的正缘什么时候出现？&#10;我的事业适合往哪个方向发展？" class="fate-ask-input" @focus="questionFieldFocused = true" @blur="questionFieldFocused = false"/>
+              <div class="fate-ask-bar">
+                <span class="fate-ask-count">{{ question.length }}/200</span>
+                <button type="button" class="fate-ask-send cursor-pointer" :disabled="ctaInvoking" aria-label="发送" @click="invokeCtaRitual">
+                  <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M22 2L11 13M22 2l-7 20-4-9-9-4 20-7z" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                </button>
+              </div>
+            </div>
+          </div>
+        </aside>
       </div>
 
-      <!-- Step: 抽三张（过去 / 现在 / 未来） -->
-      <div
-        v-else-if="step === 'pick'"
-        class="max-w-4xl mx-auto"
-      >
+      <!-- 底部：探索命运领域 -->
+      <div class="fate-explore">
+        <div class="fate-explore-head">
+          <h3 class="fate-explore-title">探索命运领域</h3>
+          <p class="fate-explore-sub">点击领域，查看你的命运轨迹</p>
+        </div>
+        <div class="fate-explore-strip">
+          <button v-for="card in exploreCards" :key="card.key" type="button" class="fate-explore-card cursor-pointer" @click="onExploreCard">
+            <span class="fate-explore-icon" :class="'fate-explore-icon--' + card.key">
+              <svg v-if="card.key === 'love-merge'" class="w-7 h-7" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M12 20s-7-4.6-7-9.5A3.5 3.5 0 0112 7a3.5 3.5 0 017 3.5C19 15.4 12 20 12 20z" stroke-linejoin="round"/></svg>
+              <svg v-else-if="card.key === 'year-fortune'" class="w-7 h-7" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M3 17l5-5 4 4 8-8" stroke-linecap="round" stroke-linejoin="round"/><path d="M16 8h4v4" stroke-linecap="round" stroke-linejoin="round"/></svg>
+              <svg v-else-if="card.key === 'career-pattern'" class="w-7 h-7" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M4 20h16M7 20V9M12 20V4M17 20v-7" stroke-linecap="round" stroke-linejoin="round"/></svg>
+              <svg v-else-if="card.key === 'wealth-code'" class="w-7 h-7" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4"><circle cx="12" cy="12" r="8"/><path d="M12 8v8M9.5 10.5h3.2a1.5 1.5 0 010 3H10m0 0h3.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+              <svg v-else-if="card.key === 'health-guide'" class="w-7 h-7" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M3 12h4l2-5 3 10 2-5h4" stroke-linecap="round" stroke-linejoin="round"/></svg>
+              <svg v-else class="w-7 h-7" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M6 3h9l5 5v13a1 1 0 01-1 1H6a1 1 0 01-1-1V4a1 1 0 011-1z" stroke-linejoin="round"/><path d="M14 3v5h5M9 13h6M9 17h4" stroke-linecap="round"/></svg>
+            </span>
+            <span class="fate-explore-name">{{ card.title }}</span>
+            <span class="fate-explore-desc">{{ card.sub }}</span>
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- ═══════ PICK 步骤 ═══════ -->
+    <div v-else-if="step === 'pick'" class="fate-inner-wrap">
+      <header class="text-center mb-8">
+        <p class="text-xs tracking-[0.28em] text-[#D4AF37]/55">FATE DUAL</p>
+        <h1 class="font-serif text-3xl font-semibold tracking-[0.12em] text-[#E2D9F3] mt-2">{{ t('pages.fateDual.heroTitle') }}</h1>
+      </header>
+      <div class="max-w-4xl mx-auto">
         <div class="text-center mb-8">
           <h2 class="text-lg font-serif text-gold-200 mb-2">{{ t('pages.fateDual.pickTitle') }}</h2>
-          <p class="text-gray-500 text-sm">
-            {{ t('pages.fateDual.pickHint', { n: 3, spread: t('pages.fateDual.pickSpread') }) }}
-          </p>
+          <p class="text-gray-500 text-sm">{{ t('pages.fateDual.pickHint', { n: 3, spread: t('pages.fateDual.pickSpread') }) }}</p>
         </div>
-
-        <div v-if="TOTAL_CARDS < 3" class="text-center text-amber-400/90 text-sm py-12">
-          {{ t('pages.fateDual.deckLoading') }}
-        </div>
+        <div v-if="TOTAL_CARDS < 3" class="text-center text-amber-400/90 text-sm py-12">{{ t('pages.fateDual.deckLoading') }}</div>
         <template v-else>
           <div class="relative mb-10">
-            <button type="button" class="strip-nav-btn left-0" @click="scrollStrip('left')">
-              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M15 18l-6-6 6-6" /></svg>
-            </button>
-            <button type="button" class="strip-nav-btn right-0" @click="scrollStrip('right')">
-              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M9 18l6-6-6-6" /></svg>
-            </button>
-            <div ref="stripRef" class="strip-scroll overflow-x-auto py-6 px-8 min-[400px]:py-8 min-[400px]:px-12 sm:px-14">
+            <button type="button" class="strip-nav-btn left-0" @click="scrollStrip('left')"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M15 18l-6-6 6-6"/></svg></button>
+            <button type="button" class="strip-nav-btn right-0" @click="scrollStrip('right')"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M9 18l6-6-6-6"/></svg></button>
+            <div ref="stripRef" class="strip-scroll overflow-x-auto py-6 px-8 sm:py-8 sm:px-14">
               <div class="flex items-end">
-                <div
-                  v-for="cardIndex in TOTAL_CARDS"
-                  :key="cardIndex"
-                  class="card-slot flex-shrink-0"
-                  :style="{ marginLeft: cardIndex > 1 ? '-16px' : '0', zIndex: cardIndex }"
-                  @click="selectPickCard(cardIndex - 1)"
-                >
-                  <div
-                    class="card-back"
-                    :class="[
-                      selectedIndices.includes(cardIndex - 1) ? 'card-selected' : allThreePicked ? 'card-disabled' : 'card-idle',
-                    ]"
-                  >
+                <div v-for="cardIndex in TOTAL_CARDS" :key="cardIndex" class="card-slot flex-shrink-0" :style="{ marginLeft: cardIndex > 1 ? '-16px' : '0', zIndex: cardIndex }" @click="selectPickCard(cardIndex - 1)">
+                  <div class="card-back" :class="[selectedIndices.includes(cardIndex-1)?'card-selected':allThreePicked?'card-disabled':'card-idle']">
                     <img :src="cardBackUrl" alt="" class="w-full h-full object-cover rounded-[8px]">
                   </div>
                 </div>
               </div>
             </div>
-            <p class="text-center text-gray-600 text-xs mt-2">{{ t('pages.fateDual.stripSwipe') }}</p>
           </div>
-
           <div class="mb-10">
             <p class="text-center text-gray-600 text-sm mb-5">{{ t('pages.fateDual.positionsCaption') }}</p>
             <div class="flex flex-wrap justify-center gap-5">
-              <div
-                v-for="(position, posIndex) in spreadPositions"
-                :key="posIndex"
-                class="flex flex-col items-center"
-              >
-                <div
-                  class="position-slot"
-                  :class="selectedIndices.length > posIndex ? 'position-filled' : 'position-empty'"
-                >
+              <div v-for="(position, posIndex) in spreadPositions" :key="posIndex" class="flex flex-col items-center">
+                <div class="position-slot" :class="selectedIndices.length > posIndex ? 'position-filled' : 'position-empty'">
                   <template v-if="selectedIndices.length > posIndex && selectedCards[posIndex]">
                     <div class="w-full h-full rounded-lg overflow-hidden">
-                      <img
-                        :src="getCardImageUrl(selectedCards[posIndex].card.nameEn, selectedCards[posIndex].card)"
-                        :alt="selectedCards[posIndex].card.name"
-                        class="w-full h-full object-cover"
-                        :class="selectedCards[posIndex].isReversed ? 'rotate-180' : ''"
-                      >
+                      <img :src="getCardImageUrl(selectedCards[posIndex].card.nameEn, selectedCards[posIndex].card)" :alt="selectedCards[posIndex].card.name" class="w-full h-full object-cover" :class="selectedCards[posIndex].isReversed ? 'rotate-180' : ''">
                     </div>
                   </template>
-                  <template v-else>
-                    <span class="text-gray-600 text-2xl font-light font-serif">{{ posIndex + 1 }}</span>
-                  </template>
+                  <template v-else><span class="text-gray-600 text-2xl font-light font-serif">{{ posIndex + 1 }}</span></template>
                 </div>
                 <p class="text-gray-500 text-xs mt-2.5 text-center max-w-[100px]">{{ position }}</p>
-                <p
-                  v-if="selectedIndices.length > posIndex && selectedCards[posIndex]"
-                  class="text-gold-300 text-xs mt-1 text-center max-w-[100px] font-medium"
-                >
-                  {{ selectedCards[posIndex].card.name }}
-                  <span class="text-gray-600">{{ selectedCards[posIndex].isReversed ? t('pages.fateDual.reversed') : t('pages.fateDual.upright') }}</span>
-                </p>
               </div>
             </div>
           </div>
-
           <div class="flex flex-col sm:flex-row gap-3 justify-center items-center pb-4">
-            <button
-              type="button"
-              class="cursor-pointer px-6 py-2.5 rounded-full bg-white/4 border border-gold-500/15 text-gray-400 text-sm hover:bg-gold-500/5 transition-colors duration-200"
-              @click="step = 'form'"
-            >
-              {{ t('pages.fateDual.backEditBirth') }}
-            </button>
-            <button
-              v-if="selectedIndices.length > 0 && !allThreePicked"
-              type="button"
-              class="cursor-pointer px-6 py-2.5 rounded-full bg-white/4 border border-gold-500/15 text-gray-400 text-sm hover:bg-gold-500/5 transition-colors duration-200"
-              @click="resetPickSelection"
-            >
-              {{ t('pages.fateDual.resetPickOrder') }}
-            </button>
-            <button
-              v-if="allThreePicked"
-              type="button"
-              class="cursor-pointer px-10 py-4 rounded-2xl cta-button text-white font-medium text-lg transition-all duration-200 hover:shadow-[0_0_32px_rgba(138,43,226,0.3)]"
-              @click="runAnalyzeWithPickedCards"
-            >
-              {{ t('pages.fateDual.runAnalyze') }}
-            </button>
+            <button type="button" class="cursor-pointer px-6 py-2.5 rounded-full bg-white/4 border border-gold-500/15 text-gray-400 text-sm hover:bg-gold-500/5 transition-colors" @click="step = 'form'">{{ t('pages.fateDual.backEditBirth') }}</button>
+            <button v-if="selectedIndices.length > 0 && !allThreePicked" type="button" class="cursor-pointer px-6 py-2.5 rounded-full bg-white/4 border border-gold-500/15 text-gray-400 text-sm hover:bg-gold-500/5 transition-colors" @click="resetPickSelection">{{ t('pages.fateDual.resetPickOrder') }}</button>
+            <button v-if="allThreePicked" type="button" class="cursor-pointer px-10 py-4 rounded-2xl cta-button text-white font-medium text-lg" @click="runAnalyzeWithPickedCards">{{ t('pages.fateDual.runAnalyze') }}</button>
           </div>
         </template>
       </div>
+    </div>
 
-      <!-- Analyzing：紫色牌灵环绕 + 中心金阴阳鱼 -->
-      <FateDualAnalyzingRitual v-else-if="step === 'analyzing'" />
+    <!-- Analyzing -->
+    <FateDualAnalyzingRitual v-else-if="step === 'analyzing'" />
 
-      <!-- Dual + conflict + branches -->
-      <div v-else-if="step === 'dual' && analysis" class="space-y-10">
-        <!-- 阅盘提要：领域、所问、命盘锚点 + 阅读指引 -->
-        <div
-          class="relative overflow-hidden rounded-2xl border border-gold-500/20 bg-gradient-to-br from-[#1a1528]/95 via-[#0a0812]/90 to-violet-950/25 px-6 py-8 sm:px-10 sm:py-10 fate-dual-hero"
-        >
-          <div class="pointer-events-none absolute -right-8 -top-12 h-56 w-56 rounded-full bg-violet-600/15 blur-3xl" />
-          <div class="pointer-events-none absolute -bottom-16 -left-10 h-52 w-52 rounded-full bg-amber-600/12 blur-3xl" />
-          <div class="relative flex flex-col gap-8 lg:flex-row lg:items-start lg:justify-between">
-            <div class="min-w-0 flex-1">
-              <p class="mb-3 text-[10px] uppercase tracking-[0.28em] text-gold-500/75">{{ t('pages.fateDual.briefTitle') }}</p>
-              <span
-                class="mb-4 inline-flex rounded-full border border-gold-500/25 bg-gold-500/10 px-3 py-1 text-xs text-gold-200/95"
-              >{{ t('pages.fateDual.briefDomainBadge', { label: categoryLabel }) }}</span>
-              <blockquote
-                class="fate-dual-question border-l-2 border-gold-500/45 pl-4 font-serif text-base leading-relaxed text-gray-100/95 sm:pl-5 sm:text-lg"
-              >
-                「{{ question.trim() }}」
-              </blockquote>
-            </div>
-            <div class="shrink-0 space-y-2 border-t border-white/5 pt-6 text-xs text-gray-500 lg:border-t-0 lg:border-l lg:pl-8 lg:pt-0">
-              <p class="font-serif tracking-[0.2em] text-amber-200/55">{{ t('pages.fateDual.anchorLabel') }}</p>
-              <p class="leading-relaxed text-gray-400">{{ birthDateOracle }}</p>
-              <p class="leading-relaxed text-gray-500">{{ birthTimeOracle }}</p>
+    <!-- Dual result -->
+    <div v-else-if="step === 'dual' && analysis" class="fate-inner-wrap space-y-10">
+      <div class="grid grid-cols-1 gap-6 lg:grid-cols-2">
+        <section class="relative overflow-hidden rounded-2xl border border-amber-600/25 bg-gradient-to-br from-amber-950/45 to-black/45 p-6">
+          <h3 class="font-serif text-lg text-amber-200/90 mb-4">{{ t('pages.fateDual.eastTitle') }}</h3>
+          <div v-if="analysis.bazi.fiveElements" class="mb-4 grid grid-cols-5 gap-2">
+            <div v-for="(v, k) in analysis.bazi.fiveElements" :key="k" :class="elementBlockClass(String(k))">
+              <p class="text-xs font-medium text-amber-100/90">{{ k }}</p><p class="mt-1 text-[11px] text-gray-400">{{ v }}</p>
             </div>
           </div>
-          <p class="relative mt-8 max-w-3xl text-xs leading-relaxed text-gray-500">
-            {{ t('pages.fateDual.readGuide') }}
-          </p>
-        </div>
-
-        <div class="grid grid-cols-1 gap-6 lg:grid-cols-2">
-          <!-- 东方 -->
-          <section
-            class="relative overflow-hidden rounded-2xl border border-amber-600/25 bg-gradient-to-br from-amber-950/45 to-black/45 p-6 sm:p-7"
-          >
-            <div class="pointer-events-none absolute right-0 top-0 h-32 w-32 rounded-full bg-amber-400/5 blur-2xl" />
-            <div class="relative">
-              <div class="mb-1 flex items-center gap-2.5">
-                <svg class="h-6 w-6 text-amber-400/80" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true">
-                  <path d="M3 7h18M3 12h18M3 17h18" stroke-linecap="round" />
-                </svg>
-                <h3 class="font-serif text-lg text-amber-200/90">{{ t('pages.fateDual.eastTitle') }}</h3>
-              </div>
-              <p class="mb-5 text-xs text-amber-500/55">{{ t('pages.fateDual.eastDisclaimer') }}</p>
-              <div v-if="analysis.bazi.luckTrend" class="mb-3 flex items-center gap-2 text-sm text-amber-200/85">
-                <span class="rounded-md bg-amber-500/15 px-2 py-0.5 text-[10px] tracking-wider text-amber-400/90">{{ t('pages.fateDual.qiLabel') }}</span>
-                <span class="font-medium">{{ analysis.bazi.luckTrend }}</span>
-              </div>
-              <p class="mb-2 text-[10px] uppercase tracking-widest text-amber-600/50">{{ t('pages.fateDual.kwHeading') }}</p>
-              <div class="mb-5 flex flex-wrap gap-2">
-                <span
-                  v-for="(kw, i) in analysis.bazi.keywords"
-                  :key="i"
-                  class="rounded-full border border-amber-500/20 bg-amber-500/10 px-2.5 py-0.5 text-xs text-amber-200/90"
-                >{{ kw }}</span>
-              </div>
-              <template v-if="analysis.bazi.fiveElements && Object.keys(analysis.bazi.fiveElements).length">
-                <p class="mb-2 text-[10px] uppercase tracking-widest text-amber-600/50">{{ t('pages.fateDual.fiveHeading') }}</p>
-                <div class="mb-5 grid grid-cols-2 gap-2 sm:grid-cols-5">
-                  <div
-                    v-for="(v, k) in analysis.bazi.fiveElements"
-                    :key="k"
-                    :class="elementBlockClass(String(k))"
-                  >
-                    <p class="text-xs font-medium text-amber-100/90">{{ k }}</p>
-                    <p class="mt-1 text-[11px] leading-snug text-gray-400">{{ v }}</p>
-                  </div>
-                </div>
-              </template>
-              <div class="space-y-3 border-t border-amber-500/10 pt-5">
-                <p
-                  v-for="(para, pi) in splitDisplayParagraphs(analysis.bazi.analysis)"
-                  :key="pi"
-                  class="text-sm leading-[1.75] text-gray-300"
-                >
-                  {{ para }}
-                </p>
-              </div>
-            </div>
-          </section>
-
-          <!-- 西方 -->
-          <section
-            class="relative overflow-hidden rounded-2xl border border-violet-500/25 bg-gradient-to-br from-violet-950/40 to-black/45 p-6 sm:p-7"
-          >
-            <div class="pointer-events-none absolute -left-8 bottom-0 h-40 w-40 rounded-full bg-violet-500/10 blur-3xl" />
-            <div class="relative">
-              <div class="mb-5 flex items-center gap-2.5">
-                <svg class="h-6 w-6 text-violet-400/80" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true">
-                  <path d="M12 2l2.09 6.26L20.18 9l-5 4.09L16.18 20 12 16.77 7.82 20l1-6.91-5-4.09 6.09-.74L12 2z" stroke-linejoin="round" stroke-linecap="round" />
-                </svg>
-                <h3 class="font-serif text-lg text-violet-200/90">{{ t('pages.fateDual.westTitle') }}</h3>
-              </div>
-              <div class="relative mb-6 px-2">
-                <div
-                  class="pointer-events-none absolute left-[12%] right-[12%] top-[42%] hidden h-px bg-gradient-to-r from-transparent via-violet-500/25 to-transparent sm:block"
-                  aria-hidden="true"
-                />
-                <div class="relative flex justify-center gap-3 sm:gap-5">
-                  <div
-                    v-for="(c, idx) in analysis.tarot.cards"
-                    :key="idx"
-                    class="relative flex w-[28%] max-w-[118px] flex-col items-center"
-                  >
-                    <span
-                      class="mb-2 rounded-full border border-violet-500/20 bg-violet-500/10 px-2 py-0.5 text-[10px] text-violet-300/80"
-                    >{{ c.position }}</span>
-                    <div
-                      class="aspect-[2/3] w-full overflow-hidden rounded-lg border border-violet-500/25 shadow-lg shadow-violet-950/30"
-                      :class="c.reversed ? 'ring-1 ring-violet-400/35' : ''"
-                    >
-                      <img
-                        :src="getCardImageUrl(c.nameEn)"
-                        :alt="c.name"
-                        class="h-full w-full object-cover"
-                        :class="c.reversed ? 'rotate-180' : ''"
-                      >
-                    </div>
-                    <p class="mt-2 text-center text-xs font-medium text-violet-200/90">{{ c.name }}</p>
-                    <p class="text-[10px] text-gray-500">{{ c.reversed ? t('pages.fateDual.reversed') : t('pages.fateDual.upright') }}</p>
-                  </div>
-                </div>
-              </div>
-              <div class="space-y-3 border-t border-violet-500/10 pt-5">
-                <p
-                  v-for="(para, pi) in splitDisplayParagraphs(analysis.tarot.analysis)"
-                  :key="pi"
-                  class="text-sm leading-[1.75] text-gray-300"
-                >
-                  {{ para }}
-                </p>
-              </div>
-            </div>
-          </section>
-        </div>
-
-        <!-- 天平 / 冲突 -->
-        <section
-          class="relative overflow-hidden rounded-2xl border border-gold-500/25 bg-gradient-to-b from-gold-500/[0.07] via-transparent to-transparent p-8 text-center sm:p-10"
-        >
-          <div
-            class="pointer-events-none absolute inset-0 opacity-40 bg-[radial-gradient(ellipse_80%_60%_at_50%_-20%,rgba(212,175,110,0.22),transparent_55%)]"
-          />
-          <div class="relative mx-auto max-w-3xl">
-            <div class="mb-2 flex flex-col items-center gap-2 sm:flex-row sm:justify-center sm:gap-3">
-              <svg class="h-7 w-7 text-gold-400/80" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true">
-                <path d="M12 3v18M3 9l3-6h12l3 6M6 9a3 3 0 006 0M12 9a3 3 0 006 0" stroke-linecap="round" stroke-linejoin="round" />
-              </svg>
-              <p class="text-xs tracking-[0.35em] text-gold-500/80">{{ t('pages.fateDual.scaleTitle') }}</p>
-            </div>
-            <p class="mb-1 font-serif text-xl text-gold-200 sm:text-2xl">{{ analysis.conflict.type }}</p>
-            <p v-if="analysis.conflict.level" class="mb-6 text-xs text-gray-500">
-              {{ t('pages.fateDual.tensionPrefix') }}<span class="text-gold-500/70">{{ analysis.conflict.level }}</span>
-            </p>
-            <div
-              class="rounded-xl border border-gold-500/15 bg-black/25 px-5 py-6 text-left sm:px-8 sm:text-center"
-            >
-              <p class="mb-2 text-[10px] uppercase tracking-widest text-gold-600/50">{{ t('pages.fateDual.mergeSummary') }}</p>
-              <p
-                v-for="(para, pi) in splitDisplayParagraphs(analysis.conflict.summary)"
-                :key="pi"
-                class="text-base leading-relaxed text-gray-200 sm:text-lg"
-                :class="pi > 0 ? 'mt-3' : ''"
-              >
-                {{ para }}
-              </p>
-            </div>
-          </div>
+          <p v-for="(para, pi) in splitDisplayParagraphs(analysis.bazi.analysis)" :key="pi" class="text-sm leading-[1.75] text-gray-300 mb-2">{{ para }}</p>
         </section>
-
-        <!-- 分支 -->
-        <section>
-          <h3 class="mb-2 text-center font-serif text-lg text-gold-200/85">{{ t('pages.fateDual.forkTitle') }}</h3>
-          <p class="mx-auto mb-8 max-w-xl text-center text-xs leading-relaxed text-gray-500">
-            {{ t('pages.fateDual.forkIntro') }}
-          </p>
-          <div class="grid grid-cols-1 gap-5 md:grid-cols-2">
-            <div
-              class="fate-branch-card rounded-2xl border border-slate-500/30 bg-gradient-to-b from-slate-900/50 to-slate-950/60 p-6"
-            >
-              <div class="mb-3 h-1 w-12 rounded-full bg-slate-400/40" />
-              <p class="mb-1 font-medium text-slate-200">{{ t('pages.fateDual.branchATitle') }}</p>
-              <p class="mb-4 text-[11px] leading-relaxed text-slate-500">{{ t('pages.fateDual.branchASub') }}</p>
-              <div class="space-y-2.5">
-                <p
-                  v-for="(para, pi) in splitDisplayParagraphs(analysis.branches.stable)"
-                  :key="pi"
-                  class="text-sm leading-relaxed text-gray-400"
-                >
-                  {{ para }}
-                </p>
-              </div>
-            </div>
-            <div
-              class="fate-branch-card rounded-2xl border border-fuchsia-500/30 bg-gradient-to-b from-fuchsia-950/35 to-black/50 p-6"
-            >
-              <div class="mb-3 h-1 w-12 rounded-full bg-fuchsia-400/50" />
-              <p class="mb-1 font-medium text-fuchsia-100/95">{{ t('pages.fateDual.branchBTitle') }}</p>
-              <p class="mb-4 text-[11px] leading-relaxed text-fuchsia-300/40">{{ t('pages.fateDual.branchBSub') }}</p>
-              <div class="space-y-2.5">
-                <p
-                  v-for="(para, pi) in splitDisplayParagraphs(analysis.branches.adventure)"
-                  :key="pi"
-                  class="text-sm leading-relaxed text-gray-400"
-                >
-                  {{ para }}
-                </p>
-              </div>
+        <section class="relative overflow-hidden rounded-2xl border border-violet-500/25 bg-gradient-to-br from-violet-950/40 to-black/45 p-6">
+          <h3 class="font-serif text-lg text-violet-200/90 mb-4">{{ t('pages.fateDual.westTitle') }}</h3>
+          <div class="flex justify-center gap-4 mb-5">
+            <div v-for="(c, idx) in analysis.tarot.cards" :key="idx" class="flex flex-col items-center w-[28%] max-w-[118px]">
+              <span class="mb-2 rounded-full border border-violet-500/20 bg-violet-500/10 px-2 py-0.5 text-[10px] text-violet-300/80">{{ c.position }}</span>
+              <div class="aspect-[2/3] w-full overflow-hidden rounded-lg border border-violet-500/25"><img :src="getCardImageUrl(c.nameEn)" :alt="c.name" class="h-full w-full object-cover" :class="c.reversed ? 'rotate-180' : ''"></div>
+              <p class="mt-2 text-xs text-violet-200/90">{{ c.name }}</p>
             </div>
           </div>
+          <p v-for="(para, pi) in splitDisplayParagraphs(analysis.tarot.analysis)" :key="pi" class="text-sm leading-[1.75] text-gray-300 mb-2">{{ para }}</p>
         </section>
-
-        <div class="space-y-4 pt-2 text-center">
-          <p class="text-sm text-gray-400">{{ t('pages.fateDual.choosePrompt') }}</p>
-          <p class="mx-auto max-w-md text-xs text-gray-600">{{ t('pages.fateDual.chooseHint') }}</p>
-          <div class="mx-auto flex max-w-xl flex-col gap-4 sm:flex-row">
-            <button
-              type="button"
-              class="flex-1 cursor-pointer rounded-2xl border border-slate-400/35 bg-slate-800/55 py-4 font-medium text-slate-100 transition-all duration-200 hover:bg-slate-700/55 hover:border-slate-300/45 hover:shadow-[0_0_24px_rgba(148,163,184,0.15)]"
-              @click="onChoose('stable')"
-            >
-              {{ t('pages.fateDualHistory.choiceStable') }}
-            </button>
-            <button
-              type="button"
-              class="flex-1 cursor-pointer rounded-2xl border border-fuchsia-500/45 bg-fuchsia-900/35 py-4 font-medium text-fuchsia-100 transition-all duration-200 hover:bg-fuchsia-800/45 hover:border-fuchsia-400/55 hover:shadow-[0_0_24px_rgba(192,132,252,0.2)]"
-              @click="onChoose('adventure')"
-            >
-              {{ t('pages.fateDualHistory.choiceAdventure') }}
-            </button>
-          </div>
+      </div>
+      <section class="rounded-2xl border border-gold-500/25 bg-gradient-to-b from-gold-500/[0.07] to-transparent p-8 text-center">
+        <p class="font-serif text-xl text-gold-200">{{ analysis.conflict.type }}</p>
+        <p class="mt-4 text-base text-gray-200">{{ analysis.conflict.summary }}</p>
+      </section>
+      <div class="grid grid-cols-1 gap-5 md:grid-cols-2">
+        <div class="rounded-2xl border border-slate-500/30 bg-slate-900/50 p-6">
+          <p class="font-medium text-slate-200 mb-3">{{ t('pages.fateDual.branchATitle') }}</p>
+          <p v-for="(para, pi) in splitDisplayParagraphs(analysis.branches.stable)" :key="pi" class="text-sm text-gray-400 mb-2">{{ para }}</p>
+        </div>
+        <div class="rounded-2xl border border-fuchsia-500/30 bg-fuchsia-950/35 p-6">
+          <p class="font-medium text-fuchsia-100/95 mb-3">{{ t('pages.fateDual.branchBTitle') }}</p>
+          <p v-for="(para, pi) in splitDisplayParagraphs(analysis.branches.adventure)" :key="pi" class="text-sm text-gray-400 mb-2">{{ para }}</p>
         </div>
       </div>
-
-      <!-- Submitting choice -->
-      <div v-else-if="step === 'submitting'" class="text-center py-24">
-        <div class="inline-block w-10 h-10 border-2 border-fuchsia-500/30 border-t-fuchsia-400 rounded-full animate-spin mb-4" />
-        <p class="text-gray-400 text-sm">{{ t('pages.fateDual.inscribing') }}</p>
+      <div class="flex flex-col sm:flex-row gap-4 justify-center pt-4">
+        <button type="button" class="flex-1 max-w-xs cursor-pointer rounded-2xl border border-slate-400/35 bg-slate-800/55 py-4 font-medium text-slate-100 hover:bg-slate-700/55 transition-colors" @click="onChoose('stable')">{{ t('pages.fateDualHistory.choiceStable') }}</button>
+        <button type="button" class="flex-1 max-w-xs cursor-pointer rounded-2xl border border-fuchsia-500/45 bg-fuchsia-900/35 py-4 font-medium text-fuchsia-100 hover:bg-fuchsia-800/45 transition-colors" @click="onChoose('adventure')">{{ t('pages.fateDualHistory.choiceAdventure') }}</button>
       </div>
+    </div>
 
-      <!-- Final：分栏 + 侧栏提要，缓解「只有一段字」的单调感 -->
-      <div v-else-if="step === 'done'" class="mx-auto max-w-4xl space-y-10">
-        <div class="text-center">
-          <div class="mx-auto mb-4 h-px max-w-xs bg-gradient-to-r from-transparent via-gold-500/35 to-transparent" />
-          <p class="mb-3 text-[10px] uppercase tracking-[0.35em] text-gold-500/65">{{ t('pages.fateDual.sealedChoice') }}</p>
-          <span
-            class="inline-flex items-center gap-2 rounded-full border px-4 py-1.5 text-sm font-medium backdrop-blur-sm"
-            :class="
-              choiceMade === 'stable'
-                ? 'border-slate-400/35 bg-slate-500/15 text-slate-100'
-                : 'border-fuchsia-500/35 bg-fuchsia-500/10 text-fuchsia-100'
-            "
-          >
-            {{ choiceMade === 'stable' ? t('pages.fateDual.pathStable') : t('pages.fateDual.pathAdventure') }}
-          </span>
-          <h3 class="mt-6 font-serif text-2xl text-gold-50 sm:text-3xl">{{ t('pages.fateDual.finalTitle') }}</h3>
-          <p class="mx-auto mt-2 max-w-lg text-xs leading-relaxed text-gray-500">
-            {{ t('pages.fateDual.finalSub') }}
-          </p>
-        </div>
+    <!-- Submitting -->
+    <div v-else-if="step === 'submitting'" class="fate-inner-wrap text-center py-24">
+      <div class="inline-block w-10 h-10 border-2 border-fuchsia-500/30 border-t-fuchsia-400 rounded-full animate-spin mb-4"/>
+      <p class="text-gray-400 text-sm">{{ t('pages.fateDual.inscribing') }}</p>
+    </div>
 
-        <div class="grid grid-cols-1 gap-8 lg:grid-cols-12 lg:gap-10 lg:items-start">
-          <aside
-            class="order-2 space-y-4 rounded-2xl border border-white/8 bg-white/[0.02] p-5 lg:order-1 lg:col-span-4 lg:sticky lg:top-[calc(6rem+env(safe-area-inset-top,0px))]"
-          >
-            <p class="text-[10px] uppercase tracking-widest text-gold-600/55">{{ t('pages.fateDual.memoTitle') }}</p>
-            <div class="rounded-xl border border-gold-500/15 bg-gold-500/[0.06] px-3 py-2 text-xs text-gold-200/90">
-              {{ categoryLabel }}
-            </div>
-            <blockquote class="border-l-2 border-violet-500/30 pl-3 text-xs leading-relaxed text-gray-500">
-              {{ question.trim() }}
-            </blockquote>
-            <div v-if="analysis" class="space-y-3 border-t border-white/6 pt-4 text-xs text-gray-500">
-              <p class="text-[10px] uppercase tracking-wider text-gray-600">{{ t('pages.fateDual.recapTitle') }}</p>
-              <ul class="space-y-2">
-                <li
-                  v-for="(c, idx) in analysis.tarot.cards"
-                  :key="idx"
-                  class="flex justify-between gap-2 border-b border-white/5 pb-2 last:border-0"
-                >
-                  <span class="text-violet-300/75">{{ c.position }}</span>
-                  <span class="text-right text-gray-400">{{ c.name }}</span>
-                </li>
-              </ul>
-              <div v-if="analysis.bazi.keywords?.length" class="flex flex-wrap gap-1.5 pt-1">
-                <span
-                  v-for="(kw, i) in analysis.bazi.keywords.slice(0, 6)"
-                  :key="i"
-                  class="rounded-md bg-amber-500/10 px-2 py-0.5 text-[10px] text-amber-200/80"
-                >{{ kw }}</span>
-              </div>
-            </div>
-          </aside>
-
-          <div class="order-1 lg:order-2 lg:col-span-8">
-            <div class="fate-done-prose relative overflow-hidden rounded-2xl border border-gold-500/20 bg-gradient-to-br from-[#141018]/95 via-black/40 to-violet-950/15 p-8 sm:p-10">
-              <span class="fate-done-quote-mark" aria-hidden="true">"</span>
-              <div class="relative space-y-5">
-                <p
-                  v-for="(para, pi) in finalResultParagraphs"
-                  :key="pi"
-                  class="text-left text-base leading-[1.85] text-gray-200/95 first:font-serif first:text-lg first:text-gold-100/95 sm:text-[1.05rem]"
-                  :class="pi === 0 ? 'sm:first-letter:float-left sm:first-letter:mr-2 sm:first-letter:font-serif sm:first-letter:text-4xl sm:first-letter:leading-none sm:first-letter:text-gold-400/90' : ''"
-                >
-                  {{ para }}
-                </p>
-              </div>
-            </div>
-            <p class="mt-5 text-center text-xs leading-relaxed text-gray-600">
-              {{ t('pages.fateDual.shareHint') }}
-            </p>
-            <div class="mt-8 flex flex-col items-center justify-center gap-3 sm:flex-row sm:gap-4">
-              <button
-                type="button"
-                class="cursor-pointer rounded-full border border-gold-500/30 px-8 py-3 text-sm text-gold-200 transition-all duration-200 hover:bg-gold-500/10 hover:border-gold-500/50 hover:shadow-[0_0_20px_rgba(212,175,55,0.12)]"
-                @click="resetFlow"
-              >
-                {{ t('pages.fateDual.again') }}
-              </button>
-              <RouterLink
-                to="/fate-dual/history"
-                class="cursor-pointer rounded-full border border-white/10 px-8 py-3 text-sm text-gray-400 transition-all duration-200 hover:border-gold-500/20 hover:text-gold-300/90 hover:shadow-[0_0_16px_rgba(212,175,55,0.08)]"
-              >
-                {{ t('pages.fateDual.historyLinkInner') }}
-              </RouterLink>
-            </div>
-          </div>
-        </div>
+    <!-- Done -->
+    <div v-else-if="step === 'done'" class="fate-inner-wrap max-w-3xl mx-auto space-y-8">
+      <div class="text-center">
+        <p class="text-[10px] uppercase tracking-[0.35em] text-gold-500/65 mb-3">{{ t('pages.fateDual.sealedChoice') }}</p>
+        <h3 class="font-serif text-2xl text-gold-50">{{ t('pages.fateDual.finalTitle') }}</h3>
+      </div>
+      <div class="rounded-2xl border border-gold-500/20 bg-gradient-to-br from-[#141018]/95 to-violet-950/15 p-8">
+        <p v-for="(para, pi) in finalResultParagraphs" :key="pi" class="text-base leading-[1.85] text-gray-200/95 mb-4">{{ para }}</p>
+      </div>
+      <div class="flex justify-center gap-4">
+        <button type="button" class="cursor-pointer rounded-full border border-gold-500/30 px-8 py-3 text-sm text-gold-200 hover:bg-gold-500/10 transition-colors" @click="resetFlow">{{ t('pages.fateDual.again') }}</button>
+        <RouterLink to="/fate-dual/history" class="rounded-full border border-white/10 px-8 py-3 text-sm text-gray-400 hover:border-gold-500/20 transition-colors">{{ t('pages.fateDual.historyLinkInner') }}</RouterLink>
       </div>
     </div>
   </div>
 </template>
 
 <style scoped>
-.fate-altar-page {
-  padding-left: max(1rem, env(safe-area-inset-left, 0px));
-  padding-right: max(1rem, env(safe-area-inset-right, 0px));
-  padding-bottom: max(3rem, env(safe-area-inset-bottom, 0px));
-}
-.fate-altar-page--form {
-  padding-top: calc(5rem + env(safe-area-inset-top, 0px));
-}
-.fate-altar-page--inner {
-  padding-top: calc(5rem + env(safe-area-inset-top, 0px));
-  padding-bottom: calc(5rem + env(safe-area-inset-bottom, 0px));
-}
-/* 小屏表单区：不再限制高度，允许自然滚动 */
-.fate-birth-realm {
-  --fate-gold: rgba(212, 175, 110, 0.88);
-  --fate-gold-dim: rgba(212, 175, 110, 0.35);
-  --fate-violet-glow: rgba(124, 58, 237, 0.12);
-}
-
-.fate-birth-frame {
+/* ═══════════════════════════════════════════════
+   命运双盘 · 全屏仪表盘布局
+   ═══════════════════════════════════════════════ */
+.fate-page {
   position: relative;
-  padding: 1.5rem 1.25rem 1.75rem;
-  border-radius: 1rem;
-  background:
-    radial-gradient(ellipse 130% 90% at 50% -20%, rgba(180, 130, 60, 0.14), transparent 55%),
-    radial-gradient(ellipse 70% 45% at 100% 100%, var(--fate-violet-glow), transparent 55%),
-    radial-gradient(ellipse 50% 40% at 0% 80%, rgba(212, 175, 110, 0.06), transparent 50%),
-    linear-gradient(168deg, rgba(22, 16, 32, 0.97), rgba(6, 4, 12, 0.99));
-  border: 1px solid rgba(212, 175, 110, 0.22);
-  box-shadow:
-    inset 0 1px 0 rgba(255, 230, 180, 0.05),
-    0 0 0 1px rgba(0, 0, 0, 0.45),
-    0 24px 48px -28px rgba(0, 0, 0, 0.75);
+  min-height: 100dvh;
+  min-height: 100vh;
+  overflow-x: hidden;
+  background: #060311;
+  color: #E2D9F3;
+}
+.fate-page--form {
+  padding-top: calc(4rem + env(safe-area-inset-top, 0px));
+  padding-bottom: 2rem;
+}
+.fate-page--inner {
+  padding-top: calc(5rem + env(safe-area-inset-top, 0px));
+  padding-bottom: 3rem;
 }
 
-.fate-corner {
-  position: absolute;
-  width: 16px;
-  height: 16px;
-  pointer-events: none;
-  border-color: var(--fate-gold-dim);
+/* 背景层 */
+.fate-bg-deep {
+  position: fixed; inset: 0; z-index: -2;
+  background: radial-gradient(ellipse 80% 60% at 50% 30%, #12082a 0%, #060311 55%, #030108 100%);
+}
+.fate-bg-stars {
+  position: fixed; inset: 0; z-index: -1;
+  opacity: 0.5;
+  background-image:
+    radial-gradient(1.5px 1.5px at 8% 18%, rgba(226,217,243,0.6), transparent),
+    radial-gradient(1px 1px at 22% 72%, rgba(65,105,225,0.5), transparent),
+    radial-gradient(1px 1px at 78% 28%, rgba(212,175,55,0.5), transparent),
+    radial-gradient(1.5px 1.5px at 88% 80%, rgba(138,43,226,0.4), transparent),
+    radial-gradient(1px 1px at 45% 8%, rgba(226,217,243,0.4), transparent),
+    radial-gradient(1px 1px at 55% 92%, rgba(212,175,55,0.35), transparent),
+    radial-gradient(0.8px 0.8px at 32% 55%, rgba(196,168,255,0.4), transparent),
+    radial-gradient(0.8px 0.8px at 68% 15%, rgba(255,255,255,0.3), transparent);
 }
 
-.fate-c-tl {
-  top: 12px;
-  left: 12px;
-  border-top: 2px solid;
-  border-left: 2px solid;
-  border-top-left-radius: 2px;
+/* 仪表盘容器 */
+.fate-dashboard {
+  position: relative;
+  z-index: 1;
+  max-width: 1560px;
+  margin: 0 auto;
+  padding: 0 2rem;
+}
+.fate-dashboard--entered {
+  animation: fate-emerge 0.8s ease-out forwards;
+  opacity: 0;
+  transform: translateY(12px);
+}
+@keyframes fate-emerge {
+  to { opacity: 1; transform: translateY(0); }
 }
 
-.fate-c-tr {
-  top: 12px;
-  right: 12px;
-  border-top: 2px solid;
-  border-right: 2px solid;
-  border-top-right-radius: 2px;
+/* 顶部标题 */
+.fate-hero-header {
+  text-align: center;
+  margin-bottom: 2rem;
+}
+.fate-hero-title {
+  font-family: ui-serif, Georgia, 'Songti SC', 'Noto Serif SC', serif;
+  font-size: clamp(2rem, 4vw, 3.2rem);
+  font-weight: 600;
+  letter-spacing: 0.35em;
+  color: #F5F0FF;
+  text-shadow: 0 0 32px rgba(196,168,255,0.4), 0 0 64px rgba(138,43,226,0.2);
+}
+.fate-hero-sub {
+  margin-top: 0.75rem;
+  font-size: 0.82rem;
+  letter-spacing: 0.3em;
+  color: rgba(138,126,159,0.85);
 }
 
-.fate-c-bl {
-  bottom: 12px;
-  left: 12px;
-  border-bottom: 2px solid;
-  border-left: 2px solid;
-  border-bottom-left-radius: 2px;
+/* ─── 三栏网格 ─── */
+.fate-main-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 1.5rem;
+  align-items: start;
+  transition: opacity 0.4s ease;
+}
+@media (min-width: 1024px) {
+  .fate-main-grid {
+    grid-template-columns: 300px 1fr 320px;
+    gap: 1.5rem;
+  }
+}
+@media (min-width: 1280px) {
+  .fate-main-grid {
+    grid-template-columns: 320px 1fr 340px;
+    gap: 2rem;
+  }
 }
 
-.fate-c-br {
-  bottom: 12px;
-  right: 12px;
-  border-bottom: 2px solid;
-  border-right: 2px solid;
-  border-bottom-right-radius: 2px;
+/* ─── 面板通用 ─── */
+.fate-panel {
+  background: rgba(255,255,255,0.02);
+  border: 1px solid rgba(212,175,55,0.12);
+  border-radius: 1.25rem;
+  padding: 1.5rem;
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  box-shadow: 0 0 40px rgba(138,43,226,0.08), 0 20px 60px -24px rgba(0,0,0,0.7);
+}
+.fate-panel-header { margin-bottom: 1.25rem; }
+.fate-panel-title {
+  font-family: ui-serif, Georgia, 'Songti SC', serif;
+  font-size: 1.05rem;
+  letter-spacing: 0.1em;
+  color: #F5E9FF;
+}
+.fate-panel-sub {
+  margin-top: 0.3rem;
+  font-size: 0.68rem;
+  letter-spacing: 0.06em;
+  color: rgba(138,126,159,0.8);
 }
 
-.fate-birth-eyebrow {
-  font-family: ui-serif, Georgia, 'Times New Roman', serif;
-  letter-spacing: 0.42em;
-  font-size: 0.65rem;
-  color: var(--fate-gold);
-  text-indent: 0.42em;
-}
-
-.fate-birth-sub {
-  font-size: 0.72rem;
-  line-height: 1.65;
-  color: rgba(163, 163, 180, 0.92);
-  max-width: 22rem;
-  margin: 0.6rem auto 0;
-}
-
-.fate-birth-divider {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 0.6rem;
-  margin-top: 1rem;
-}
-
-.fate-birth-line {
-  flex: 1;
-  max-width: 5rem;
-  height: 1px;
-  background: linear-gradient(90deg, transparent, var(--fate-gold-dim), transparent);
-}
-
-.fate-birth-star {
-  color: rgba(212, 175, 110, 0.45);
-  font-size: 0.6rem;
-}
-
-.fate-birth-glyph {
-  color: rgba(212, 175, 110, 0.5);
-  font-size: 0.95rem;
-  line-height: 1;
-}
-
+/* ─── 左栏表单 ─── */
+.fate-field { margin-bottom: 1rem; }
 .fate-label {
+  display: block;
+  margin-bottom: 0.35rem;
+  font-size: 0.72rem;
+  letter-spacing: 0.08em;
+  color: rgba(212,175,55,0.78);
+}
+.fate-input-row {
   display: flex;
   align-items: center;
   gap: 0.4rem;
-  font-size: 0.68rem;
-  letter-spacing: 0.14em;
-  color: rgba(230, 210, 170, 0.92);
-  margin-bottom: 0.45rem;
-  font-family: ui-serif, Georgia, 'Songti SC', 'Noto Serif SC', serif;
+  padding: 0.5rem 0.7rem;
+  border-radius: 0.6rem;
+  border: 1px solid rgba(167,139,250,0.14);
+  background: rgba(8,5,18,0.6);
+  transition: border-color 0.2s, box-shadow 0.2s;
 }
-
-.fate-label-icon {
-  font-size: 0.85rem;
-  opacity: 0.8;
-  filter: drop-shadow(0 0 8px rgba(212, 175, 110, 0.25));
+.fate-input-row:focus-within {
+  border-color: rgba(212,175,55,0.4);
+  box-shadow: 0 0 0 1px rgba(212,175,55,0.1), 0 0 16px rgba(138,43,226,0.1);
 }
-
-.fate-moon {
-  color: rgba(196, 181, 253, 0.75);
-  filter: drop-shadow(0 0 10px rgba(139, 92, 246, 0.2));
-}
-
-.fate-label-optional {
-  letter-spacing: 0.06em;
-  color: rgba(115, 115, 130, 0.95);
-  font-size: 0.62rem;
-  margin-left: 0.15rem;
-}
-
-.fate-input-inner {
-  border-radius: 0.65rem;
-  padding: 2px;
-  background: linear-gradient(
-    128deg,
-    rgba(212, 175, 110, 0.28),
-    rgba(88, 28, 135, 0.18) 45%,
-    rgba(212, 175, 110, 0.1)
-  );
-}
-
-.fate-native-datetime {
-  width: 100%;
-  box-sizing: border-box;
-  color-scheme: dark;
-  background: rgba(5, 3, 12, 0.94);
-  border: 1px solid rgba(255, 255, 255, 0.07);
-  border-radius: 0.5rem;
-  padding: 0.7rem 0.9rem;
-  color: rgba(240, 235, 220, 0.96);
-  font-size: 0.9rem;
-  font-variant-numeric: tabular-nums;
-  transition: border-color 0.2s ease, box-shadow 0.2s ease;
-}
-
-.fate-native-datetime:focus {
-  outline: none;
-  border-color: rgba(212, 175, 110, 0.5);
-  box-shadow:
-    0 0 0 2px rgba(212, 175, 110, 0.12),
-    inset 0 0 20px rgba(212, 175, 110, 0.03);
-}
-
-.fate-native-datetime::-webkit-calendar-picker-indicator {
-  filter: invert(0.9) sepia(0.4) saturate(4) hue-rotate(5deg) brightness(0.9);
-  cursor: pointer;
-  opacity: 0.88;
-}
-
-.fate-oracle-line {
-  margin-top: 0.55rem;
-  min-height: 1.4em;
-  font-size: 0.68rem;
-  line-height: 1.55;
-  color: rgba(150, 148, 168, 0.95);
-  font-family: ui-serif, Georgia, 'Songti SC', 'Noto Serif SC', serif;
-  letter-spacing: 0.04em;
-}
-
-/* 命运双盘 · 抽三牌（与 Reader 抽牌条一致） */
-.strip-nav-btn {
-  position: absolute;
-  top: 50%;
-  transform: translateY(-50%);
-  z-index: 100;
-  width: 44px;
-  height: 44px;
-  border-radius: 50%;
-  background: rgba(3, 1, 8, 0.85);
-  border: 1px solid rgba(212, 168, 83, 0.15);
-  color: var(--color-gold-300);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  cursor: pointer;
-  transition: all 0.2s ease;
-  backdrop-filter: blur(8px);
-}
-.strip-nav-btn:hover {
-  background: rgba(3, 1, 8, 0.95);
-  border-color: rgba(212, 168, 83, 0.4);
-  box-shadow: 0 0 16px rgba(212, 168, 83, 0.1);
-}
-@media (max-width: 380px) {
-  .strip-nav-btn {
-    width: 36px;
-    height: 36px;
-  }
-}
-.strip-scroll {
-  scrollbar-width: none;
-  -ms-overflow-style: none;
-}
-.strip-scroll::-webkit-scrollbar {
-  display: none;
-}
-.card-slot {
-  cursor: pointer;
-}
-.card-back {
-  width: 72px;
-  height: 112px;
-  border-radius: 10px;
-  overflow: hidden;
-  position: relative;
-  transition: all 0.3s ease;
-  border: 2px solid rgba(212, 168, 83, 0.2);
-  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.4);
-}
-@media (min-width: 640px) {
-  .card-back {
-    width: 80px;
-    height: 126px;
-  }
-}
-.card-idle {
-  cursor: pointer;
-}
-.card-idle:hover {
-  transform: translateY(-16px);
-  border-color: rgba(212, 168, 83, 0.5);
-  box-shadow:
-    0 10px 28px rgba(212, 168, 83, 0.15),
-    0 4px 16px rgba(0, 0, 0, 0.5);
-  z-index: 999 !important;
-}
-.card-selected {
-  opacity: 0.15;
-  transform: scale(0.88);
-  pointer-events: none;
-  filter: grayscale(1);
-}
-.card-disabled {
-  opacity: 0.35;
-  pointer-events: none;
-}
-.position-slot {
-  width: 80px;
-  height: 120px;
-  border-radius: 12px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  transition: all 0.5s ease;
-}
-@media (min-width: 640px) {
-  .position-slot {
-    width: 96px;
-    height: 144px;
-  }
-}
-.position-empty {
-  border: 2px dashed rgba(212, 168, 83, 0.15);
-  background: rgba(255, 255, 255, 0.01);
-}
-.position-filled {
-  border: 2px solid rgba(212, 168, 83, 0.35);
-  background: rgba(212, 168, 83, 0.04);
-  box-shadow: 0 0 20px rgba(212, 168, 83, 0.08);
-  animation: fate-position-fill-in 0.5s ease-out;
-}
-@keyframes fate-position-fill-in {
-  from {
-    opacity: 0;
-    transform: scale(0.75);
-  }
-  to {
-    opacity: 1;
-    transform: scale(1);
-  }
-}
-
-/* 结果页：提要区与终页长文 */
-.fate-dual-hero {
-  box-shadow:
-    inset 0 1px 0 rgba(255, 230, 180, 0.04),
-    0 20px 50px -24px rgba(0, 0, 0, 0.65);
-}
-.fate-dual-question {
-  text-wrap: pretty;
-}
-.fate-branch-card {
-  box-shadow: 0 12px 40px -20px rgba(0, 0, 0, 0.55);
-  transition: border-color 0.2s ease, box-shadow 0.2s ease;
-  cursor: default;
-}
-.fate-branch-card:hover {
-  border-color: rgba(212, 175, 110, 0.22);
-  box-shadow:
-    0 16px 48px -18px rgba(0, 0, 0, 0.6),
-    0 0 24px rgba(212, 175, 110, 0.06);
-}
-.fate-done-prose {
-  box-shadow:
-    inset 0 1px 0 rgba(255, 230, 180, 0.05),
-    0 24px 56px -28px rgba(0, 0, 0, 0.75);
-}
-.fate-done-quote-mark {
-  position: absolute;
-  left: 0.85rem;
-  top: 0.5rem;
-  font-family: ui-serif, Georgia, 'Times New Roman', serif;
-  font-size: 4.5rem;
-  line-height: 1;
-  color: rgba(212, 175, 110, 0.12);
-  pointer-events: none;
-  user-select: none;
-}
-@media (min-width: 640px) {
-  .fate-done-quote-mark {
-    left: 1.25rem;
-    font-size: 5.5rem;
-  }
-}
-
-/* —— 命运祭坛 · 全页视觉（表单步） —— */
-.fate-altar-drift {
-  opacity: 0.42;
-  background-image:
-    radial-gradient(1.5px 1.5px at 8% 18%, rgba(226, 217, 243, 0.55), transparent),
-    radial-gradient(1px 1px at 22% 72%, rgba(65, 105, 225, 0.45), transparent),
-    radial-gradient(1px 1px at 78% 28%, rgba(212, 175, 55, 0.5), transparent),
-    radial-gradient(1.5px 1.5px at 88% 80%, rgba(138, 43, 226, 0.4), transparent),
-    radial-gradient(1px 1px at 45% 8%, rgba(226, 217, 243, 0.35), transparent),
-    radial-gradient(1px 1px at 55% 92%, rgba(212, 175, 55, 0.35), transparent);
-  background-size: 120% 120%;
-  animation: fate-altar-drift-move 90s linear infinite;
-}
-@keyframes fate-altar-drift-move {
-  0% {
-    background-position: 0% 0%;
-  }
-  100% {
-    background-position: 100% 100%;
-  }
-}
-
-.fate-mega-wheel {
-  opacity: 0.1;
-  animation: fate-mega-wheel-spin 120s linear infinite;
-}
-@keyframes fate-mega-wheel-spin {
-  to {
-    transform: rotate(360deg);
-  }
-}
-
-.fate-altar-glass {
-  background: rgba(255, 255, 255, 0.02);
-  border: 1px solid rgba(212, 175, 55, 0.14);
-  box-shadow:
-    0 0 48px rgba(138, 43, 226, 0.1),
-    0 24px 80px -32px rgba(0, 0, 0, 0.75),
-    inset 0 1px 0 rgba(255, 255, 255, 0.04);
-  backdrop-filter: blur(24px);
-  -webkit-backdrop-filter: blur(24px);
-}
-
-.fate-altar-panel--entered {
-  animation: fate-altar-emerge 1.05s cubic-bezier(0.22, 1, 0.36, 1) forwards;
-  opacity: 0;
-  filter: blur(18px);
-  transform: scale(0.95) translateY(14px);
-}
-@keyframes fate-altar-emerge {
-  to {
-    opacity: 1;
-    filter: blur(0);
-    transform: scale(1) translateY(0);
-  }
-}
-
-.fate-altar-divider {
-  height: 1px;
-  background: linear-gradient(90deg, transparent, rgba(212, 175, 55, 0.38), transparent);
-}
-
-@keyframes fate-altar-glint-pulse {
-  0%,
-  100% {
-    opacity: 0.5;
-    filter: drop-shadow(0 0 5px rgba(212, 175, 55, 0.35));
-  }
-  50% {
-    opacity: 1;
-    filter: drop-shadow(0 0 14px rgba(212, 175, 55, 0.9));
-  }
-}
-.fate-altar-glint {
-  animation: fate-altar-glint-pulse 2.6s ease-in-out infinite;
-}
-
-.fate-question-sink {
-  box-shadow: inset 0 3px 28px rgba(0, 0, 0, 0.42);
-  transition:
-    box-shadow 0.35s ease,
-    border-color 0.35s ease;
-}
-.fate-question-sink:focus {
-  box-shadow:
-    0 0 0 1px rgba(138, 43, 226, 0.22),
-    0 0 32px rgba(138, 43, 226, 0.14),
-    inset 0 3px 28px rgba(0, 0, 0, 0.45);
-}
-.fate-question-sink--breath {
-  animation: fate-question-breath 4.2s ease-in-out infinite;
-}
-@keyframes fate-question-breath {
-  0%,
-  100% {
-    box-shadow:
-      0 0 0 1px rgba(138, 43, 226, 0.12),
-      0 0 22px rgba(65, 105, 225, 0.08),
-      inset 0 3px 28px rgba(0, 0, 0, 0.42);
-  }
-  50% {
-    box-shadow:
-      0 0 0 1px rgba(138, 43, 226, 0.22),
-      0 0 38px rgba(138, 43, 226, 0.14),
-      inset 0 3px 28px rgba(0, 0, 0, 0.48);
-  }
-}
-
-.fate-mystic-badge--off:hover {
-  border-color: rgba(212, 175, 55, 0.18);
-  background: rgba(22, 11, 36, 0.55);
-}
-.fate-mystic-badge--on {
-  position: relative;
-  z-index: 1;
-}
-.fate-mystic-badge--love.fate-mystic-badge--on {
-  border-color: rgba(232, 121, 249, 0.45);
-  box-shadow:
-    0 0 36px rgba(192, 132, 252, 0.22),
-    0 4px 16px -4px rgba(0, 0, 0, 0.55),
-    inset 0 1px 0 rgba(232, 121, 249, 0.15);
-}
-.fate-mystic-badge--career.fate-mystic-badge--on {
-  border-color: rgba(212, 175, 55, 0.55);
-  box-shadow:
-    0 0 32px rgba(212, 175, 55, 0.2),
-    0 4px 16px -4px rgba(0, 0, 0, 0.55),
-    inset 0 1px 0 rgba(212, 175, 55, 0.15);
-}
-.fate-mystic-badge--wealth.fate-mystic-badge--on {
-  border-color: rgba(251, 191, 36, 0.5);
-  box-shadow:
-    0 0 34px rgba(251, 191, 36, 0.18),
-    0 4px 16px -4px rgba(0, 0, 0, 0.55),
-    inset 0 1px 0 rgba(251, 191, 36, 0.15);
-}
-
-.fate-cta-summon {
-  position: relative;
-  isolation: isolate;
+.fate-input {
   background: transparent;
   border: none;
-  padding: 0;
-  cursor: pointer;
+  color: #F5E9FF;
+  font-size: 0.88rem;
+  font-variant-numeric: tabular-nums;
+  text-align: center;
+  padding: 0.1rem;
+  outline: none;
 }
-.fate-cta-summon:disabled {
-  cursor: wait;
+.fate-input--year { width: 3.8rem; }
+.fate-input--md { width: 2.5rem; }
+.fate-input--text { flex: 1; text-align: left; width: 100%; }
+.fate-input::placeholder { color: rgba(138,126,159,0.5); }
+.fate-input::-webkit-outer-spin-button,
+.fate-input::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
+.fate-input { -moz-appearance: textfield; appearance: textfield; }
+.fate-unit { font-size: 0.68rem; color: rgba(138,126,159,0.8); }
+.fate-colon { color: rgba(212,175,55,0.5); font-weight: 600; margin: 0 0.1rem; }
+.fate-row-icon { width: 1rem; height: 1rem; flex-shrink: 0; color: rgba(167,139,250,0.55); margin-left: auto; }
+
+/* 性别 */
+.fate-gender-row { display: grid; grid-template-columns: 1fr 1fr; gap: 0.5rem; }
+.fate-gender {
+  display: flex; align-items: center; justify-content: center; gap: 0.35rem;
+  padding: 0.55rem 0; border-radius: 0.6rem; font-size: 0.82rem;
+  border: 1px solid rgba(255,255,255,0.08); background: rgba(22,11,36,0.4); color: rgba(226,217,243,0.7);
+  transition: all 0.18s;
 }
-.fate-cta-summon-border {
-  position: absolute;
-  inset: 0;
-  border-radius: 32px;
-  background: conic-gradient(from 0deg, #8a2be2, #4169e1, #d4af37, #8a2be2);
-  animation: fate-cta-border-spin 4.8s linear infinite;
-}
-.fate-cta-summon-inner {
-  position: absolute;
-  inset: 2px;
-  border-radius: 30px;
-  background: #160b24;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  box-shadow:
-    inset 0 0 48px rgba(138, 43, 226, 0.09),
-    inset 0 -12px 40px rgba(0, 0, 0, 0.35);
-}
-.fate-cta-summon--pulse .fate-cta-summon-inner {
-  box-shadow:
-    inset 0 0 60px rgba(138, 43, 226, 0.22),
-    0 0 40px rgba(138, 43, 226, 0.45);
-}
-@keyframes fate-cta-border-spin {
-  to {
-    transform: rotate(360deg);
-  }
+.fate-gender:hover { border-color: rgba(167,139,250,0.3); color: #E2D9F3; }
+.fate-gender--on {
+  border-color: rgba(212,175,55,0.45);
+  background: linear-gradient(135deg, rgba(138,43,226,0.3), rgba(99,102,241,0.22));
+  color: #FFF7E2;
+  box-shadow: 0 0 16px rgba(138,43,226,0.18);
 }
 
-.fate-cta-nova {
-  background: radial-gradient(circle, rgba(138, 43, 226, 0.55) 0%, transparent 65%);
+/* Toggle */
+.fate-toggle-field { display: flex; align-items: center; justify-content: space-between; margin-bottom: 1.25rem; }
+.fate-switch {
+  position: relative; width: 40px; height: 22px; border-radius: 999px; flex-shrink: 0;
+  background: rgba(40,28,58,0.8); border: 1px solid rgba(255,255,255,0.08); transition: all 0.2s;
+}
+.fate-switch--on {
+  background: linear-gradient(135deg, #8A2BE2, #6366F1);
+  border-color: rgba(212,175,55,0.35);
+  box-shadow: 0 0 12px rgba(138,43,226,0.35);
+}
+.fate-switch-knob {
+  position: absolute; top: 2px; left: 2px; width: 16px; height: 16px; border-radius: 50%;
+  background: #F5E9FF; box-shadow: 0 1px 3px rgba(0,0,0,0.4); transition: transform 0.2s cubic-bezier(0.4,0,0.2,1);
+}
+.fate-switch--on .fate-switch-knob { transform: translateX(18px); }
+
+/* CTA 按钮 */
+.fate-cta {
+  display: flex; align-items: center; justify-content: center; gap: 0.5rem;
+  width: 100%; padding: 0.85rem 1rem; border-radius: 0.8rem;
+  border: 1px solid rgba(212,175,55,0.3);
+  background: linear-gradient(135deg, #8A2BE2 0%, #6D28D9 50%, #5B21B6 100%);
+  color: #FFF7E2; font-size: 0.95rem; font-weight: 600; letter-spacing: 0.08em;
+  box-shadow: 0 8px 24px -8px rgba(138,43,226,0.6), inset 0 1px 0 rgba(255,255,255,0.1);
+  transition: filter 0.18s, box-shadow 0.18s;
+}
+.fate-cta:hover:not(:disabled) {
+  filter: brightness(1.12);
+  box-shadow: 0 10px 30px -6px rgba(138,43,226,0.75), 0 0 20px rgba(212,175,55,0.15);
+}
+.fate-cta:disabled { cursor: wait; opacity: 0.7; }
+.fate-cta-hint { margin-top: 0.6rem; text-align: center; font-size: 0.66rem; color: rgba(138,126,159,0.7); }
+
+/* ─── 中栏：星盘 ─── */
+.fate-center {
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  min-height: 480px; padding: 0.5rem;
+}
+@media (min-width: 1024px) {
+  .fate-center { min-height: 580px; }
+}
+.fate-orrery-container {
+  position: relative; width: 100%; max-width: 580px; aspect-ratio: 1/1;
 }
 
+/* 四柱徽章 */
+.fate-pillar {
+  position: absolute; z-index: 3;
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  width: 82px; height: 82px; border-radius: 50%;
+  border: 1px solid rgba(212,175,55,0.35);
+  background: radial-gradient(circle at 50% 32%, rgba(40,24,66,0.92), rgba(10,6,22,0.96));
+  box-shadow: 0 0 24px rgba(138,43,226,0.22), 0 0 44px rgba(212,175,55,0.1);
+}
+.fate-pillar--tl { top: 5%; left: 3%; border-color: rgba(212,175,55,0.5); box-shadow: 0 0 24px rgba(212,175,55,0.2), 0 0 48px rgba(212,175,55,0.1); }
+.fate-pillar--tr { top: 5%; right: 3%; border-color: rgba(212,175,55,0.5); box-shadow: 0 0 24px rgba(212,175,55,0.2), 0 0 48px rgba(212,175,55,0.1); }
+.fate-pillar--bl { bottom: 10%; left: 3%; border-color: rgba(167,139,250,0.5); box-shadow: 0 0 24px rgba(138,43,226,0.28), 0 0 48px rgba(138,43,226,0.12); }
+.fate-pillar--br { bottom: 10%; right: 3%; border-color: rgba(167,139,250,0.5); box-shadow: 0 0 24px rgba(138,43,226,0.28), 0 0 48px rgba(138,43,226,0.12); }
+.fate-pillar-label {
+  font-size: 0.58rem; letter-spacing: 0.12em; color: rgba(212,175,55,0.78);
+}
+.fate-pillar-gz {
+  font-family: ui-serif, Georgia, 'Songti SC', serif;
+  font-size: 1.35rem; font-weight: 600; line-height: 1.1; letter-spacing: 0.06em;
+  color: #FBF3DC; text-shadow: 0 0 14px rgba(212,175,55,0.4);
+}
+.fate-pillar--bl .fate-pillar-gz,
+.fate-pillar--br .fate-pillar-gz {
+  color: #EBE0FF; text-shadow: 0 0 14px rgba(167,139,250,0.5);
+}
+
+/* 星盘本体 */
+.fate-orrery {
+  position: absolute; inset: 5%;
+  display: flex; align-items: center; justify-content: center;
+  transform: perspective(1000px) rotateX(8deg);
+  transform-style: preserve-3d;
+}
+.fate-stars-svg { position: absolute; inset: -5%; width: 110%; height: 110%; pointer-events: none; }
+.fate-grid-svg { position: absolute; inset: 0; width: 100%; height: 100%; }
+.fate-core {
+  position: absolute; top: 50%; left: 50%; width: 18%; height: 18%;
+  transform: translate(-50%, -50%); border-radius: 50%;
+  background: radial-gradient(circle at 42% 38%, #E9DBFF 0%, #A78BFA 32%, #8A2BE2 62%, #4C1D95 100%);
+  box-shadow: 0 0 40px rgba(138,43,226,0.6), 0 0 80px rgba(167,139,250,0.35);
+  animation: core-pulse 5s ease-in-out infinite;
+}
+@keyframes core-pulse {
+  0%, 100% { box-shadow: 0 0 40px rgba(138,43,226,0.6), 0 0 80px rgba(167,139,250,0.35); }
+  50% { box-shadow: 0 0 52px rgba(138,43,226,0.8), 0 0 110px rgba(167,139,250,0.5); }
+}
+.fate-ring {
+  position: absolute; top: 50%; left: 50%; width: 48%; height: 48%;
+  transform: translate(-50%, -50%) rotateX(74deg) rotateZ(-12deg);
+  border-radius: 50%; border: 2.5px solid rgba(196,168,255,0.6);
+  box-shadow: 0 0 20px rgba(167,139,250,0.5), 0 0 40px rgba(138,43,226,0.3);
+  pointer-events: none;
+}
+.fate-ring::after {
+  content: ''; position: absolute; inset: -6px; border-radius: 50%;
+  border: 1.2px solid rgba(212,175,55,0.3);
+}
+
+/* 公转轨道 */
+.fate-orb {
+  position: absolute; top: 50%; left: 50%; border-radius: 50%;
+  transform: translate(-50%, -50%);
+}
+.fate-orb--1 { width: 24%; height: 24%; animation: orb-spin 14s linear infinite; }
+.fate-orb--2 { width: 42%; height: 41%; animation: orb-spin 22s linear infinite reverse; }
+.fate-orb--3 { width: 60%; height: 57%; animation: orb-spin 30s linear infinite; }
+.fate-orb--4 { width: 78%; height: 73%; animation: orb-spin 40s linear infinite reverse; }
+.fate-orb--5 { width: 92%; height: 85%; animation: orb-spin 50s linear infinite; }
+.fate-orb--6 { width: 99%; height: 93%; animation: orb-spin 60s linear infinite reverse; }
+@keyframes orb-spin { to { transform: translate(-50%, -50%) rotate(360deg); } }
+
+.fate-dot {
+  position: absolute; top: -4px; left: 50%; border-radius: 50%;
+}
+.fate-dot--gold { width: 8px; height: 8px; margin-left: -4px; background: #F2D98A; box-shadow: 0 0 12px rgba(242,217,138,0.85); }
+.fate-dot--violet { width: 6px; height: 6px; margin-left: -3px; background: #C4A8FF; box-shadow: 0 0 12px rgba(196,168,255,0.85); }
+.fate-dot--blue { width: 8px; height: 8px; margin-left: -4px; background: #8AB4FF; box-shadow: 0 0 12px rgba(138,180,255,0.8); }
+.fate-dot--pale { width: 6px; height: 6px; margin-left: -3px; background: #F5E9FF; box-shadow: 0 0 10px rgba(245,233,255,0.7); }
+.fate-dot--amber { width: 5px; height: 5px; margin-left: -2.5px; background: #FBBF24; box-shadow: 0 0 12px rgba(251,191,36,0.85); }
+.fate-dot--violet-sm { width: 4px; height: 4px; margin-left: -2px; background: #A78BFA; box-shadow: 0 0 10px rgba(167,139,250,0.8); }
+.fate-dot--mini-gold { width: 4px; height: 4px; margin-left: -2px; background: #F2D98A; box-shadow: 0 0 8px rgba(242,217,138,0.7); top: auto; bottom: -2px; }
+.fate-dot--mini-blue { width: 4px; height: 4px; margin-left: -2px; background: #8AB4FF; box-shadow: 0 0 8px rgba(138,180,255,0.7); top: 50%; left: -2px; margin-top: -2px; }
+
+/* 命盘类型切换 */
+.fate-chart-tabs { display: flex; gap: 0.5rem; margin-top: 1rem; }
+.fate-tab {
+  padding: 0.4rem 1.1rem; border-radius: 999px; font-size: 0.78rem; letter-spacing: 0.04em;
+  border: 1px solid rgba(255,255,255,0.1); background: rgba(22,11,36,0.5); color: rgba(226,217,243,0.72);
+  transition: all 0.18s;
+}
+.fate-tab--on {
+  border-color: rgba(212,175,55,0.45);
+  background: linear-gradient(135deg, rgba(138,43,226,0.32), rgba(99,102,241,0.22));
+  color: #FFF7E2; box-shadow: 0 0 14px rgba(138,43,226,0.2);
+}
+
+/* ─── 右栏：AI 助手 ─── */
+.fate-domains {
+  display: grid; grid-template-columns: repeat(3, 1fr); gap: 0.5rem; margin-bottom: 1.25rem;
+}
+.fate-domain {
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 0.2rem;
+  padding: 0.75rem 0.3rem; min-height: 80px; border-radius: 0.75rem;
+  border: 1px solid rgba(255,255,255,0.07); background: rgba(22,11,36,0.4); color: rgba(226,217,243,0.72);
+  transition: all 0.18s;
+}
+.fate-domain:hover { border-color: rgba(167,139,250,0.3); background: rgba(36,20,60,0.55); color: #E2D9F3; }
+.fate-domain--on {
+  border-color: rgba(167,139,250,0.55);
+  background: linear-gradient(150deg, rgba(138,43,226,0.32), rgba(76,29,149,0.25));
+  color: #FFF7E2; box-shadow: 0 0 22px rgba(138,43,226,0.25);
+}
+.fate-domain-name { font-size: 0.78rem; font-weight: 500; letter-spacing: 0.04em; line-height: 1.2; }
+.fate-domain-desc { font-size: 0.58rem; color: rgba(138,126,159,0.7); }
+.fate-domain--on .fate-domain-desc { color: rgba(245,233,255,0.7); }
+
+/* 向宇宙提问 */
+.fate-ask { margin-top: auto; }
+.fate-ask-title { font-size: 0.88rem; letter-spacing: 0.06em; color: #F5E9FF; margin-bottom: 0.3rem; }
+.fate-ask-hint { font-size: 0.62rem; color: rgba(138,126,159,0.7); margin-bottom: 0.6rem; line-height: 1.5; }
+.fate-ask-box {
+  border-radius: 0.75rem; border: 1px solid rgba(167,139,250,0.14);
+  background: rgba(8,5,18,0.55); overflow: hidden; transition: border-color 0.2s;
+}
+.fate-ask-box:focus-within { border-color: rgba(138,43,226,0.4); }
+.fate-ask-input {
+  width: 100%; resize: none; border: none; background: transparent;
+  padding: 0.75rem 0.8rem 0.4rem; font-size: 0.82rem; line-height: 1.55; color: #F5E9FF; outline: none;
+}
+.fate-ask-input::placeholder { color: rgba(138,126,159,0.5); }
+.fate-ask-bar {
+  display: flex; align-items: center; justify-content: space-between; padding: 0.3rem 0.6rem 0.5rem;
+}
+.fate-ask-count { font-size: 0.62rem; color: rgba(138,126,159,0.6); }
+.fate-ask-send {
+  width: 32px; height: 32px; border-radius: 50%; display: flex; align-items: center; justify-content: center;
+  background: linear-gradient(135deg, #8A2BE2, #6366F1); color: #FFF7E2;
+  box-shadow: 0 4px 12px rgba(138,43,226,0.4); transition: filter 0.18s;
+}
+.fate-ask-send:hover:not(:disabled) { filter: brightness(1.15); }
+
+/* ─── 底部探索区 ─── */
+.fate-explore {
+  margin-top: 3rem;
+  padding-top: 2.5rem;
+  border-top: 1px solid rgba(212,175,55,0.08);
+}
+.fate-explore-head {
+  display: flex; align-items: baseline; gap: 1.5rem; margin-bottom: 1.5rem; padding: 0 0.25rem;
+}
+.fate-explore-title {
+  font-family: ui-serif, Georgia, 'Songti SC', serif;
+  font-size: 1.15rem; letter-spacing: 0.12em; color: #F5E9FF; white-space: nowrap; font-weight: 600;
+}
+.fate-explore-sub { font-size: 0.68rem; color: rgba(138,126,159,0.7); }
+.fate-explore-strip {
+  display: flex; gap: 1.25rem; overflow-x: auto; padding-bottom: 1rem;
+  scrollbar-width: none; -ms-overflow-style: none;
+}
+.fate-explore-strip::-webkit-scrollbar { display: none; }
+.fate-explore-card {
+  flex-shrink: 0; display: flex; flex-direction: column; align-items: center; gap: 0.6rem;
+  padding: 1.25rem 1.5rem; border-radius: 1rem; min-width: 130px;
+  border: 1px solid rgba(255,255,255,0.06); background: rgba(22,11,36,0.4);
+  transition: all 0.2s;
+}
+.fate-explore-card:hover { border-color: rgba(167,139,250,0.3); background: rgba(36,20,60,0.5); transform: translateY(-2px); }
+.fate-explore-icon {
+  width: 48px; height: 48px; border-radius: 50%; display: flex; align-items: center; justify-content: center;
+  border: 1px solid rgba(167,139,250,0.3);
+  background: radial-gradient(circle at 50% 35%, rgba(138,43,226,0.25), rgba(8,5,18,0.9));
+  color: #C4A8FF;
+}
+.fate-explore-icon--love-merge { color: #E879F9; border-color: rgba(232,121,249,0.4); background: radial-gradient(circle at 50% 35%, rgba(232,121,249,0.25), rgba(8,5,18,0.9)); }
+.fate-explore-icon--year-fortune { color: #8AB4FF; border-color: rgba(138,180,255,0.4); background: radial-gradient(circle at 50% 35%, rgba(138,180,255,0.25), rgba(8,5,18,0.9)); }
+.fate-explore-icon--career-pattern { color: #D4AF37; border-color: rgba(212,175,55,0.4); background: radial-gradient(circle at 50% 35%, rgba(212,175,55,0.25), rgba(8,5,18,0.9)); }
+.fate-explore-icon--wealth-code { color: #FBBF24; border-color: rgba(251,191,36,0.4); background: radial-gradient(circle at 50% 35%, rgba(251,191,36,0.25), rgba(8,5,18,0.9)); }
+.fate-explore-icon--health-guide { color: #34D399; border-color: rgba(52,211,153,0.4); background: radial-gradient(circle at 50% 35%, rgba(52,211,153,0.25), rgba(8,5,18,0.9)); }
+.fate-explore-icon--destiny-report { color: #A78BFA; border-color: rgba(167,139,250,0.4); background: radial-gradient(circle at 50% 35%, rgba(167,139,250,0.25), rgba(8,5,18,0.9)); }
+.fate-explore-name { font-size: 0.82rem; color: #F5E9FF; font-weight: 500; }
+.fate-explore-desc { font-size: 0.62rem; color: rgba(138,126,159,0.8); }
+
+/* ─── 内页通用容器 ─── */
+.fate-inner-wrap {
+  position: relative; z-index: 1;
+  max-width: 1100px; margin: 0 auto; padding: 0 1.5rem;
+}
+
+/* ─── Pick 步骤复用样式 ─── */
+.strip-nav-btn {
+  position: absolute; top: 50%; transform: translateY(-50%); z-index: 100;
+  width: 44px; height: 44px; border-radius: 50%;
+  background: rgba(3,1,8,0.85); border: 1px solid rgba(212,168,83,0.15);
+  color: var(--color-gold-300); display: flex; align-items: center; justify-content: center;
+  cursor: pointer; transition: all 0.2s; backdrop-filter: blur(8px);
+}
+.strip-nav-btn:hover { background: rgba(3,1,8,0.95); border-color: rgba(212,168,83,0.4); }
+.strip-scroll { scrollbar-width: none; -ms-overflow-style: none; }
+.strip-scroll::-webkit-scrollbar { display: none; }
+.card-slot { cursor: pointer; }
+.card-back {
+  width: 72px; height: 112px; border-radius: 10px; overflow: hidden;
+  transition: all 0.3s; border: 2px solid rgba(212,168,83,0.2); box-shadow: 0 2px 10px rgba(0,0,0,0.4);
+}
+@media (min-width: 640px) { .card-back { width: 80px; height: 126px; } }
+.card-idle:hover { transform: translateY(-16px); border-color: rgba(212,168,83,0.5); box-shadow: 0 10px 28px rgba(212,168,83,0.15); z-index: 999 !important; }
+.card-selected { opacity: 0.15; transform: scale(0.88); pointer-events: none; filter: grayscale(1); }
+.card-disabled { opacity: 0.35; pointer-events: none; }
+.position-slot {
+  width: 80px; height: 120px; border-radius: 12px;
+  display: flex; align-items: center; justify-content: center; transition: all 0.5s;
+}
+@media (min-width: 640px) { .position-slot { width: 96px; height: 144px; } }
+.position-empty { border: 2px dashed rgba(212,168,83,0.15); background: rgba(255,255,255,0.01); }
+.position-filled { border: 2px solid rgba(212,168,83,0.35); background: rgba(212,168,83,0.04); box-shadow: 0 0 20px rgba(212,168,83,0.08); }
+
+/* ─── Reduced motion ─── */
 @media (prefers-reduced-motion: reduce) {
-  .fate-mega-wheel,
-  .fate-altar-drift,
-  .fate-cta-summon-border,
-  .fate-altar-glint,
-  .fate-question-sink--breath {
-    animation: none !important;
-  }
-  .fate-altar-panel--entered {
-    animation: none !important;
-    opacity: 1 !important;
-    filter: none !important;
-    transform: none !important;
-  }
-  .fate-mega-wheel {
-    transform: none;
-  }
+  .fate-core, .fate-orb--1, .fate-orb--2, .fate-orb--3, .fate-orb--4, .fate-orb--5, .fate-orb--6,
+  .fate-dashboard--entered { animation: none !important; }
+  .fate-dashboard--entered { opacity: 1 !important; transform: none !important; }
 }
 </style>

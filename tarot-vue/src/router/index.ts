@@ -148,7 +148,8 @@ router.onError((error) => {
     if (typeof window !== 'undefined' && !sessionStorage.getItem('etomd_chunk_reload_prompt')) {
       sessionStorage.setItem('etomd_chunk_reload_prompt', '1')
       const hint = String(i18n.global.t('errors.chunkLoad'))
-      const ok = window.confirm(`${hint}\n\n是否立即刷新页面？`)
+      const confirmText = String(i18n.global.t('errors.chunkReloadConfirm'))
+      const ok = window.confirm(`${hint}\n\n${confirmText}`)
       if (ok) window.location.reload()
     }
   }
