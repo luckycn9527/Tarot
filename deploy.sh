@@ -139,10 +139,15 @@ do_build() {
   npx tsc
   log "后端构建完成 → dist/"
 
-  info "构建前端 (Vite → dist/)..."
-  cd "$FRONTEND_DIR"
-  npm run build:prod
-  log "前端构建完成 → dist/"
+  # SKIP_FRONTEND_BUILD=true 时跳过前端构建（dist/ 已随 git 分发）
+  if [ "${SKIP_FRONTEND_BUILD:-false}" = "true" ]; then
+    log "跳过前端构建 (dist/ 已随仓库预构建)"
+  else
+    info "构建前端 (Vite → dist/)..."
+    cd "$FRONTEND_DIR"
+    npm run build:prod
+    log "前端构建完成 → dist/"
+  fi
 
   # 确保 uploads 目录存在
   mkdir -p "$BACKEND_DIR/uploads/avatars" "$BACKEND_DIR/uploads/admin" "$BACKEND_DIR/uploads/card-backs"

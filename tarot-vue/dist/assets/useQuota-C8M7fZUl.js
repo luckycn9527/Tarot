@@ -1,0 +1,1 @@
+import{s as a}from"./pinia-CWcmrxeg.js";import{c}from"./index-B6wdA3qz.js";function m(){const e=c(),{remaining:t,isExhausted:s,isVip:o,quotaState:r}=a(e);return{remaining:t,isExhausted:s,isVip:o,fetchQuota:u=>e.fetchQuota(u),decrement:e.decrement,quotaState:r}}export{m as u};

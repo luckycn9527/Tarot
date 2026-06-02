@@ -1,0 +1,1 @@
+import{d as e}from"./storage-BMnhWq0e.js";const s=/[<>]/g,a=/javascript\s*:/gi,i=/on\w+\s*=/gi,o=500;function c(t){return t.replace(s,"").replace(a,"").replace(i,"").trim().slice(0,o)}function u(t,r){const n=e(t,r);return n?c(n):""}export{u as a,c as s};
