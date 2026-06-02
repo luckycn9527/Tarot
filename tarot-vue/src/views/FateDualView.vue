@@ -154,12 +154,7 @@ const baziPillars = computed(() => {
   } catch { return null }
 })
 
-const STEM_ELEMENT: Record<string, string> = { 甲: '木', 乙: '木', 丙: '火', 丁: '火', 戊: '土', 己: '土', 庚: '金', 辛: '金', 壬: '水', 癸: '水' }
-const BRANCH_ELEMENT: Record<string, string> = { 子: '水', 丑: '土', 寅: '木', 卯: '木', 辰: '土', 巳: '火', 午: '火', 未: '土', 申: '金', 酉: '金', 戌: '土', 亥: '水' }
-function ganzhiElements(gz: string): string {
-  if (!gz || gz.length < 2) return ''
-  return `${STEM_ELEMENT[gz[0]] ?? ''} ${BRANCH_ELEMENT[gz[1]] ?? ''}`.trim()
-}
+
 
 function selectDomain(opt: { key: DomainKey; category: 'love' | 'career' | 'wealth' | null }) {
   selectedDomain.value = opt.key
@@ -244,18 +239,6 @@ function splitDisplayParagraphs(text: string): string[] {
   if (byBlank.length > 1) return byBlank; return [raw]
 }
 
-const birthDateOracle = computed(() => {
-  if (!birthDate.value) return t('pages.fateDual.birthDatePending')
-  const [y, m, d] = birthDate.value.split('-').map(Number)
-  if (!y || !m || !d) return ''
-  return t('pages.fateDual.birthDateAnchored', { y, m: String(m).padStart(2, '0'), d: String(d).padStart(2, '0') })
-})
-const birthTimeOracle = computed(() => {
-  if (!birthTime.value) return t('pages.fateDual.birthTimeDefault')
-  const [hh] = birthTime.value.split(':'); const h = Number(hh)
-  if (Number.isNaN(h)) return birthTime.value
-  return birthTime.value
-})
 </script>
 
 <template>
