@@ -30,7 +30,7 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 // 上传目录（multer 不落盘若目录不存在；与 cwd 无关）
 const uploadsRoot = getUploadsRoot();
-for (const sub of ['', 'avatars', 'admin', 'card-backs'] as const) {
+for (const sub of ['', 'avatars', 'admin', 'card-backs', 'cards'] as const) {
   fs.mkdirSync(sub ? path.join(uploadsRoot, sub) : uploadsRoot, { recursive: true });
 }
 ensureDefaultUploadAssets(uploadsRoot);
@@ -152,8 +152,8 @@ async function start() {
         '⚠️ ADMIN_JWT_SECRET 未设置：管理后台 JWT 将回退使用 JWT_ACCESS_SECRET，与用户访问令牌共钥存在风险。建议在 .env 中配置独立的 ADMIN_JWT_SECRET（当前为仅告警，不阻止启动）。',
       );
     }
-    app.listen(env.PORT, () => {
-      console.log(`🚀 Server running on http://localhost:${env.PORT}`);
+    app.listen(env.PORT, env.HOST, () => {
+      console.log(`🚀 Server running on http://${env.HOST}:${env.PORT}`);
       console.log(`📦 Environment: ${env.NODE_ENV}`);
     });
   } catch (err) {
