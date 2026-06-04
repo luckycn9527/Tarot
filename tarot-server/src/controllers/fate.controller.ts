@@ -77,6 +77,32 @@ export async function analyze(req: Request, res: Response) {
       orientations.push(o);
     }
 
+    // 命盘类型（可选）：bazi（默认）| ziwei
+    const chartTypeRaw = body.chart_type ?? body.chartType;
+    const chartType: 'bazi' | 'ziwei' = chartTypeRaw === 'ziwei' ? 'ziwei' : 'bazi';
+
+    // 紫微命盘摘要（仅 ziwei 时使用，由前端排盘后传入）
+    let ziwei: Parameters<typeof FateService.analyzeFateDual>[1]['ziwei'] = null;
+    if (chartType === 'ziwei' && body.ziwei != null && typeof body.ziwei === 'object') {
+      const z = body.ziwei as Record<string, unknown>;
+      const asStr = (v: unknown, max = 40) =>
+        typeof v === 'string' && v.trim() ? v.trim().slice(0, max) : undefined;
+      const palaces = Array.isArray(z.palaces)
+        ? z.palaces.filter((p): p is string => typeof p === 'string').map((p) => p.slice(0, 120)).slice(0, 12)
+        : undefined;
+      ziwei = {
+        fiveElementsClass: asStr(z.fiveElementsClass),
+        soul: asStr(z.soul),
+        body: asStr(z.body),
+        soulBranch: asStr(z.soulBranch, 4),
+        bodyBranch: asStr(z.bodyBranch, 4),
+        zodiac: asStr(z.zodiac, 4),
+        sign: asStr(z.sign, 12),
+        lunarDate: asStr(z.lunarDate, 60),
+        palaces,
+      };
+    }
+
     const data = await FateService.analyzeFateDual(req.userId!, {
       birthDate,
       birthTime: timeVal,
@@ -84,6 +110,8 @@ export async function analyze(req: Request, res: Response) {
       category: cat,
       cardIds,
       orientations,
+      chartType,
+      ziwei,
     });
     res.json(success(data));
   } catch (err: unknown) {
