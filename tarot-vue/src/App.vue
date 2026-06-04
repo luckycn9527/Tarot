@@ -10,7 +10,6 @@ import AppErrorBoundary from './components/AppErrorBoundary.vue'
 
 const route = useRoute()
 const { t } = useI18n()
-const isCemeteryPage = computed(() => route.path.startsWith('/cemetery'))
 const isAdminPage = computed(() => route.path.startsWith('/admin'))
 </script>
 
@@ -21,7 +20,7 @@ const isAdminPage = computed(() => route.path.startsWith('/admin'))
   >
     {{ t('nav.skipToContent') }}
   </a>
-  <HeroBg v-if="!isCemeteryPage && !isAdminPage" />
+  <HeroBg v-if="!isAdminPage" />
   <AppHeader v-if="!isAdminPage" />
   <main id="main-content" :class="isAdminPage ? '' : 'main-content-safe'" tabindex="-1">
     <AppErrorBoundary>
@@ -32,6 +31,6 @@ const isAdminPage = computed(() => route.path.startsWith('/admin'))
       </RouterView>
     </AppErrorBoundary>
   </main>
-  <AppFooter v-if="!isCemeteryPage && !isAdminPage" />
+  <AppFooter v-if="!isAdminPage" />
   <ToastNotification />
 </template>

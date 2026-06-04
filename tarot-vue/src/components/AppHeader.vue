@@ -81,7 +81,6 @@ const navItems = computed<NavItem[]>(() => [
   { to: '/daily-fortune', label: t('nav.daily'), name: 'daily-fortune' },
   { to: '/yes-no-tarot', label: t('nav.yesNo'), name: 'yes-no-tarot' },
   { to: '/horoscope', label: t('nav.horoscope'), name: 'horoscope' },
-  { to: '/cemetery', label: t('nav.cemetery'), name: 'cemetery' },
   { to: '/membership', label: t('nav.membership'), name: 'membership' },
 ])
 

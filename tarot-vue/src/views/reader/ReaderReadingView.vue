@@ -6,7 +6,7 @@ import { useDynamicSeoTitle } from '../../composables/useDynamicSeoTitle'
 import { getReaderById } from '../../data/readers'
 import { getReaderSpreadById } from '../../data/spreadsData'
 import { getCardImageUrl } from '../../data/tarotCards'
-import { generateReaderReading, type ReaderReadingResult, type ReaderReadingCard } from '../../services/tarotAiReading'
+import { generateReaderReading, askReaderFollowUp, type ReaderReadingResult, type ReaderReadingCard, type ReaderFollowupTurn } from '../../services/tarotAiReading'
 import { useShuffle } from '../../composables/useShuffle'
 import ChatBubble from '../../components/ChatBubble.vue'
 import TarotCard3D from '../../components/TarotCard3D.vue'
@@ -79,6 +79,12 @@ const loadingProgress = ref(0)
 
 const imgErrors = ref<Set<number>>(new Set())
 function onImgError(index: number) { imgErrors.value.add(index) }
+
+/* —— 追问对话 —— */
+const followups = ref<ReaderFollowupTurn[]>([])
+const followupInput = ref('')
+const followupLoading = ref(false)
+const followupPending = ref('') // 正在等待回答的当前追问（用于即时显示用户气泡）
 
 onMounted(() => {
   void loadCardBack(true)
@@ -173,6 +179,45 @@ async function startReading() {
     } else {
       toast.error(serverMsg || axiosErr.message || '占卜失败，请稍后重试')
     }
+  }
+}
+
+async function submitFollowup() {
+  const q = followupInput.value.trim()
+  if (followupLoading.value) return
+  if (q.length < 2) { toast.error('请输入至少 2 个字的追问'); return }
+  if (q.length > 200) { toast.error('追问不能超过 200 字'); return }
+  if (!result.value) return
+
+  followupLoading.value = true
+  followupPending.value = q
+  followupInput.value = ''
+  await nextTick()
+  scrollToBottom()
+
+  try {
+    const data = await askReaderFollowUp({
+      readingId: result.value.id,
+      question: q,
+      priorTurns: followups.value.map((f) => ({ question: f.question, answer: f.answer })),
+    })
+    followups.value.push({ question: q, answer: data.answer })
+  } catch (err: unknown) {
+    const axiosErr = err as { response?: { status: number; data?: { message?: string } }; message?: string }
+    const serverMsg = axiosErr.response?.data?.message
+    if (axiosErr.response?.status === 403) {
+      toast.error('该塔罗师仅限VIP会员使用')
+    } else if (axiosErr.response?.status === 429) {
+      toast.error('今日免费次数已用完')
+    } else {
+      toast.error(serverMsg || axiosErr.message || '追问失败，请稍后重试')
+    }
+    followupInput.value = q // 失败时回填，方便重试
+  } finally {
+    followupPending.value = ''
+    followupLoading.value = false
+    await nextTick()
+    scrollToBottom()
   }
 }
 
@@ -349,7 +394,7 @@ function goHome() { router.push('/tarot') }
                 <div class="flex gap-4 min-w-max px-12">
                   <div v-for="(chatCard, chatCardIndex) in result.cards" :key="chatCardIndex" class="flex flex-col items-center">
                     <div class="w-24 h-36 sm:w-28 sm:h-40 rounded-xl overflow-hidden border-2 border-gold-500/20 shadow-lg shadow-gold-500/5">
-                      <img v-if="!imgErrors.has(chatCardIndex)" :src="getCardImageUrl(chatCard.nameEn)" :alt="chatCard.name" class="w-full h-full object-cover" :class="chatCard.isReversed ? 'rotate-180' : ''" @error="onImgError(chatCardIndex)" />
+                      <img v-if="!imgErrors.has(chatCardIndex)" :src="getCardImageUrl(chatCard.nameEn)" :alt="chatCard.name" loading="lazy" decoding="async" class="w-full h-full object-cover" :class="chatCard.isReversed ? 'rotate-180' : ''" @error="onImgError(chatCardIndex)" />
                       <div v-else class="w-full h-full bg-gradient-to-br from-obsidian to-void flex flex-col items-center justify-center p-2">
                         <span class="text-gold-300 text-sm font-medium text-center">{{ chatCard.name }}</span>
                         <span class="text-gold-400/60 text-xs mt-1">{{ chatCard.isReversed ? '逆位' : '正位' }}</span>
@@ -363,6 +408,69 @@ function goHome() { router.push('/tarot') }
               </div>
             </div>
           </template>
+
+          <!-- 追问对话历史 -->
+          <template v-for="(turn, turnIndex) in followups" :key="'fu-' + turnIndex">
+            <ChatBubble side="right" avatar="🙋">
+              {{ turn.question }}
+            </ChatBubble>
+            <ChatBubble side="left" :name="reader.name">
+              <template #avatar>
+                <ReaderAvatarMedia
+                  :reader="reader"
+                  wrapper-class="w-full h-full flex items-center justify-center overflow-hidden"
+                  emoji-class="text-lg leading-none"
+                />
+              </template>
+              {{ turn.answer }}
+            </ChatBubble>
+          </template>
+
+          <!-- 正在追问中：用户气泡 + 加载气泡 -->
+          <template v-if="followupLoading">
+            <ChatBubble side="right" avatar="🙋">
+              {{ followupPending }}
+            </ChatBubble>
+            <ChatBubble side="left" :name="reader.name">
+              <template #avatar>
+                <ReaderAvatarMedia
+                  :reader="reader"
+                  wrapper-class="w-full h-full flex items-center justify-center overflow-hidden"
+                  emoji-class="text-lg leading-none"
+                />
+              </template>
+              <span class="inline-flex items-center gap-1.5 text-gray-400">
+                <span class="typing-dot" />
+                <span class="typing-dot" style="animation-delay:.15s" />
+                <span class="typing-dot" style="animation-delay:.3s" />
+              </span>
+            </ChatBubble>
+          </template>
+
+          <!-- 追问输入框 -->
+          <div v-if="showActions" class="pt-4 chat-bubble-enter">
+            <div class="flex items-end gap-2 rounded-2xl bg-white/4 border border-gold-500/15 p-2 focus-within:border-gold-500/40 transition-colors">
+              <textarea
+                v-model="followupInput"
+                rows="1"
+                maxlength="200"
+                placeholder="继续追问这次占卜…（例如：那我该如何把握这个机会？）"
+                class="flex-1 resize-none bg-transparent px-2 py-1.5 text-sm text-gray-200 placeholder:text-gray-600 outline-none"
+                :disabled="followupLoading"
+                @keydown.enter.exact.prevent="submitFollowup"
+              />
+              <button
+                type="button"
+                class="cursor-pointer shrink-0 w-9 h-9 rounded-full flex items-center justify-center bg-gold-500/30 border border-gold-500/30 text-gold-100 hover:bg-gold-500/45 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+                :disabled="followupLoading || followupInput.trim().length < 2"
+                aria-label="发送追问"
+                @click="submitFollowup"
+              >
+                <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M22 2L11 13M22 2l-7 20-4-9-9-4 20-7z" stroke-linecap="round" stroke-linejoin="round"/></svg>
+              </button>
+            </div>
+            <p class="mt-1.5 px-1 text-xs text-gray-600">每次追问消耗一次占卜次数 · 回车发送</p>
+          </div>
 
           <div v-if="showActions" class="flex flex-col sm:flex-row gap-3 pt-6 chat-bubble-enter">
             <button class="flex-1 py-3.5 rounded-xl cta-button text-white font-medium hover:shadow-lg transition-all" @click="goRestart">重新占卜</button>
@@ -433,4 +541,18 @@ function goHome() { router.push('/tarot') }
 @keyframes positionFillIn { from { opacity: 0; transform: scale(0.75); } to { opacity: 1; transform: scale(1); } }
 .chat-bubble-enter { animation: bubbleFadeIn 0.4s ease-out both; }
 @keyframes bubbleFadeIn { from { opacity: 0; transform: translateY(12px); } to { opacity: 1; transform: translateY(0); } }
+
+/* 追问加载中：打字动画 */
+.typing-dot {
+  width: 6px; height: 6px; border-radius: 50%;
+  background: currentColor; display: inline-block;
+  animation: typingBlink 1s ease-in-out infinite;
+}
+@keyframes typingBlink {
+  0%, 60%, 100% { opacity: 0.25; transform: translateY(0); }
+  30% { opacity: 1; transform: translateY(-3px); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .typing-dot { animation: none; opacity: 0.6; }
+}
 </style>

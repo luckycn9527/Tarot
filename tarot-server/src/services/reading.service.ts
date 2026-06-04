@@ -1,7 +1,7 @@
 import { tarotCards } from '../data/tarotCards.js';
 import type { TarotCard } from '../data/tarotCards.js';
 import { callDeepSeek } from './deepseek.service.js';
-import { SYSTEM_PROMPT, buildSingleCardPrompt, buildThreeCardPrompt, buildDailyFortunePrompt, buildReaderReadingPrompt } from '../utils/prompts.js';
+import { SYSTEM_PROMPT, buildSingleCardPrompt, buildThreeCardPrompt, buildDailyFortunePrompt, buildReaderReadingPrompt, buildReaderFollowupPrompt } from '../utils/prompts.js';
 import { getReaderById } from '../data/readers.js';
 import * as ReadingModel from '../models/reading.model.js';
 import * as UserModel from '../models/user.model.js';
@@ -412,6 +412,82 @@ export async function readerReading(
     })),
     result: resultData,
   };
+}
+
+/**
+ * 追问对话：基于已完成的某次塔罗占卜，回答问卜者的进一步提问。
+ * - 占卜上下文（问题/牌面/原解读）一律从数据库按 readingId + userId 还原，保证归属与可信。
+ * - 多轮追问的历史由前端传入（未持久化），仅作为对话上下文拼接。
+ */
+export async function readerFollowup(
+  userId: number,
+  readingId: number,
+  followupQuestion: string,
+  priorTurns?: { question: string; answer: string }[]
+) {
+  const reading = await ReadingModel.findById(readingId, userId);
+  if (!reading) throw new Error('占卜记录不存在或无权访问');
+  if (reading.type !== 'reader-reading') throw new Error('该记录不支持追问');
+
+  const reader = getReaderById(reading.readerId ?? '');
+  if (!reader) throw new Error('塔罗师不存在');
+  const promptOverride = await AdminService.getReaderPromptOverride(reader.id);
+
+  // VIP 塔罗师：追问同样需要有效会员
+  if (reader.accessLevel === 'vip') {
+    const user = await UserModel.findById(userId);
+    if (!user || user.membership !== 'vip' || !user.membership_expires_at || new Date(user.membership_expires_at) <= new Date()) {
+      throw new Error('该塔罗师仅限VIP会员使用');
+    }
+  }
+
+  const spread = spreadConfigs[reading.spreadType ?? ''] ?? { name: '塔罗牌阵', cardCount: reading.cardIds.length, positions: [] as string[] };
+
+  // 还原牌面描述（与初次占卜一致的格式）
+  const cardDescriptions = reading.cardIds.map((cardId: number, i: number) => {
+    const card = tarotCards.find(c => c.id === cardId);
+    const isReversed = (reading.orientations[i] ?? 'upright') === 'reversed';
+    const orientation = isReversed ? '逆位' : '正位';
+    const position = spread.positions[i] ?? `牌位${i + 1}`;
+    if (!card) return `牌位${i + 1}（${position}）：未知牌（${orientation}）`;
+    const keywords = isReversed ? card.reversedKeywords : card.uprightKeywords;
+    return `牌位${i + 1}（${position}）：${card.name}（${orientation}）- 关键词：${keywords}`;
+  }).join('\n');
+
+  // 还原此前解读正文（取初次占卜 messages 的 content 拼接）
+  const rd = reading.resultData as { messages?: { content?: string }[] } | null;
+  const priorReading = Array.isArray(rd?.messages)
+    ? rd!.messages.map(m => (typeof m?.content === 'string' ? m.content : '')).filter(Boolean).join('\n\n')
+    : '';
+
+  const userPrompt = buildReaderFollowupPrompt(
+    spread.name,
+    cardDescriptions,
+    reading.question ?? '（未记录）',
+    priorReading,
+    followupQuestion
+  );
+
+  // 拼接对话：system(人格) → user(初次解读请求的浓缩) + assistant(初次解读) → 历次追问 → 本次追问
+  const messages: { role: 'system' | 'user' | 'assistant'; content: string }[] = [
+    { role: 'system', content: promptOverride?.system_prompt || reader.systemPrompt },
+  ];
+  if (priorReading) {
+    messages.push({ role: 'assistant', content: priorReading });
+  }
+  for (const turn of (priorTurns ?? []).slice(-6)) {
+    if (turn?.question) messages.push({ role: 'user', content: turn.question });
+    if (turn?.answer) messages.push({ role: 'assistant', content: turn.answer });
+  }
+  messages.push({ role: 'user', content: userPrompt });
+
+  const answer = (await callDeepSeek(messages, 60000, 1200)).trim();
+  if (!answer) throw new Error('追问解读生成失败，请稍后重试');
+
+  // 追问消耗一次配额（与初次占卜一致的限额策略）
+  await UserModel.decrementQuota(userId);
+
+  return { readingId, question: followupQuestion, answer };
 }
 
 export async function getHistory(userId: number, options: {

@@ -40,6 +40,5 @@ export async function cacheDel(...keys: string[]): Promise<void> {
 
 /** 与 cacheGet/cacheSet 使用相同的 key（不含前缀），供失效时调用 */
 export const CACHE_KEYS = {
-  cemeteryMarkers: 'cemetery:markers',
   userSettings: (userId: number) => `user:settings:${userId}`,
 } as const;

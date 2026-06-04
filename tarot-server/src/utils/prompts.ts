@@ -62,6 +62,88 @@ ${cardDescriptions}
 }`;
 }
 
+/**
+ * 追问对话：基于已完成的占卜，回答问卜者的进一步提问。
+ * 返回纯文本（非 JSON），由 reader 的人格语气作答。
+ */
+/**
+ * 星座每日运势：将外部英文原文「翻译 + 扩展」为结构化中文运势。
+ * 若 sourceText 为空（外部源不可用），则退化为基于星座特质的纯生成。
+ * 返回严格 JSON：一句话总结 + 五维文字 + 五维星级 + 幸运提示。
+ */
+export function buildHoroscopePrompt(signName: string, dateStr: string, sourceText?: string): string {
+  const sourceBlock = sourceText && sourceText.trim()
+    ? `以下是该星座今日运势的英文原文，请以它为依据进行翻译并合理扩展（不要照搬直译，要符合中文表达习惯）：
+"""
+${sourceText.trim()}
+"""`
+    : `（暂无外部原文，请基于「${signName}」的典型星座特质，生成符合当日基调的运势。）`;
+
+  return `今天是 ${dateStr}，请输出「${signName}」的今日星座运势。
+
+${sourceBlock}
+
+要求：
+1. 以英文原文的整体基调为核心，翻译为自然流畅的中文，并在各维度上做合理扩展。
+2. 语气温暖、专业、有画面感，不要绝对化预言，给出指导性建议。
+3. 各维度内容要具体、不空泛，且彼此呼应原文主旨。
+4. 星级评分要与对应维度的文字基调一致（正面高、谨慎低）。
+5. 全部使用中文。
+
+你必须只返回以下 JSON 对象（不要包含 markdown 代码块标记，不要输出 JSON 以外的任何字符）：
+{
+  "summary": "今日整体基调一句话，20-35字",
+  "overallScore": 55到98的整数,
+  "sections": {
+    "overall": "综合运势，60-100字",
+    "love": "爱情运势，50-90字",
+    "career": "事业/学业运势，50-90字",
+    "wealth": "财富运势，50-90字",
+    "health": "健康运势，50-90字"
+  },
+  "ratings": {
+    "overall": 1到5的整数,
+    "love": 1到5的整数,
+    "career": 1到5的整数,
+    "wealth": 1到5的整数,
+    "health": 1到5的整数
+  },
+  "luckyColor": "幸运色，2-6字",
+  "luckyNumber": 0到9的整数
+}
+
+关于 overallScore：这是当日综合运势指数（55-98）。请依据原文与各维度强弱**真实给分、充分使用区间**，运势好的日子可到 90 以上、平淡或受挫的日子可低至 60 上下；切忌每次都给 70 多的中间值。`;
+}
+
+export function buildReaderFollowupPrompt(
+  spreadName: string,
+  cardDescriptions: string,
+  originalQuestion: string,
+  priorReading: string,
+  followupQuestion: string
+): string {
+  return `这是一次已经完成的塔罗占卜，现在问卜者想就同一次占卜结果继续追问。
+
+【本次占卜背景】
+最初的问题：「${originalQuestion}」
+使用牌阵：${spreadName}
+牌面信息：
+${cardDescriptions}
+
+你此前给出的解读：
+${priorReading}
+
+【问卜者的追问】
+「${followupQuestion}」
+
+请以你一贯的人格与语气，紧扣上面已经抽到的牌面和此前的解读来回答这个追问。
+要求：
+1. 不要重新抽牌，也不要假设新的牌面；只基于已有牌面深入。
+2. 直接回应追问，给出有洞察力且可落地的解读或建议。
+3. 中文，150-300 字，自然口语化的对话风格，不要使用 JSON、列表标记或 markdown 代码块。
+4. 只输出回答正文本身，不要加前缀或标题。`;
+}
+
 export function buildReaderReadingPrompt(
   readerName: string,
   spreadName: string,

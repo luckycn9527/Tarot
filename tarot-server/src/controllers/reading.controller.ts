@@ -1,5 +1,6 @@
 import type { Request, Response } from 'express';
 import * as ReadingService from '../services/reading.service.js';
+import * as HoroscopeService from '../services/horoscope.service.js';
 import { success, fail } from '../utils/response.js';
 
 function getErrMsg(err: unknown, fallback: string): string {
@@ -46,6 +47,25 @@ export async function dailyFortune(req: Request, res: Response) {
     res.json(success(result));
   } catch (err: unknown) {
     res.status(500).json(fail(getErrMsg(err, '每日运势获取失败')));
+  }
+}
+
+export async function horoscope(req: Request, res: Response) {
+  try {
+    const sign = typeof req.query.sign === 'string' ? req.query.sign : '';
+    if (!sign) {
+      res.status(400).json(fail('请提供星座 sign'));
+      return;
+    }
+    const result = await HoroscopeService.getHoroscope(sign);
+    res.json(success(result));
+  } catch (err: unknown) {
+    const msg = getErrMsg(err, '星座运势获取失败');
+    if (msg === '无效的星座') {
+      res.status(400).json(fail(msg));
+      return;
+    }
+    res.status(500).json(fail(msg));
   }
 }
 
@@ -115,6 +135,51 @@ export async function readerReading(req: Request, res: Response) {
     const msg = getErrMsg(err, '占卜失败');
     if (msg === '该塔罗师仅限VIP会员使用') {
       res.status(403).json(fail(msg));
+      return;
+    }
+    res.status(500).json(fail(msg));
+  }
+}
+
+export async function readerFollowup(req: Request, res: Response) {
+  try {
+    const { readingId, question, priorTurns } = req.body as {
+      readingId?: unknown;
+      question?: unknown;
+      priorTurns?: unknown;
+    };
+
+    const id = Number(readingId);
+    if (!Number.isInteger(id) || id <= 0) {
+      res.status(400).json(fail('无效的占卜记录ID'));
+      return;
+    }
+    if (typeof question !== 'string' || question.trim().length < 2 || question.trim().length > 200) {
+      res.status(400).json(fail('追问长度应在2-200字之间'));
+      return;
+    }
+
+    // 校验并裁剪历史轮次（仅取必要字段，防止注入超大上下文）
+    let turns: { question: string; answer: string }[] | undefined;
+    if (Array.isArray(priorTurns)) {
+      turns = priorTurns
+        .filter((t): t is { question: string; answer: string } =>
+          !!t && typeof t === 'object' &&
+          typeof (t as Record<string, unknown>).question === 'string' &&
+          typeof (t as Record<string, unknown>).answer === 'string')
+        .map((t) => ({ question: String(t.question).slice(0, 200), answer: String(t.answer).slice(0, 2000) }));
+    }
+
+    const result = await ReadingService.readerFollowup(req.userId!, id, question.trim(), turns);
+    res.json(success(result));
+  } catch (err: unknown) {
+    const msg = getErrMsg(err, '追问失败');
+    if (msg === '该塔罗师仅限VIP会员使用') {
+      res.status(403).json(fail(msg));
+      return;
+    }
+    if (msg.includes('不存在') || msg.includes('无权') || msg.includes('不支持追问')) {
+      res.status(404).json(fail(msg));
       return;
     }
     res.status(500).json(fail(msg));

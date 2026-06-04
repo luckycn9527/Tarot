@@ -33,21 +33,6 @@
   --color-celestial: #22d3ee;
 }
 
-/* --- Cyber Cemetery (preserved) --- */
-@theme {
-  --cyber-bg-deep: #050510;
-  --cyber-bg: #0a0a1a;
-  --cyber-panel: rgba(13, 13, 36, 0.85);
-  --cyber-border: #1a1a3e;
-  --cyber-neon-purple: #c084fc;
-  --cyber-neon-cyan: #22d3ee;
-  --cyber-neon-pink: #f472b6;
-  --cyber-neon-amber: #f59e0b;
-  --cyber-grid-line: rgba(99, 102, 241, 0.12);
-  --cyber-text: #e2e8f0;
-  --cyber-text-dim: #64748b;
-}
-
 /* ============================================
    Base
    ============================================ */
@@ -620,39 +605,3 @@
 @media (min-width: 1800px) {
   html { font-size: 17px; }
 }
-
-/* ============================================
-   Cyber Cemetery — Preserved
-   ============================================ */
-@keyframes neonBreath   { 0%,100%{opacity:.6;filter:brightness(1)} 50%{opacity:1;filter:brightness(1.3)} }
-@keyframes tilePulse    { 0%{opacity:.3;transform:scale(.95)} 50%{opacity:.7;transform:scale(1)} 100%{opacity:.3;transform:scale(.95)} }
-@keyframes slideInLeft  { from{opacity:0;transform:translateX(-24px)} to{opacity:1;transform:translateX(0)} }
-@keyframes slideInRight { from{opacity:0;transform:translateX(24px)} to{opacity:1;transform:translateX(0)} }
-@keyframes slideInUp    { from{opacity:0;transform:translateY(16px)} to{opacity:1;transform:translateY(0)} }
-@keyframes cyberModalIn { from{opacity:0;transform:scale(.92) translateY(12px)} to{opacity:1;transform:scale(1) translateY(0)} }
-@keyframes scanLine     { 0%{top:-2px} 100%{top:100%} }
-@keyframes glowPulse    { 0%,100%{box-shadow:0 0 8px var(--glow-color,#c084fc),0 0 16px color-mix(in srgb,var(--glow-color,#c084fc) 40%,transparent)} 50%{box-shadow:0 0 16px var(--glow-color,#c084fc),0 0 32px color-mix(in srgb,var(--glow-color,#c084fc) 60%,transparent)} }
-
-.cyber-slide-left  { animation: slideInLeft .4s ease-out; }
-.cyber-slide-right { animation: slideInRight .4s ease-out; }
-.cyber-slide-up    { animation: slideInUp .3s ease-out; }
-.cyber-modal-in    { animation: cyberModalIn .3s ease-out; }
-
-.cyber-panel { background:var(--cyber-panel); border:1px solid var(--cyber-border); backdrop-filter:blur(16px); -webkit-backdrop-filter:blur(16px); }
-.cyber-glow-top    { box-shadow:0 1px 0 0 var(--cyber-neon-purple),0 0 12px color-mix(in srgb,var(--cyber-neon-purple) 25%,transparent); }
-.cyber-glow-bottom { box-shadow:0 -1px 0 0 var(--cyber-neon-purple),0 0 12px color-mix(in srgb,var(--cyber-neon-purple) 25%,transparent); }
-.cyber-glow-border { box-shadow:0 0 1px var(--cyber-neon-purple),0 0 8px color-mix(in srgb,var(--cyber-neon-purple) 20%,transparent),inset 0 0 8px color-mix(in srgb,var(--cyber-neon-purple) 10%,transparent); }
-
-.cyber-btn { padding:8px 16px; border-radius:8px; font-size:13px; font-weight:500; transition:all .2s; border:1px solid var(--cyber-border); background:rgba(255,255,255,.03); color:var(--cyber-text); }
-.cyber-btn:hover { border-color:var(--cyber-neon-purple); background:rgba(192,132,252,.08); color:#fff; }
-.cyber-btn-primary { background:linear-gradient(135deg,rgba(147,51,234,.6),rgba(192,132,252,.4)); border-color:rgba(192,132,252,.4); color:#fff; }
-.cyber-btn-primary:hover { background:linear-gradient(135deg,rgba(147,51,234,.8),rgba(192,132,252,.6)); box-shadow:0 0 16px rgba(192,132,252,.3); }
-
-.cyber-input { width:100%; padding:10px 14px; border-radius:8px; background:rgba(255,255,255,.03); border:1px solid var(--cyber-border); color:var(--cyber-text); font-size:14px; transition:border-color .2s,box-shadow .2s; }
-.cyber-input:focus { outline:none; border-color:var(--cyber-neon-purple); box-shadow:0 0 0 2px rgba(192,132,252,.15); }
-.cyber-input::placeholder { color:#4a5568; }
-
-.cyber-fade-enter-active, .cyber-fade-leave-active { transition:opacity .25s ease; }
-.cyber-fade-enter-from, .cyber-fade-leave-to { opacity:0; }
-.cyber-modal-enter-active { animation:cyberModalIn .3s ease-out; }
-.cyber-modal-leave-active { transition:opacity .2s ease; opacity:0; }

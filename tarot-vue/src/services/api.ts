@@ -28,7 +28,12 @@ api.interceptors.request.use((config) => {
 
 // 响应拦截器：自动刷新 token
 let isRefreshing = false
-let pendingRequests: ((token: string) => void)[] = []
+/** 等待刷新完成的请求队列：成功时用新 token 重试，失败时一并 reject，避免请求永久挂起 */
+interface PendingRequest {
+  resolve: (token: string) => void
+  reject: (err: unknown) => void
+}
+let pendingRequests: PendingRequest[] = []
 
 api.interceptors.response.use(
   (response) => response,
@@ -47,15 +52,16 @@ api.interceptors.response.use(
           setAccessToken(newToken)
 
           // 重试所有等待的请求
-          pendingRequests.forEach((cb) => cb(newToken))
+          pendingRequests.forEach(({ resolve }) => resolve(newToken))
           pendingRequests = []
 
           // 重试原始请求
           originalRequest.headers.Authorization = `Bearer ${newToken}`
           return api(originalRequest)
-        } catch {
-          // 刷新失败，清除状态
+        } catch (refreshErr) {
+          // 刷新失败，清除状态并 reject 所有等待中的请求（否则它们会永久挂起）
           setAccessToken(null)
+          pendingRequests.forEach(({ reject }) => reject(refreshErr))
           pendingRequests = []
           // 触发全局登出事件
           window.dispatchEvent(new CustomEvent('auth:logout'))
@@ -65,11 +71,14 @@ api.interceptors.response.use(
         }
       }
 
-      // 如果正在刷新中，等待刷新完成
-      return new Promise((resolve) => {
-        pendingRequests.push((token: string) => {
-          originalRequest.headers.Authorization = `Bearer ${token}`
-          resolve(api(originalRequest))
+      // 如果正在刷新中，等待刷新完成（成功则重试，失败则 reject）
+      return new Promise((resolve, reject) => {
+        pendingRequests.push({
+          resolve: (token: string) => {
+            originalRequest.headers.Authorization = `Bearer ${token}`
+            resolve(api(originalRequest))
+          },
+          reject,
         })
       })
     }

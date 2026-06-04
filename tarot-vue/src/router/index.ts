@@ -95,13 +95,6 @@ const router = createRouter({
       meta: { requiresAuth: true },
       component: () => import('../views/reader/ReaderReadingView.vue'),
     },
-    { path: '/cemetery', name: 'cemetery', component: () => import('../views/CemeteryView.vue') },
-    {
-      path: '/cemetery/create',
-      name: 'cemetery-create',
-      meta: { requiresAuth: true },
-      component: () => import('../views/CemeteryDivinationView.vue'),
-    },
     { path: '/admin/login', name: 'admin-login', component: () => import('../views/admin/AdminLoginView.vue') },
     { path: '/admin', name: 'admin-dashboard', component: () => import('../views/admin/AdminDashboardView.vue'), meta: { adminOnly: true } },
     { path: '/:pathMatch(.*)*', name: 'not-found', component: () => import('../views/NotFoundView.vue') },

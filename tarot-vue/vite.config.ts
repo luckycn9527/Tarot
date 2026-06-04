@@ -17,7 +17,6 @@ export default defineConfig(({ mode }) => {
         output: {
           manualChunks(id) {
             if (id.includes('node_modules')) {
-              if (id.includes('maplibre-gl') || id.includes('vue-maplibre')) return 'maplibre'
               if (id.includes('lunar-javascript')) return 'lunar'
               if (id.includes('vue-i18n')) return 'vue-i18n'
               if (id.includes('vue-router')) return 'vue-router'

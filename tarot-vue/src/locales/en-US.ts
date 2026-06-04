@@ -8,7 +8,6 @@ export default {
     daily: 'Daily fortune',
     yesNo: 'Yes / No Tarot',
     horoscope: 'Horoscope',
-    cemetery: 'Digital cemetery',
     membership: 'Membership',
     login: 'Log in',
     skipToContent: 'Skip to main content',
@@ -73,8 +72,11 @@ export default {
   },
   errors: {
     chunkLoad: 'A new version is available. Please refresh to continue.',
+    chunkReloadConfirm: 'Refresh the page now?',
     generic: 'Something went wrong. Retry or go back home.',
     boundary: 'Render error',
+    bootstrapTitle: 'Initialization failed',
+    bootstrapBody: 'Unable to load core data. Please try again later.',
   },
   notFound: {
     title: 'Page not found',
@@ -149,8 +151,6 @@ export default {
       'yes-no-three-result': 'Three-card result',
       horoscope: 'Horoscope',
       membership: 'Membership',
-      cemetery: 'Digital cemetery',
-      'cemetery-create': 'Cemetery divination',
       privacy: 'Privacy policy',
       terms: 'Terms of service',
       feedback: 'Feedback',

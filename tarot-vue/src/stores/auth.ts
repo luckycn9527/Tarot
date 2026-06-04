@@ -2,7 +2,6 @@ import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
 import api, { setAccessToken } from '@/services/api'
 import { useUserResourcesStore } from '@/stores/userResources'
-import { useCemeteryStore } from '@/stores/cemetery'
 
 export interface User {
   id: number
@@ -133,7 +132,6 @@ export const useAuthStore = defineStore('auth', () => {
         resources.invalidateAll()
         void resources.fetchQuota(true)
         void resources.fetchSettings(true)
-        useCemeteryStore().clearUserScoped()
         return null
       }
       return { message: res.data.message || 'Google 登录失败' }
@@ -197,7 +195,6 @@ export const useAuthStore = defineStore('auth', () => {
         resources.invalidateAll()
         void resources.fetchQuota(true)
         void resources.fetchSettings(true)
-        useCemeteryStore().clearUserScoped()
         return null
       }
       return { message: res.data.message || '登录失败' }
@@ -216,7 +213,6 @@ export const useAuthStore = defineStore('auth', () => {
     currentUser.value = null
     setAccessToken(null)
     useUserResourcesStore().invalidateAll()
-    useCemeteryStore().clearUserScoped()
   }
 
   async function updateProfile(data: {

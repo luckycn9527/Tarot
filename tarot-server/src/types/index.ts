@@ -49,35 +49,3 @@ export interface ReadingHistory {
   created_at: string;
   updated_at: string;
 }
-
-export interface DbTombstone {
-  id: number;
-  user_id: number;
-  longitude: number;
-  latitude: number;
-  tombstone_style: string;
-  display_name: string;
-  epitaph: string | null;
-  tarot_card_id: number | null;
-  hexagram_id: number | null;
-  is_public: number;
-  view_count: number;
-  created_at: string;
-  updated_at: string;
-}
-
-export interface PublicTombstone {
-  id: number;
-  userId: number;
-  longitude: number;
-  latitude: number;
-  tombstoneStyle: string;
-  displayName: string;
-  epitaph: string | null;
-  tarotCardId: number | null;
-  hexagramId: number | null;
-  isPublic: boolean;
-  viewCount: number;
-  createdAt: string;
-  updatedAt: string;
-}

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, markRaw, type Component } from 'vue'
 import { useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { useScrollReveal } from '../composables/useScrollReveal'
@@ -9,6 +9,12 @@ import type { DailyFortuneResult } from '../data/tarotReadings'
 import StarRating from '../components/StarRating.vue'
 import CtaSection from '../components/CtaSection.vue'
 import { StorageKeys, storageGetRaw } from '@/utils/storage'
+import StarIcon from '@icons/star.vue'
+import HeartIcon from '@icons/heart.vue'
+import BriefcaseIcon from '@icons/briefcase.vue'
+import CoinsIcon from '@icons/coins.vue'
+import LeafIcon from '@icons/leaf.vue'
+import SparklesIcon from '@icons/sparkles.vue'
 
 useScrollReveal()
 
@@ -47,17 +53,17 @@ const todayStr = computed(() => {
 interface FortuneSection {
   key: keyof DailyFortuneResult['sections']
   title: string
-  emoji: string
+  icon: Component
   ratingKey?: keyof DailyFortuneResult['ratings']
 }
 
 const sectionDefs: Omit<FortuneSection, 'title'>[] = [
-  { key: 'overall', emoji: '🌟', ratingKey: 'overall' },
-  { key: 'love', emoji: '💕', ratingKey: 'love' },
-  { key: 'career', emoji: '💼', ratingKey: 'career' },
-  { key: 'wealth', emoji: '💰', ratingKey: 'wealth' },
-  { key: 'health', emoji: '🌿', ratingKey: 'health' },
-  { key: 'mystery', emoji: '🔮' },
+  { key: 'overall', icon: markRaw(StarIcon), ratingKey: 'overall' },
+  { key: 'love', icon: markRaw(HeartIcon), ratingKey: 'love' },
+  { key: 'career', icon: markRaw(BriefcaseIcon), ratingKey: 'career' },
+  { key: 'wealth', icon: markRaw(CoinsIcon), ratingKey: 'wealth' },
+  { key: 'health', icon: markRaw(LeafIcon), ratingKey: 'health' },
+  { key: 'mystery', icon: markRaw(SparklesIcon) },
 ]
 
 const sections = computed((): FortuneSection[] =>
@@ -87,6 +93,7 @@ const sections = computed((): FortuneSection[] =>
           <img
             :src="getCardImageUrl(fortune.cardNameEn)"
             :alt="fortune.cardName"
+            decoding="async"
             class="w-full h-full object-contain rounded-lg"
             :style="fortune.isReversed ? 'transform: rotate(180deg)' : ''"
           >
@@ -115,9 +122,9 @@ const sections = computed((): FortuneSection[] =>
             class="flex flex-col gap-4"
             :class="i % 2 === 0 ? 'sm:flex-row' : 'sm:flex-row-reverse'"
           >
-            <!-- Emoji illustration -->
+            <!-- Icon illustration -->
             <div class="sm:w-32 h-28 sm:h-auto rounded-xl bg-gradient-to-br from-gold-500/10 to-obsidian/40 flex items-center justify-center shrink-0 border border-gold-500/10">
-              <span class="text-5xl">{{ sec.emoji }}</span>
+              <component :is="sec.icon" class="w-12 h-12 text-gold-300" />
             </div>
             <!-- Content -->
             <div class="flex-1">

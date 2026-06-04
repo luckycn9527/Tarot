@@ -95,6 +95,7 @@ const faqItems = computed(() => tm('pages.membership.faq') as { question: string
 
         <!-- Monthly - Featured -->
         <div class="price-card featured">
+          <span class="featured-badge">{{ t('pages.membership.featuredBadge') }}</span>
           <h3 class="text-lg font-bold font-serif text-white mb-2">{{ t('pages.membership.planMonthly') }}</h3>
           <div class="mb-4"><span class="text-3xl font-bold text-white">{{ t('pages.membership.priceMonthly') }}</span><span class="text-gray-400 text-sm">{{ t('pages.membership.perMonth') }}</span></div>
           <p class="text-gray-400 text-sm mb-6">{{ t('pages.membership.planMonthlySub') }}</p>

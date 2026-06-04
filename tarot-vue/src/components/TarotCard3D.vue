@@ -51,6 +51,13 @@ const shineStyle = computed(() => ({
   opacity: isHovering.value && canTilt.value ? 1 : 0,
 }))
 
+/** 全息光晕变量：指针位置 + 激活强度（对标 tarotqa 的 behind-gradient 技术） */
+const glowVars = computed(() => ({
+  '--pointer-x': `${shineX.value}%`,
+  '--pointer-y': `${shineY.value}%`,
+  '--card-opacity': isHovering.value && canTilt.value ? 1 : 0,
+}))
+
 watch(() => props.isFlipped, (flipped) => {
   if (flipped) {
     isHovering.value = false
@@ -74,6 +81,11 @@ function onMouseMove(event: MouseEvent) {
   isHovering.value = true
 }
 
+function onMouseEnter() {
+  if (!canTilt.value) return
+  isHovering.value = true
+}
+
 function onMouseLeave() {
   isHovering.value = false
   tiltX.value = 0
@@ -92,7 +104,9 @@ function handleClick() {
   <div
     class="tarot-3d-wrapper"
     :class="sizeClasses"
+    :style="glowVars"
     @click="handleClick"
+    @mouseenter="onMouseEnter"
     @mousemove="onMouseMove"
     @mouseleave="onMouseLeave"
   >
@@ -142,16 +156,49 @@ function handleClick() {
 
 .tarot-3d-glow {
   position: absolute;
-  inset: -20%;
-  border-radius: 50%;
-  background: radial-gradient(circle, rgba(212,168,83,.06) 0%, transparent 70%);
-  transition: all 1s ease;
+  inset: -10px;
+  border-radius: 24px;
   pointer-events: none;
   z-index: -1;
+  /* 全息光晕：指针处的紫色径向 + 暖金锥形，模糊后铺成柔光（对标 tarotqa） */
+  background-image:
+    radial-gradient(farthest-side circle at var(--pointer-x, 50%) var(--pointer-y, 50%),
+      hsla(45, 90%, 80%, calc(var(--card-opacity, 0) * 0.9)) 4%,
+      hsla(280, 85%, 80%, calc(var(--card-opacity, 0) * 0.65)) 22%,
+      hsla(265, 75%, 60%, calc(var(--card-opacity, 0) * 0.35)) 55%,
+      transparent 100%),
+    radial-gradient(120% 120% at 50% 50%,
+      rgba(212, 168, 83, 0.10) 0%,
+      rgba(124, 58, 237, 0.06) 45%,
+      transparent 72%),
+    conic-gradient(from 120deg at 50% 50%,
+      rgba(193, 120, 255, 0.18),
+      rgba(212, 168, 83, 0.16),
+      rgba(124, 58, 237, 0.18),
+      rgba(193, 120, 255, 0.18));
+  background-size: 100% 100%;
+  filter: blur(34px) saturate(1.6);
+  opacity: 1;
+  transform: scale(0.86);
+  transition: transform 0.6s cubic-bezier(0.22, 1, 0.36, 1), filter 0.6s ease;
+  animation: glowBreath 6s ease-in-out infinite;
+}
+/* hover：光晕放大、模糊扩散、更亮（--card-opacity 由 JS 提为 1） */
+.tarot-3d-wrapper:hover .tarot-3d-glow {
+  transform: scale(1.04);
+  filter: blur(44px) saturate(2);
+  animation: none;
 }
 .glow-active {
-  background: radial-gradient(circle, rgba(212,168,83,.15) 0%, rgba(124,58,237,.05) 50%, transparent 70%);
-  animation: cardPulse 4s ease-in-out infinite;
+  animation: glowPulse 4s ease-in-out infinite;
+}
+@keyframes glowBreath {
+  0%, 100% { transform: scale(0.84); filter: blur(34px) saturate(1.5); }
+  50% { transform: scale(0.92); filter: blur(38px) saturate(1.7); }
+}
+@keyframes glowPulse {
+  0%, 100% { transform: scale(0.92); filter: blur(36px) saturate(1.7); }
+  50% { transform: scale(1.02); filter: blur(44px) saturate(2); }
 }
 
 .tarot-3d-perspective {
@@ -238,5 +285,9 @@ function handleClick() {
 @keyframes cardPulse {
   0%, 100% { opacity: .7; }
   50% { opacity: 1; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .tarot-3d-glow { animation: none; }
 }
 </style>

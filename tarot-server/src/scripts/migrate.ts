@@ -12,7 +12,6 @@ const __dirname = dirname(__filename);
 /**
  * 仅执行 001 初始化库。后续请按需手动执行：
  * mysql ... < migrations/002_reader_reading.sql
- * mysql ... < migrations/004_cemetery_lnglat.sql
  * mysql ... < migrations/005_normalize_fk_audit.sql
  * mysql ... < migrations/013_fate_dual_engine.sql（或 npm run migrate:fate-dual）
  */

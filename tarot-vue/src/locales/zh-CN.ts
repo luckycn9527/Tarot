@@ -8,7 +8,6 @@ export default {
     daily: '每日运势',
     yesNo: '是否塔罗',
     horoscope: '星座运势',
-    cemetery: '电子陵墓',
     membership: '会员订阅',
     login: '登入',
     skipToContent: '跳到主内容',
@@ -73,8 +72,11 @@ export default {
   },
   errors: {
     chunkLoad: '新版本已发布，请刷新页面以继续。',
+    chunkReloadConfirm: '是否立即刷新页面？',
     generic: '页面出现异常，请重试或返回首页。',
     boundary: '渲染出错',
+    bootstrapTitle: '初始化失败',
+    bootstrapBody: '无法加载基础数据，请稍后重试。',
   },
   notFound: {
     title: '页面未找到',
@@ -149,8 +151,6 @@ export default {
       'yes-no-three-result': '三卡占卜结果',
       horoscope: '星座运势',
       membership: '会员订阅',
-      cemetery: '电子陵墓',
-      'cemetery-create': '电子陵墓占卜',
       privacy: '隐私政策',
       terms: '服务条款',
       feedback: '意见反馈',

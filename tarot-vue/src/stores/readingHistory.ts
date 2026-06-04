@@ -68,19 +68,15 @@ export const useReadingHistoryStore = defineStore('readingHistory', () => {
       history.value = hit.data.items
       return hit.data
     }
-    try {
-      const params = buildHistoryParams(options)
-      const res = await api.get(`/readings/history?${params.toString()}`)
-      if (res.data.success) {
-        const data = res.data.data as HistoryPage
-        history.value = data.items
-        pageCache.value[key] = { at: Date.now(), data }
-        return data
-      }
-    } catch {
-      /* ignore */
+    const params = buildHistoryParams(options)
+    const res = await api.get(`/readings/history?${params.toString()}`)
+    if (res.data.success) {
+      const data = res.data.data as HistoryPage
+      history.value = data.items
+      pageCache.value[key] = { at: Date.now(), data }
+      return data
     }
-    return { items: [], total: 0, page: 1, totalPages: 0 }
+    throw new Error(res.data.message || '获取历史记录失败')
   }
 
   async function deleteReading(id: number) {

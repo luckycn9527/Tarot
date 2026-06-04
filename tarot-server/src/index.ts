@@ -18,12 +18,12 @@ import readingRoutes from './routes/reading.routes.js';
 import shareRoutes from './routes/share.routes.js';
 import invitationRoutes from './routes/invitation.routes.js';
 import feedbackRoutes from './routes/feedback.routes.js';
-import cemeteryRoutes from './routes/cemetery.routes.js';
 import referenceRoutes from './routes/reference.routes.js';
 import adminRoutes from './routes/admin.routes.js';
 import fateRoutes from './routes/fate.routes.js';
 import { ensureDefaultUploadAssets } from './utils/ensureDefaultUploadAssets.js';
 import { getUploadsRoot } from './config/uploadsRoot.js';
+import { startHoroscopeScheduler } from './services/horoscope.service.js';
 
 const app = express();
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -79,7 +79,6 @@ app.use('/api/readings', readingRoutes);
 app.use('/api/shares', shareRoutes);
 app.use('/api/invitations', invitationRoutes);
 app.use('/api/feedback', feedbackRoutes);
-app.use('/api/cemetery', cemeteryRoutes);
 app.use('/api/reference', referenceRoutes);
 app.use('/api/admin', adminRoutes);
 app.use('/api/fate', fateRoutes);
@@ -155,6 +154,8 @@ async function start() {
     app.listen(env.PORT, env.HOST, () => {
       console.log(`🚀 Server running on http://${env.HOST}:${env.PORT}`);
       console.log(`📦 Environment: ${env.NODE_ENV}`);
+      // 启动每日星座运势预拉取调度（启动预热 + 每日 00:05 刷新）
+      startHoroscopeScheduler();
     });
   } catch (err) {
     console.error('❌ Failed to start server:', err);

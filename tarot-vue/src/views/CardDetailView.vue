@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, watch } from 'vue'
+import { computed, watch, markRaw, type Component } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { useScrollReveal } from '../composables/useScrollReveal'
@@ -7,6 +7,12 @@ import { useDynamicSeoTitle } from '../composables/useDynamicSeoTitle'
 import { tarotCards, getCardImageUrl } from '../data/tarotCards'
 import { getCardSlug, findCardBySlug } from '../data/tarotCards'
 import { tarotCardDetails } from '../data/tarotCardDetails'
+import BookOpenIcon from '@icons/book-open.vue'
+import ArrowUpIcon from '@icons/arrow-up.vue'
+import ArrowDownIcon from '@icons/arrow-down.vue'
+import SparklesIcon from '@icons/sparkles.vue'
+import HeartIcon from '@icons/heart.vue'
+import BriefcaseIcon from '@icons/briefcase.vue'
 
 useScrollReveal()
 
@@ -52,12 +58,12 @@ function getTendencyClass(t: string) {
 const sections = computed(() => {
   if (!detail.value) return []
   return [
-    { title: t('pages.cardDetail.sectionDescription'), content: detail.value.description, icon: '📖' },
-    { title: t('pages.cardDetail.sectionUpright'), content: detail.value.uprightMeaning, icon: '⬆️' },
-    { title: t('pages.cardDetail.sectionReversed'), content: detail.value.reversedMeaning, icon: '⬇️' },
-    { title: t('pages.cardDetail.sectionSymbolism'), content: detail.value.symbolism, icon: '🔮' },
-    { title: t('pages.cardDetail.sectionLove'), content: detail.value.loveAdvice, icon: '💕' },
-    { title: t('pages.cardDetail.sectionCareer'), content: detail.value.careerAdvice, icon: '💼' },
+    { title: t('pages.cardDetail.sectionDescription'), content: detail.value.description, icon: markRaw(BookOpenIcon) as Component },
+    { title: t('pages.cardDetail.sectionUpright'), content: detail.value.uprightMeaning, icon: markRaw(ArrowUpIcon) as Component },
+    { title: t('pages.cardDetail.sectionReversed'), content: detail.value.reversedMeaning, icon: markRaw(ArrowDownIcon) as Component },
+    { title: t('pages.cardDetail.sectionSymbolism'), content: detail.value.symbolism, icon: markRaw(SparklesIcon) as Component },
+    { title: t('pages.cardDetail.sectionLove'), content: detail.value.loveAdvice, icon: markRaw(HeartIcon) as Component },
+    { title: t('pages.cardDetail.sectionCareer'), content: detail.value.careerAdvice, icon: markRaw(BriefcaseIcon) as Component },
   ]
 })
 </script>
@@ -141,7 +147,7 @@ const sections = computed(() => {
           class="p-6 rounded-2xl bg-obsidian border border-gold-500/10 reveal-on-scroll"
         >
           <h3 class="text-lg font-bold font-serif text-white mb-3 flex items-center gap-2">
-            <span>{{ sec.icon }}</span>
+            <component :is="sec.icon" class="w-5 h-5 text-gold-300" />
             {{ sec.title }}
           </h3>
           <p class="text-gray-400 text-sm leading-relaxed">{{ sec.content }}</p>
@@ -164,6 +170,7 @@ const sections = computed(() => {
               :src="getCardImageUrl(rc.nameEn)"
               :alt="rc.name"
               loading="lazy"
+              decoding="async"
               class="w-full h-full object-contain rounded-lg group-hover:scale-105 transition-transform duration-300"
             >
           </div>

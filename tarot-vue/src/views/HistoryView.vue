@@ -18,6 +18,7 @@ const currentPage = ref(1)
 const totalPages = ref(0)
 const total = ref(0)
 const loading = ref(false)
+const loadError = ref(false)
 
 // 筛选
 const searchQuery = ref('')
@@ -38,6 +39,7 @@ const readerNames = computed(() => tm('pages.history.readerNames') as Record<str
 
 async function loadData(page = 1, force = false) {
   loading.value = true
+  loadError.value = false
   try {
     const result = await fetchHistory({
       page,
@@ -51,6 +53,12 @@ async function loadData(page = 1, force = false) {
     currentPage.value = result.page
     totalPages.value = result.totalPages
     total.value = result.total
+  } catch {
+    loadError.value = true
+    entries.value = []
+    total.value = 0
+    totalPages.value = 0
+    toast.error(t('pages.history.loadFailed'))
   } finally {
     loading.value = false
   }
@@ -182,6 +190,17 @@ watch(
 
       <!-- Results -->
       <div v-if="loading" class="text-center py-12 text-gray-400">{{ t('pages.history.loading') }}</div>
+
+      <div v-else-if="loadError" class="text-center py-16">
+        <p class="text-5xl mb-4">⚠️</p>
+        <p class="text-gray-400 mb-4">{{ t('pages.history.loadFailed') }}</p>
+        <button
+          class="inline-block px-6 py-2 rounded-full cta-button text-white text-sm font-medium hover:shadow-lg hover:shadow-gold-500/25 transition-all"
+          @click="loadData(currentPage, true)"
+        >
+          {{ t('pages.history.retry') }}
+        </button>
+      </div>
 
       <div v-else-if="entries.length === 0" class="text-center py-16">
         <p class="text-5xl mb-4">🔮</p>
