@@ -6,6 +6,7 @@ import { useUserResourcesStore } from '@/stores/userResources'
 export interface User {
   id: number
   email: string
+  username: string | null
   nickname: string
   avatar: string
   gender: string
@@ -81,8 +82,9 @@ export const useAuthStore = defineStore('auth', () => {
     email: string
     password: string
     confirmPassword: string
+    username?: string
   }): Promise<AuthError | null> {
-    const { nickname, email, password, confirmPassword } = data
+    const { nickname, email, password, confirmPassword, username } = data
 
     if (!nickname || nickname.trim().length < 2 || nickname.trim().length > 20) {
       return { field: 'nickname', message: '昵称长度需要2-20个字符' }
@@ -90,6 +92,10 @@ export const useAuthStore = defineStore('auth', () => {
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
     if (!email || !emailRegex.test(email)) {
       return { field: 'email', message: '请输入有效的邮箱地址' }
+    }
+    const usernameTrimmed = (username ?? '').trim()
+    if (usernameTrimmed && !/^[a-zA-Z0-9_]{3,20}$/.test(usernameTrimmed)) {
+      return { field: 'username', message: '用户名需为 3-20 位字母、数字或下划线' }
     }
     if (!password || password.length < 6) {
       return { field: 'password', message: '密码至少需要6个字符' }
@@ -103,6 +109,7 @@ export const useAuthStore = defineStore('auth', () => {
         email,
         nickname: nickname.trim(),
         password,
+        ...(usernameTrimmed ? { username: usernameTrimmed } : {}),
       })
       if (res.data.success) {
         setAccessToken(res.data.data.accessToken)
@@ -180,13 +187,13 @@ export const useAuthStore = defineStore('auth', () => {
     }
   }
 
-  async function login(email: string, password: string): Promise<AuthError | null> {
-    const emailTrimmed = email.trim()
-    if (!emailTrimmed) return { field: 'email', message: '请输入邮箱' }
+  async function login(identifier: string, password: string): Promise<AuthError | null> {
+    const idTrimmed = identifier.trim()
+    if (!idTrimmed) return { field: 'identifier', message: '请输入用户名或邮箱' }
     if (!password) return { field: 'password', message: '请输入密码' }
 
     try {
-      const res = await api.post('/auth/login', { email: emailTrimmed, password })
+      const res = await api.post('/auth/login', { identifier: idTrimmed, password })
       if (res.data.success) {
         setAccessToken(res.data.data.accessToken)
         currentUser.value = res.data.data.user
@@ -213,6 +220,33 @@ export const useAuthStore = defineStore('auth', () => {
     currentUser.value = null
     setAccessToken(null)
     useUserResourcesStore().invalidateAll()
+  }
+
+  /**
+   * 手机号登录（预留接口）。后端当前返回 501，待接入短信验证码后启用。
+   * 现阶段直接调用即可拿到后端的「敬请期待」提示。
+   */
+  async function phoneLogin(phone: string, code: string): Promise<AuthError | null> {
+    const phoneTrimmed = phone.trim()
+    if (!phoneTrimmed) return { field: 'phone', message: '请输入手机号' }
+    if (!code.trim()) return { field: 'code', message: '请输入验证码' }
+    try {
+      const res = await api.post('/auth/phone-login', { phone: phoneTrimmed, code: code.trim() })
+      if (res.data.success) {
+        setAccessToken(res.data.data.accessToken)
+        currentUser.value = res.data.data.user
+        isInitialized.value = true
+        const resources = useUserResourcesStore()
+        resources.invalidateAll()
+        void resources.fetchQuota(true)
+        void resources.fetchSettings(true)
+        return null
+      }
+      return { message: res.data.message || '手机号登录失败' }
+    } catch (err: unknown) {
+      const msg = (err as { response?: { data?: { message?: string } } }).response?.data?.message || '手机号登录尚未开放'
+      return { message: msg }
+    }
   }
 
   async function updateProfile(data: {
@@ -289,6 +323,7 @@ export const useAuthStore = defineStore('auth', () => {
     register,
     login,
     loginWithGoogle,
+    phoneLogin,
     requestPasswordReset,
     resetPasswordWithToken,
     logout,

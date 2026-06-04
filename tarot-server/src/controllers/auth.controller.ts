@@ -16,8 +16,8 @@ function refreshCookieOptions(): CookieOptions {
 
 export async function register(req: Request, res: Response) {
   try {
-    const { email, nickname, password } = req.body;
-    const result = await AuthService.register(email, nickname, password);
+    const { email, nickname, password, username } = req.body;
+    const result = await AuthService.register(email, nickname, password, username);
 
     // Set refresh token as httpOnly cookie
     res.cookie('refreshToken', result.refreshToken, refreshCookieOptions());
@@ -33,8 +33,14 @@ export async function register(req: Request, res: Response) {
 
 export async function login(req: Request, res: Response) {
   try {
-    const { email, password } = req.body;
-    const result = await AuthService.login(email, password);
+    // 兼容旧字段 email；新字段 identifier 支持用户名或邮箱
+    const { identifier, email, password } = req.body as {
+      identifier?: string;
+      email?: string;
+      password?: string;
+    };
+    const id = (identifier ?? email ?? '').toString();
+    const result = await AuthService.login(id, String(password ?? ''));
 
     res.cookie('refreshToken', result.refreshToken, refreshCookieOptions());
 
@@ -44,6 +50,22 @@ export async function login(req: Request, res: Response) {
     }, '登录成功'));
   } catch (err: any) {
     res.status(401).json(fail(err.message));
+  }
+}
+
+/**
+ * 手机号登录（占位）。接口已就位，后端逻辑待接入短信验证码服务。
+ * 现阶段返回 501，前端可据此提示「敬请期待」。
+ */
+export async function phoneLogin(req: Request, res: Response) {
+  try {
+    const { phone, code } = req.body as { phone?: string; code?: string };
+    await AuthService.loginWithPhone(String(phone ?? ''), String(code ?? ''));
+    // loginWithPhone 目前必定抛错；接入后改为返回会话并下发 cookie
+    res.status(501).json(fail('手机号登录尚未开放，敬请期待', { code: 'phone_login_not_implemented' }));
+  } catch (err: unknown) {
+    const msg = err instanceof Error ? err.message : '手机号登录失败';
+    res.status(501).json(fail(msg, { code: 'phone_login_not_implemented' }));
   }
 }
 

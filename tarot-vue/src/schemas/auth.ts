@@ -3,11 +3,11 @@ import { z } from 'zod'
 /** 使用当前语言的校验文案（由调用方传入 `vue-i18n` 的 `t`） */
 export function getLoginFormSchema(t: (key: string) => string) {
   return z.object({
-    email: z
+    // 登录标识符：用户名或邮箱
+    identifier: z
       .string()
       .trim()
-      .min(1, t('auth.validation.emailRequired'))
-      .email(t('auth.validation.emailInvalid')),
+      .min(1, t('auth.validation.identifierRequired')),
     password: z.string().min(1, t('auth.validation.passwordRequired')),
   })
 }
@@ -20,6 +20,13 @@ export function getRegisterFormSchema(t: (key: string) => string) {
         .trim()
         .min(1, t('auth.validation.emailRequired'))
         .email(t('auth.validation.emailInvalid')),
+      // 用户名可选；填写则需符合 3-20 位字母/数字/下划线
+      username: z
+        .string()
+        .trim()
+        .regex(/^[a-zA-Z0-9_]{3,20}$/, t('auth.validation.usernameInvalid'))
+        .optional()
+        .or(z.literal('')),
       password: z
         .string()
         .min(6, t('auth.validation.passwordMin'))

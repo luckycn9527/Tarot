@@ -13,13 +13,32 @@ const router = Router();
 
 const registerSchema = z.object({
   email: z.string().email('邮箱格式不正确'),
+  // 用户名可选：3-20 位字母/数字/下划线
+  username: z
+    .string()
+    .trim()
+    .regex(/^[a-zA-Z0-9_]{3,20}$/, '用户名需为 3-20 位字母、数字或下划线')
+    .optional(),
   nickname: z.string().min(2, '昵称至少2个字符').max(20, '昵称最多20个字符'),
   password: z.string().min(6, '密码至少6个字符').max(50, '密码最多50个字符'),
 });
 
-const loginSchema = z.object({
-  email: z.string().email('邮箱格式不正确'),
-  password: z.string().min(1, '请输入密码'),
+// 登录支持「用户名或邮箱」：用 identifier 字段，兼容旧的 email 字段
+const loginSchema = z
+  .object({
+    identifier: z.string().trim().min(1).optional(),
+    email: z.string().trim().min(1).optional(),
+    password: z.string().min(1, '请输入密码'),
+  })
+  .refine((d) => Boolean(d.identifier || d.email), {
+    message: '请输入用户名或邮箱',
+    path: ['identifier'],
+  });
+
+// 手机号登录（占位）：接口已预留，后端逻辑待接入短信验证码
+const phoneLoginSchema = z.object({
+  phone: z.string().trim().min(5, '请输入手机号').max(20, '手机号过长'),
+  code: z.string().trim().min(4, '请输入验证码').max(8, '验证码过长'),
 });
 
 const googleSignInSchema = z.object({
@@ -37,6 +56,7 @@ const resetPasswordSchema = z.object({
 
 router.post('/register', authLimiter, validate(registerSchema), AuthController.register);
 router.post('/login', authLimiter, validate(loginSchema), AuthController.login);
+router.post('/phone-login', authLimiter, validate(phoneLoginSchema), AuthController.phoneLogin);
 router.post('/google', authLimiter, validate(googleSignInSchema), AuthController.googleSignIn);
 router.post(
   '/forgot-password',

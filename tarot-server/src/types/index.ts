@@ -1,6 +1,10 @@
 export interface DbUser {
   id: number;
   email: string;
+  /** 登录用户名（可选，唯一）；历史与仅邮箱/OAuth 用户可为 null */
+  username: string | null;
+  /** 手机号（可选，唯一），手机号登录预留 */
+  phone: string | null;
   nickname: string;
   /** 仅 Google 等 OAuth 注册时可为 null */
   password_hash: string | null;
@@ -22,6 +26,8 @@ export interface DbUser {
 export interface PublicUser {
   id: number;
   email: string;
+  /** 登录用户名（可选） */
+  username: string | null;
   nickname: string;
   /** 可能为 emoji、站内路径或外链 */
   avatar: string;

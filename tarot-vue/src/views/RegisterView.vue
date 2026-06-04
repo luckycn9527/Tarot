@@ -3,6 +3,7 @@ import { ref, nextTick, onMounted, onBeforeUnmount } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import UserRound from '@icons/user-round.vue'
+import AtSign from '@icons/at-sign.vue'
 import Mail from '@icons/mail.vue'
 import Lock from '@icons/lock.vue'
 import Eye from '@icons/eye.vue'
@@ -17,6 +18,7 @@ const { t } = useI18n()
 const { register, loginWithGoogle } = useAuth()
 
 const nickname = ref('')
+const username = ref('')
 const email = ref('')
 const password = ref('')
 const confirmPassword = ref('')
@@ -32,6 +34,7 @@ async function handleRegister() {
   errors.value = {}
   const parsed = getRegisterFormSchema(t).safeParse({
     nickname: nickname.value,
+    username: username.value || undefined,
     email: email.value,
     password: password.value,
     confirmPassword: confirmPassword.value,
@@ -44,6 +47,7 @@ async function handleRegister() {
   try {
     const result = await register({
       nickname: parsed.data.nickname,
+      username: parsed.data.username || undefined,
       email: parsed.data.email,
       password: parsed.data.password,
       confirmPassword: parsed.data.confirmPassword,
@@ -113,6 +117,14 @@ onBeforeUnmount(() => {
             </div>
             <p v-if="errors.nickname" class="text-red-400 text-xs mt-1 ml-1">{{ errors.nickname }}</p>
           </div>
+          <!-- Username (optional) -->
+          <div>
+            <div class="relative">
+              <AtSign class="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-500" :size="16" />
+              <input v-model="username" type="text" autocomplete="username" :placeholder="t('pages.register.usernamePh')" class="login-input pl-11">
+            </div>
+            <p v-if="errors.username" class="text-red-400 text-xs mt-1 ml-1">{{ errors.username }}</p>
+          </div>
           <!-- Email -->
           <div>
             <div class="relative">
@@ -168,16 +180,17 @@ onBeforeUnmount(() => {
         <p class="text-gray-400 text-sm">{{ t('pages.register.hasAccount') }}<RouterLink to="/login" class="text-gold-400 hover:text-gold-300 transition-colors">{{ t('pages.register.loginNow') }}</RouterLink></p>
       </div>
 
-      <!-- Social Login -->
-      <div class="relative mt-8">
-        <div class="absolute inset-0 flex items-center"><div class="w-full border-t border-gold-500/10"></div></div>
-        <div class="relative flex justify-center text-sm"><span class="px-4 bg-abyss text-gray-500">{{ t('pages.register.divider') }}</span></div>
-      </div>
+      <!-- Social Login（仅在配置了 Google 客户端 ID 时显示） -->
+      <template v-if="getGoogleClientId()">
+        <div class="relative mt-8">
+          <div class="absolute inset-0 flex items-center"><div class="w-full border-t border-gold-500/10"></div></div>
+          <div class="relative flex justify-center text-sm"><span class="px-4 bg-abyss text-gray-500">{{ t('pages.register.divider') }}</span></div>
+        </div>
 
-      <div class="mt-6 flex flex-col items-center gap-2">
-        <div ref="googleBtnWrap" class="min-h-[44px] flex justify-center w-full" />
-        <p v-if="!getGoogleClientId()" class="text-gray-600 text-xs text-center">{{ t('pages.login.googleDisabledHint') }}</p>
-      </div>
+        <div class="mt-6 flex flex-col items-center gap-2">
+          <div ref="googleBtnWrap" class="min-h-[44px] flex justify-center w-full" />
+        </div>
+      </template>
 
       <p class="mt-8 text-center text-gray-600 text-xs leading-relaxed">
         {{ t('pages.register.termsPrefix') }}

@@ -14,6 +14,7 @@ export function useAuth() {
     register: s.register,
     login: s.login,
     loginWithGoogle: s.loginWithGoogle,
+    phoneLogin: s.phoneLogin,
     requestPasswordReset: s.requestPasswordReset,
     resetPasswordWithToken: s.resetPasswordWithToken,
     logout: s.logout,

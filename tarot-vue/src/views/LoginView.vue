@@ -2,7 +2,7 @@
 import { ref, nextTick, onMounted, onBeforeUnmount } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
-import Mail from '@icons/mail.vue'
+import UserRound from '@icons/user-round.vue'
 import Lock from '@icons/lock.vue'
 import Eye from '@icons/eye.vue'
 import EyeOff from '@icons/eye-off.vue'
@@ -15,7 +15,7 @@ const router = useRouter()
 const { t } = useI18n()
 const { login, loginWithGoogle } = useAuth()
 
-const email = ref('')
+const identifier = ref('')
 const password = ref('')
 const showPassword = ref(false)
 const errors = ref<Record<string, string>>({})
@@ -25,14 +25,14 @@ const submitting = ref(false)
 
 async function handleLogin() {
   errors.value = {}
-  const parsed = getLoginFormSchema(t).safeParse({ email: email.value, password: password.value })
+  const parsed = getLoginFormSchema(t).safeParse({ identifier: identifier.value, password: password.value })
   if (!parsed.success) {
     errors.value = formatZodFieldErrors(parsed.error)
     return
   }
   submitting.value = true
   try {
-    const result = await login(parsed.data.email, parsed.data.password)
+    const result = await login(parsed.data.identifier, parsed.data.password)
     if (result) {
       if (result.field) {
         errors.value[result.field] = result.message
@@ -91,13 +91,13 @@ onBeforeUnmount(() => {
 
       <form @submit.prevent="handleLogin">
         <div class="space-y-4">
-          <!-- Email -->
+          <!-- Username or Email -->
           <div>
             <div class="relative">
-              <Mail class="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-500" :size="16" />
-              <input v-model="email" type="email" :placeholder="t('pages.login.emailPh')" class="login-input pl-11">
+              <UserRound class="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-500" :size="16" />
+              <input v-model="identifier" type="text" autocomplete="username" :placeholder="t('pages.login.identifierPh')" class="login-input pl-11">
             </div>
-            <p v-if="errors.email" class="text-red-400 text-xs mt-1 ml-1">{{ errors.email }}</p>
+            <p v-if="errors.identifier" class="text-red-400 text-xs mt-1 ml-1">{{ errors.identifier }}</p>
           </div>
           <!-- Password -->
           <div>
@@ -144,16 +144,17 @@ onBeforeUnmount(() => {
         <p class="text-gray-400 text-sm">{{ t('pages.login.noAccount') }}<RouterLink to="/register" class="text-gold-400 hover:text-gold-300 transition-colors">{{ t('pages.login.registerNow') }}</RouterLink></p>
       </div>
 
-      <!-- Social Login -->
-      <div class="relative mt-8">
-        <div class="absolute inset-0 flex items-center"><div class="w-full border-t border-gold-500/10"></div></div>
-        <div class="relative flex justify-center text-sm"><span class="px-4 bg-abyss text-gray-500">{{ t('pages.login.divider') }}</span></div>
-      </div>
+      <!-- Social Login（仅在配置了 Google 客户端 ID 时显示） -->
+      <template v-if="getGoogleClientId()">
+        <div class="relative mt-8">
+          <div class="absolute inset-0 flex items-center"><div class="w-full border-t border-gold-500/10"></div></div>
+          <div class="relative flex justify-center text-sm"><span class="px-4 bg-abyss text-gray-500">{{ t('pages.login.divider') }}</span></div>
+        </div>
 
-      <div class="mt-6 flex flex-col items-center gap-2">
-        <div ref="googleBtnWrap" class="min-h-[44px] flex justify-center w-full" />
-        <p v-if="!getGoogleClientId()" class="text-gray-600 text-xs text-center">{{ t('pages.login.googleDisabledHint') }}</p>
-      </div>
+        <div class="mt-6 flex flex-col items-center gap-2">
+          <div ref="googleBtnWrap" class="min-h-[44px] flex justify-center w-full" />
+        </div>
+      </template>
 
       <p class="mt-8 text-center text-gray-600 text-xs leading-relaxed">
         {{ t('pages.login.termsPrefix') }}

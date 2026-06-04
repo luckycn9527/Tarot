@@ -28,6 +28,8 @@ export default {
       passwordMismatch: 'Passwords do not match',
       nicknameMin: 'Nickname must be at least 2 characters',
       nicknameMax: 'Nickname must be at most 20 characters',
+      identifierRequired: 'Enter your username or email',
+      usernameInvalid: 'Username must be 3-20 letters, digits or underscores',
     },
   },
   userMenu: {

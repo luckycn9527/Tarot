@@ -10,6 +10,37 @@ export async function findByEmail(email: string): Promise<DbUser | null> {
   return (rows[0] as DbUser) || null;
 }
 
+export async function findByUsername(username: string): Promise<DbUser | null> {
+  const [rows] = await pool.execute<RowDataPacket[]>(
+    'SELECT * FROM users WHERE LOWER(TRIM(username)) = ? LIMIT 1',
+    [username.trim().toLowerCase()]
+  );
+  return (rows[0] as DbUser) || null;
+}
+
+/** 用户名或邮箱（同一标识符两者皆查），用于「用户名或邮箱 + 密码」登录 */
+export async function findByUsernameOrEmail(identifier: string): Promise<DbUser | null> {
+  const norm = identifier.trim().toLowerCase();
+  if (!norm) return null;
+  const [rows] = await pool.execute<RowDataPacket[]>(
+    `SELECT * FROM users
+     WHERE LOWER(TRIM(email)) = ? OR LOWER(TRIM(username)) = ?
+     ORDER BY (LOWER(TRIM(email)) = ?) DESC
+     LIMIT 1`,
+    [norm, norm, norm]
+  );
+  return (rows[0] as DbUser) || null;
+}
+
+/** 手机号查找（手机号登录预留） */
+export async function findByPhone(phone: string): Promise<DbUser | null> {
+  const [rows] = await pool.execute<RowDataPacket[]>(
+    'SELECT * FROM users WHERE phone = ? LIMIT 1',
+    [phone.trim()]
+  );
+  return (rows[0] as DbUser) || null;
+}
+
 export async function findByGoogleId(googleId: string): Promise<DbUser | null> {
   const [rows] = await pool.execute<RowDataPacket[]>(
     'SELECT * FROM users WHERE google_id = ? LIMIT 1',
@@ -32,11 +63,15 @@ export async function create(data: {
   passwordHash: string | null;
   avatar?: string | null;
   googleId?: string | null;
+  username?: string | null;
+  phone?: string | null;
 }): Promise<number> {
   const [result] = await pool.execute<ResultSetHeader>(
-    'INSERT INTO users (email, nickname, password_hash, avatar, google_id) VALUES (?, ?, ?, ?, ?)',
+    'INSERT INTO users (email, username, phone, nickname, password_hash, avatar, google_id) VALUES (?, ?, ?, ?, ?, ?, ?)',
     [
       data.email.trim().toLowerCase(),
+      data.username ? data.username.trim().toLowerCase() : null,
+      data.phone ? data.phone.trim() : null,
       data.nickname,
       data.passwordHash,
       data.avatar ?? '🔮',

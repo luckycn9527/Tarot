@@ -15,6 +15,7 @@ function toPublicUser(user: DbUser): PublicUser {
   return {
     id: user.id,
     email: user.email,
+    username: user.username ?? null,
     nickname: user.nickname,
     avatar: user.avatar ?? '🔮',
     gender: user.gender,
@@ -27,6 +28,26 @@ function toPublicUser(user: DbUser): PublicUser {
     remainingFreeQuota: user.remaining_free_quota,
     createdAt: user.created_at,
   };
+}
+
+/** 用户名规则：3–20 位，字母/数字/下划线，且不能是纯数字（避免与手机号歧义） */
+const USERNAME_RE = /^[a-zA-Z0-9_]{3,20}$/;
+function normalizeUsername(raw: string | null | undefined): string | null {
+  if (raw == null) return null;
+  const u = String(raw).trim();
+  if (!u) return null;
+  if (!USERNAME_RE.test(u)) {
+    throw new Error('用户名需为 3-20 位字母、数字或下划线');
+  }
+  if (/^\d+$/.test(u)) {
+    throw new Error('用户名不能为纯数字');
+  }
+  return u.toLowerCase();
+}
+
+/** 判断登录标识符是否像邮箱 */
+function looksLikeEmail(s: string): boolean {
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(s);
 }
 
 async function issueNewSession(userId: number): Promise<{
@@ -45,7 +66,12 @@ async function issueNewSession(userId: number): Promise<{
   return { user: toPublicUser(user), accessToken, refreshToken };
 }
 
-export async function register(email: string, nickname: string, password: string) {
+export async function register(
+  email: string,
+  nickname: string,
+  password: string,
+  username?: string | null,
+) {
   const emailNorm = normalizeEmail(email);
   if (!emailNorm) {
     throw new Error('请输入邮箱');
@@ -55,19 +81,44 @@ export async function register(email: string, nickname: string, password: string
     throw new Error('该邮箱已被注册');
   }
 
+  // 用户名可选；提供则校验格式并查重
+  const usernameNorm = normalizeUsername(username);
+  if (usernameNorm) {
+    const dup = await UserModel.findByUsername(usernameNorm);
+    if (dup) {
+      throw new Error('该用户名已被占用');
+    }
+  }
+
   const passwordHash = await bcrypt.hash(password, 10);
-  const userId = await UserModel.create({ email: emailNorm, nickname, passwordHash });
+  const userId = await UserModel.create({
+    email: emailNorm,
+    nickname,
+    passwordHash,
+    username: usernameNorm,
+  });
   return issueNewSession(userId);
 }
 
-export async function login(email: string, password: string) {
-  const emailNorm = normalizeEmail(email);
-  if (!emailNorm) {
-    throw new Error('邮箱或密码错误');
+/**
+ * 登录：支持「用户名或邮箱 + 密码」。
+ * identifier 形似邮箱则按邮箱归一化查找，否则按用户名/邮箱联合查找。
+ */
+export async function login(identifier: string, password: string) {
+  const raw = (identifier ?? '').trim();
+  if (!raw) {
+    throw new Error('账号或密码错误');
   }
-  const user = await UserModel.findByEmail(emailNorm);
+
+  let user: DbUser | null;
+  if (looksLikeEmail(raw)) {
+    user = await UserModel.findByEmail(normalizeEmail(raw));
+  } else {
+    user = await UserModel.findByUsernameOrEmail(raw);
+  }
+
   if (!user) {
-    throw new Error('邮箱或密码错误');
+    throw new Error('账号或密码错误');
   }
 
   if (!user.password_hash) {
@@ -76,10 +127,19 @@ export async function login(email: string, password: string) {
 
   const valid = await bcrypt.compare(password, user.password_hash);
   if (!valid) {
-    throw new Error('邮箱或密码错误');
+    throw new Error('账号或密码错误');
   }
 
   return issueNewSession(user.id);
+}
+
+/**
+ * 手机号登录（占位接口）。
+ * 当前仅预留：尚未接入短信验证码服务，调用即返回未实现。
+ * 待接入后：校验验证码 → UserModel.findByPhone → 无则建号 → issueNewSession。
+ */
+export async function loginWithPhone(_phone: string, _code: string): Promise<never> {
+  throw new Error('手机号登录尚未开放，敬请期待');
 }
 
 export async function signInWithGoogleIdToken(idToken: string) {

@@ -28,6 +28,8 @@ export default {
       passwordMismatch: '两次密码不一致',
       nicknameMin: '昵称至少 2 个字符',
       nicknameMax: '昵称最多 20 个字符',
+      identifierRequired: '请输入用户名或邮箱',
+      usernameInvalid: '用户名需为 3-20 位字母、数字或下划线',
     },
   },
   userMenu: {
