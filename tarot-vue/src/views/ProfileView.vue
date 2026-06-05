@@ -310,6 +310,14 @@ async function handleLogout() {
             >
               <Camera class="w-6 h-6 text-white" :size="24" />
             </div>
+            <!-- VIP badge -->
+            <span
+              v-if="isVip"
+              class="absolute -top-1 -right-1 sm:top-0 sm:right-0 flex items-center gap-1 rounded-full bg-gradient-to-br from-amber-300 to-amber-500 px-2 py-0.5 text-[10px] font-bold text-abyss ring-2 ring-abyss shadow-lg"
+              :aria-label="t('pages.profile.tierVip')"
+            >
+              <Crown class="h-3 w-3" :size="12" :stroke-width="2.4" />VIP
+            </span>
           </div>
 
           <!-- User Info -->

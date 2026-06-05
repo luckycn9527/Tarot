@@ -8,6 +8,7 @@ import { useRoute, useRouter } from 'vue-router'
 import { readers } from '../data/readers'
 import FaqAccordion from '../components/FaqAccordion.vue'
 import ReaderAvatarMedia from '../components/ui/ReaderAvatarMedia.vue'
+import Crown from '@icons/crown.vue'
 
 useScrollReveal()
 
@@ -43,14 +44,19 @@ const noticeFaq = computed(() => tm('pages.tarot.noticeFaq') as { question: stri
 
       <!-- Quota info -->
       <div class="flex items-center gap-3 px-5 py-2 rounded-full bg-gold-500/4 border border-gold-500/10 mb-8 animate-fade-in-up anim-delay-1 text-sm">
-        <span class="text-gray-400">{{ t('pages.tarot.quotaRemaining') }}</span>
-        <strong class="text-gold-300">{{ remaining }}</strong>
+        <template v-if="!isVip">
+          <span class="text-gray-400">{{ t('pages.tarot.quotaRemaining') }}</span>
+          <strong class="text-gold-300">{{ remaining }}</strong>
+        </template>
         <RouterLink
           v-if="!isLoggedIn"
           :to="{ path: '/login', query: { redirect: route.fullPath } }"
           class="text-gold-400 text-xs hover:text-gold-300 transition-colors"
         >{{ t('nav.loginMore') }}</RouterLink>
-        <span v-else-if="isVip" class="text-amber-400/70 text-xs">{{ t('pages.tarot.quotaVip') }}</span>
+        <span v-else-if="isVip" class="flex items-center gap-1.5 text-amber-300 font-medium">
+          <Crown class="w-4 h-4" :size="16" :stroke-width="2" />
+          {{ t('pages.tarot.quotaVip') }}
+        </span>
       </div>
     </section>
 

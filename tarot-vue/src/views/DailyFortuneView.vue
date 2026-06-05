@@ -47,6 +47,12 @@ function handleCardFlip() {
   saveDraw(drawn.card.id, drawn.isReversed)
 }
 
+/** 确认生日：保存并收起面板（onBirthdayChange 已在选择时计算星座并写入本地） */
+function confirmBirthday() {
+  onBirthdayChange()
+  showBirthdayPanel.value = false
+}
+
 async function handleViewFortune() {
   if (!selectedCard.value) return
 
@@ -162,6 +168,17 @@ const faqItems = computed(() => tm('pages.dailyFortune.faq') as { question: stri
           <span v-else class="text-gray-700">{{ t('pages.dailyFortune.pickFullDate') }}</span>
           <button v-if="birthYear || birthMonth || birthDay" class="text-gray-600 hover:text-red-400 transition-colors" @click="clearBirthday">{{ t('pages.dailyFortune.reset') }}</button>
         </div>
+        <button
+          type="button"
+          class="mt-4 w-full py-2.5 rounded-lg text-sm font-medium transition-all"
+          :class="zodiacSign
+            ? 'bg-gradient-to-r from-gold-500 to-gold-600 text-abyss hover:shadow-lg hover:shadow-gold-500/20'
+            : 'bg-white/5 text-gray-600 cursor-not-allowed border border-gold-500/10'"
+          :disabled="!zodiacSign"
+          @click="confirmBirthday"
+        >
+          {{ t('pages.dailyFortune.confirm') }}
+        </button>
       </div>
 
       <!-- Already drawn -->

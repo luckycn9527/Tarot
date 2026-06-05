@@ -13,6 +13,7 @@ import BookOpen from '@icons/book-open.vue'
 import Layers from '@icons/layers.vue'
 import MessageSquare from '@icons/message-square.vue'
 import LogOut from '@icons/log-out.vue'
+import Crown from '@icons/crown.vue'
 import { useAuth } from '../composables/useAuth'
 import { publicAssetUrl } from '../utils/publicAssetUrl'
 import { applyLocaleToDocument, setStoredLocale, type AppLocale } from '@/utils/localeStorage'
@@ -22,6 +23,8 @@ const { t, locale } = useI18n()
 const route = useRoute()
 const router = useRouter()
 const { user, isLoggedIn, logout } = useAuth()
+
+const isVip = computed(() => user.value?.membership === 'vip')
 
 const isImageAvatar = computed(() => {
   if (!user.value?.avatar) return false
@@ -196,9 +199,20 @@ function toggleLocale() {
               :aria-label="t('userMenu.menuAria')"
               @click.stop="toggleDropdown"
             >
-              <img v-if="isImageAvatar" :src="avatarImageSrc" alt="" class="w-6 h-6 rounded-full object-cover" />
-              <span v-else class="text-lg">{{ user.avatar }}</span>
+              <span class="relative inline-flex shrink-0">
+                <img v-if="isImageAvatar" :src="avatarImageSrc" alt="" class="w-6 h-6 rounded-full object-cover" />
+                <span v-else class="text-lg">{{ user.avatar }}</span>
+                <span
+                  v-if="isVip"
+                  class="absolute -top-1.5 -right-1.5 flex h-3.5 w-3.5 items-center justify-center rounded-full bg-gradient-to-br from-amber-300 to-amber-500 ring-1 ring-abyss shadow"
+                  :title="t('userMenu.vipBadge')"
+                  :aria-label="t('userMenu.vipBadge')"
+                >
+                  <Crown class="h-2.5 w-2.5 text-abyss" :size="10" :stroke-width="2.4" />
+                </span>
+              </span>
               <span class="max-w-[80px] truncate">{{ user.nickname }}</span>
+              <span v-if="isVip" class="rounded px-1.5 py-0.5 text-[10px] font-semibold leading-none text-amber-300 bg-amber-500/12 border border-amber-400/25">VIP</span>
               <ChevronDown class="w-3 h-3 transition-transform" :class="dropdownOpen ? 'rotate-180' : ''" :size="12" />
             </button>
             <Transition name="dropdown">
@@ -263,10 +277,23 @@ function toggleLocale() {
     <!-- Mobile: logged in -->
     <template v-if="isLoggedIn && user">
       <div class="mt-6 flex items-center gap-3 px-2">
-        <img v-if="isImageAvatar" :src="avatarImageSrc" alt="" class="w-10 h-10 rounded-full object-cover" />
-        <span v-else class="text-3xl">{{ user.avatar }}</span>
+        <span class="relative inline-flex shrink-0">
+          <img v-if="isImageAvatar" :src="avatarImageSrc" alt="" class="w-10 h-10 rounded-full object-cover" />
+          <span v-else class="text-3xl">{{ user.avatar }}</span>
+          <span
+            v-if="isVip"
+            class="absolute -top-1 -right-1 flex h-4 w-4 items-center justify-center rounded-full bg-gradient-to-br from-amber-300 to-amber-500 ring-1 ring-abyss shadow"
+            :title="t('userMenu.vipBadge')"
+            :aria-label="t('userMenu.vipBadge')"
+          >
+            <Crown class="h-2.5 w-2.5 text-abyss" :size="11" :stroke-width="2.4" />
+          </span>
+        </span>
         <div>
-          <p class="text-white font-medium">{{ user.nickname }}</p>
+          <p class="flex items-center gap-1.5 text-white font-medium">
+            {{ user.nickname }}
+            <span v-if="isVip" class="rounded px-1.5 py-0.5 text-[10px] font-semibold leading-none text-amber-300 bg-amber-500/12 border border-amber-400/25">VIP</span>
+          </p>
           <p class="text-gray-500 text-xs">{{ user.email }}</p>
         </div>
       </div>

@@ -294,6 +294,7 @@ export const pagesEn = {
     day: 'Day',
     pickFullDate: 'Pick a full date',
     reset: 'Reset',
+    confirm: 'Confirm',
     drawnToday: 'Already drawn today · next reset {countdown}',
     reversed: 'Reversed',
     upright: 'Upright',

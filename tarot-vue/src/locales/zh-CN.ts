@@ -38,6 +38,7 @@ export default {
     cardBack: '卡背设置',
     feedback: '意见反馈',
     logout: '退出登录',
+    vipBadge: 'VIP 会员',
     menuAria: '用户选单',
   },
   header: {

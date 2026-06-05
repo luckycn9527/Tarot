@@ -134,7 +134,11 @@ export async function findByUserId(
   } = {}
 ) {
   const { page = 1, limit = 20, type, search, dateFrom, dateTo } = options;
-  const offset = (page - 1) * limit;
+  // LIMIT/OFFSET 经校验后直接拼接：mysql2 的 execute 在部分 MySQL/驱动组合下
+  // 无法把 LIMIT ?/OFFSET ? 作为占位符（会以字符串绑定导致语法错误），与 fate.model 保持一致。
+  const safeLimit = Math.min(Math.max(Math.trunc(Number(limit)) || 20, 1), 100);
+  const safePage = Math.max(Math.trunc(Number(page)) || 1, 1);
+  const offset = (safePage - 1) * safeLimit;
 
   let where = 'WHERE rh.user_id = ?';
   const params: (string | number)[] = [userId];
@@ -162,13 +166,13 @@ export async function findByUserId(
   );
   const total = countRows[0].total as number;
 
-  const [rows] = await pool.execute<RowDataPacket[]>(
+  const [rows] = await pool.query<RowDataPacket[]>(
     `SELECT rh.*, rr.code AS reader_code, rs.code AS spread_code
      FROM reading_history rh
      LEFT JOIN reference_tarot_readers rr ON rh.reader_ref_id = rr.id
      LEFT JOIN reference_spreads rs ON rh.spread_id = rs.id
-     ${where} ORDER BY rh.created_at DESC LIMIT ? OFFSET ?`,
-    [...params, limit, offset]
+     ${where} ORDER BY rh.created_at DESC LIMIT ${safeLimit} OFFSET ${offset}`,
+    params
   );
 
   const ids = (rows as RowDataPacket[]).map((r) => r.id as number);
@@ -179,8 +183,8 @@ export async function findByUserId(
       formatRowBase(row, cardsMap.get(row.id as number) ?? { cardIds: [], orientations: [] })
     ),
     total,
-    page,
-    totalPages: Math.ceil(total / limit),
+    page: safePage,
+    totalPages: Math.ceil(total / safeLimit),
   };
 }
 

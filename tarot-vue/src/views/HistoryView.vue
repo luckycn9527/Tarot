@@ -37,8 +37,12 @@ const typeColors: Record<string, string> = {
 
 const readerNames = computed(() => tm('pages.history.readerNames') as Record<string, string>)
 
+let loadSeq = 0
+
 async function loadData(page = 1, force = false) {
-  loading.value = true
+  const seq = ++loadSeq
+  // 仅在还没有任何内容时显示整页 loading，避免重载时把已渲染列表替换成 loading 造成闪烁
+  if (entries.value.length === 0) loading.value = true
   loadError.value = false
   try {
     const result = await fetchHistory({
@@ -49,18 +53,23 @@ async function loadData(page = 1, force = false) {
       dateFrom: dateFrom.value || undefined,
       dateTo: dateTo.value || undefined,
     }, force)
-    entries.value = result.items
+    // 竞态防护：只有最新一次请求可写入状态，过期响应直接丢弃
+    if (seq !== loadSeq) return
+    entries.value = Array.isArray(result.items) ? result.items : []
     currentPage.value = result.page
     totalPages.value = result.totalPages
     total.value = result.total
   } catch {
-    loadError.value = true
-    entries.value = []
-    total.value = 0
-    totalPages.value = 0
+    if (seq !== loadSeq) return
+    // 出错时若已有内容则保留，不清空，避免"闪一下消失"
+    if (entries.value.length === 0) {
+      loadError.value = true
+      total.value = 0
+      totalPages.value = 0
+    }
     toast.error(t('pages.history.loadFailed'))
   } finally {
-    loading.value = false
+    if (seq === loadSeq) loading.value = false
   }
 }
 

@@ -310,6 +310,7 @@ export const pagesZh = {
     day: '日',
     pickFullDate: '选择完整日期',
     reset: '重置',
+    confirm: '确定',
     drawnToday: '今天已抽取 · 下次刷新 {countdown}',
     reversed: '逆位',
     upright: '正位',

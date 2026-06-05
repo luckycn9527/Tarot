@@ -39,6 +39,7 @@ export default {
     feedback: 'Feedback',
     logout: 'Log out',
     menuAria: 'User menu',
+    vipBadge: 'VIP member',
   },
   header: {
     openNavMenu: 'Open menu',
