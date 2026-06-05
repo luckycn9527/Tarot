@@ -119,6 +119,48 @@ function readerLabel(id: string) {
   return readerNames.value[id] || id
 }
 
+/** 提取一条记录的「当时建议」：reader-reading 用 summary，单/三卡用 advice，回退到 answer */
+function adviceOf(entry: ReadingHistoryEntry): string {
+  const d = entry.resultData as Record<string, unknown> | null
+  if (d && typeof d === 'object') {
+    const advice = typeof d.advice === 'string' ? d.advice : ''
+    const summary = typeof d.summary === 'string' ? d.summary : ''
+    const conclusion = typeof d.conclusion === 'string' ? d.conclusion : ''
+    const pick = advice || summary || conclusion
+    if (pick) return pick
+  }
+  return entry.answer || ''
+}
+
+/** 回访复盘：基于最近一条「有问题」的记录，且仅在首页无筛选时展示 */
+const noFilterActive = computed(
+  () => !searchQuery.value && !typeFilter.value && !dateFrom.value && !dateTo.value,
+)
+const followUp = computed(() => {
+  if (currentPage.value !== 1 || !noFilterActive.value) return null
+  const last = entries.value.find((e) => e.question && e.question.trim())
+  if (!last) return null
+  const days = Math.max(0, Math.floor((Date.now() - new Date(last.createdAt).getTime()) / 86400000))
+  const advice = adviceOf(last)
+  return {
+    days,
+    question: last.question,
+    advice: advice.length > 60 ? advice.slice(0, 60) + '…' : advice,
+    type: last.type,
+    readerId: last.readerId,
+  }
+})
+
+/** 回访 CTA：基于上次类型，引导再做一次同类占卜 */
+function followUpAgain() {
+  const fu = followUp.value
+  if (fu?.type === 'reader-reading' && fu.readerId) {
+    void router.push(`/reader/${fu.readerId}/ask`)
+  } else {
+    void router.push('/tarot')
+  }
+}
+
 watch(
   [isInitialized, isLoggedIn],
   ([init, logged]) => {
@@ -159,7 +201,6 @@ watch(
             <option value="">{{ t('pages.history.typeAll') }}</option>
             <option value="single">{{ typeLabel('single') }}</option>
             <option value="three-card">{{ typeLabel('three-card') }}</option>
-            <option value="daily-fortune">{{ typeLabel('daily-fortune') }}</option>
             <option value="reader-reading">{{ typeLabel('reader-reading') }}</option>
           </select>
         </div>
@@ -193,6 +234,43 @@ watch(
             >
               {{ t('pages.history.reset') }}
             </button>
+          </div>
+        </div>
+      </div>
+
+      <!-- 回访复盘卡：用户回来时的温柔提醒 -->
+      <div
+        v-if="followUp"
+        class="follow-up-card relative overflow-hidden rounded-2xl border border-gold-500/25 bg-gradient-to-br from-gold-500/[0.08] to-violet-500/[0.05] p-5 sm:p-6 mb-6"
+      >
+        <div class="flex items-start gap-4">
+          <div class="shrink-0 flex h-11 w-11 items-center justify-center rounded-full bg-gold-500/15 ring-1 ring-gold-400/30 text-gold-300">
+            <svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          </div>
+          <div class="min-w-0 flex-1">
+            <p class="text-gold-200 font-serif text-base sm:text-lg mb-3">
+              {{ t('pages.history.followUp.title', { days: followUp.days }) }}
+            </p>
+            <div class="space-y-1.5 text-sm">
+              <p class="text-gray-300">
+                <span class="text-gray-500">{{ t('pages.history.followUp.lastQuestion') }}</span>
+                {{ followUp.question }}
+              </p>
+              <p v-if="followUp.advice" class="text-gray-300">
+                <span class="text-gray-500">{{ t('pages.history.followUp.lastAdvice') }}</span>
+                {{ followUp.advice }}
+              </p>
+            </div>
+            <div class="mt-4 flex flex-wrap items-center gap-3">
+              <p class="text-gold-300/90 text-sm">{{ t('pages.history.followUp.prompt') }}</p>
+              <button
+                type="button"
+                class="px-4 py-1.5 rounded-full bg-gradient-to-r from-gold-500 to-gold-600 text-abyss text-sm font-medium hover:shadow-lg hover:shadow-gold-500/25 transition-all cursor-pointer"
+                @click="followUpAgain"
+              >
+                {{ t('pages.history.followUp.cta') }}
+              </button>
+            </div>
           </div>
         </div>
       </div>

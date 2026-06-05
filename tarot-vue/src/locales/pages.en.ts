@@ -373,6 +373,13 @@ export const pagesEn = {
     deleteTitle: 'Delete',
     prev: 'Previous',
     next: 'Next',
+    followUp: {
+      title: '{days} days since your last reading',
+      lastQuestion: 'Last question: ',
+      lastAdvice: 'Advice then: ',
+      prompt: 'How did it turn out?',
+      cta: 'Reflect / Read again',
+    },
     readerNames: {
       qinghe: 'Qinghe', yanxi: 'Yanxi', haruka: 'Haruka', xuanyin: 'Xuanyin', mirelle: 'Mirelle', lingsha: 'Lingsha',
       norick: 'Norick', amara: 'Amara', vikram: 'Vikram', catalina: 'Catalina', kazuki: 'Kazuki', solveig: 'Solveig',

@@ -275,16 +275,7 @@ export async function dailyFortune(userId: number, zodiacSign?: string, clientCa
     resultData: result,
   });
 
-  // Save history
-  await ReadingModel.create({
-    userId,
-    type: 'daily-fortune',
-    question: null,
-    cardIds: [card.id],
-    orientations: [isReversed ? 'reversed' : 'upright'],
-    answer: null,
-    resultData: result,
-  });
+  // 注：每日运势不再写入占卜历史（仅保留当日缓存）。历史只记录有「问题」的塔罗占卜。
 
   return {
     cached: false,

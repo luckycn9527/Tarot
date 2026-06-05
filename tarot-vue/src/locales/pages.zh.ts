@@ -389,6 +389,13 @@ export const pagesZh = {
     deleteTitle: '删除',
     prev: '上一页',
     next: '下一页',
+    followUp: {
+      title: '距离上次占卜已 {days} 天',
+      lastQuestion: '上次问题：',
+      lastAdvice: '当时建议：',
+      prompt: '目前结果如何？',
+      cta: '继续反馈 / 再占一次',
+    },
     readerNames: {
       qinghe: '清和', yanxi: '岩溪', haruka: '遥', xuanyin: '玄引', mirelle: '米蕾', lingsha: '灵砂',
       norick: '诺里克', amara: '阿玛拉', vikram: '维克拉姆', catalina: '卡塔琳娜', kazuki: '和树', solveig: '索尔维格',

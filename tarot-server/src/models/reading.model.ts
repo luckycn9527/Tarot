@@ -140,8 +140,11 @@ export async function findByUserId(
   const safePage = Math.max(Math.trunc(Number(page)) || 1, 1);
   const offset = (safePage - 1) * safeLimit;
 
-  let where = 'WHERE rh.user_id = ?';
+  let where = 'WHERE rh.user_id = ?'
   const params: (string | number)[] = [userId];
+
+  // 每日运势不计入历史（只展示有问题的塔罗占卜）
+  where += " AND rh.type <> 'daily-fortune'";
 
   if (type) {
     where += ' AND rh.type = ?';
