@@ -106,6 +106,39 @@ export async function deleteHistory(req: Request, res: Response) {
   }
 }
 
+export async function setOutcome(req: Request, res: Response) {
+  try {
+    const id = Number(req.params.id);
+    if (!Number.isInteger(id) || id <= 0) {
+      res.status(400).json(fail('无效的记录ID'));
+      return;
+    }
+    const { rating } = req.body as { rating?: unknown };
+    if (rating !== 'full' && rating !== 'partial' && rating !== 'none') {
+      res.status(400).json(fail('rating 须为 full | partial | none'));
+      return;
+    }
+    const data = await ReadingService.setReadingOutcome(req.userId!, id, rating);
+    res.json(success(data, '感谢反馈'));
+  } catch (err: unknown) {
+    const msg = getErrMsg(err, '提交失败');
+    if (msg.includes('不存在') || msg.includes('无权')) {
+      res.status(404).json(fail(msg));
+      return;
+    }
+    res.status(500).json(fail(msg));
+  }
+}
+
+export async function getInsights(req: Request, res: Response) {
+  try {
+    const data = await ReadingService.getInsights(req.userId!, 6);
+    res.json(success(data));
+  } catch (err: unknown) {
+    res.status(500).json(fail(getErrMsg(err, '分析失败')));
+  }
+}
+
 export async function readerReading(req: Request, res: Response) {
   try {
     const { readerId, spreadType, question, category, cardIds, orientations } = req.body;

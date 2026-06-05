@@ -245,6 +245,58 @@ export async function appendFollowupTurn(
   return true;
 }
 
+/** 设置某次占卜的"应验程度"评分（存入 result_data.outcome；次日回访用） */
+export async function setOutcome(
+  id: number,
+  userId: number,
+  rating: 'full' | 'partial' | 'none',
+): Promise<boolean> {
+  const [rows] = await pool.execute<RowDataPacket[]>(
+    'SELECT result_data FROM reading_history WHERE id = ? AND user_id = ? LIMIT 1',
+    [id, userId],
+  );
+  const row = rows[0];
+  if (!row) return false;
+  let data: Record<string, unknown> = {};
+  try {
+    data = typeof row.result_data === 'string' ? JSON.parse(row.result_data) : (row.result_data ?? {});
+  } catch {
+    data = {};
+  }
+  if (!data || typeof data !== 'object') data = {};
+  (data as { outcome?: unknown }).outcome = { rating, at: new Date().toISOString() };
+  await pool.execute(
+    'UPDATE reading_history SET result_data = ? WHERE id = ? AND user_id = ?',
+    [JSON.stringify(data), id, userId],
+  );
+  return true;
+}
+
+/** 取最近 N 个月、有问题的占卜（用于 AI 历史分析），排除每日运势 */
+export async function listRecentQuestions(
+  userId: number,
+  months: number,
+): Promise<{ id: number; type: string; question: string; createdAt: string }[]> {
+  const m = Math.min(Math.max(Math.trunc(months) || 6, 1), 24);
+  const [rows] = await pool.query<RowDataPacket[]>(
+    `SELECT id, type, question, created_at
+     FROM reading_history
+     WHERE user_id = ?
+       AND type <> 'daily-fortune'
+       AND question IS NOT NULL AND question <> ''
+       AND created_at >= DATE_SUB(NOW(), INTERVAL ${m} MONTH)
+     ORDER BY created_at DESC
+     LIMIT 200`,
+    [userId],
+  );
+  return (rows as RowDataPacket[]).map((r) => ({
+    id: Number(r.id),
+    type: String(r.type),
+    question: String(r.question ?? ''),
+    createdAt: r.created_at instanceof Date ? r.created_at.toISOString() : String(r.created_at),
+  }));
+}
+
 export async function getDailyFortuneCache(userId: number, date: string) {
   const [rows] = await pool.execute<RowDataPacket[]>(
     'SELECT * FROM daily_fortune_cache WHERE user_id = ? AND fortune_date = ?',

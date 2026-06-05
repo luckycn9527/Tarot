@@ -12,6 +12,8 @@ router.post('/reader-followup', auth, quotaGuard, ReadingController.readerFollow
 router.post('/daily-fortune', auth, ReadingController.dailyFortune);
 router.get('/horoscope', ReadingController.horoscope);
 router.get('/history', auth, ReadingController.getHistory);
+router.get('/insights', auth, ReadingController.getInsights);
 router.delete('/history/:id', auth, ReadingController.deleteHistory);
+router.post('/history/:id/outcome', auth, ReadingController.setOutcome);
 
 export default router;

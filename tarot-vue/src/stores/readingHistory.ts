@@ -24,6 +24,19 @@ export interface HistoryPage {
   totalPages: number
 }
 
+export interface InsightDistribution {
+  category: string
+  count: number
+  percent: number
+}
+
+export interface InsightSummary {
+  rangeMonths: number
+  total: number
+  distribution: InsightDistribution[]
+  coreTheme: string
+}
+
 function buildHistoryParams(options?: {
   page?: number
   limit?: number
@@ -85,6 +98,18 @@ export const useReadingHistoryStore = defineStore('readingHistory', () => {
     clearPageCache()
   }
 
+  /** 提交某次占卜的应验程度评分（次日回访） */
+  async function setOutcome(id: number, rating: 'full' | 'partial' | 'none') {
+    await api.post(`/readings/history/${id}/outcome`, { rating })
+    clearPageCache()
+  }
+
+  async function fetchInsights(): Promise<InsightSummary> {
+    const res = await api.get('/readings/insights')
+    if (res.data.success) return res.data.data as InsightSummary
+    throw new Error(res.data.message || '分析失败')
+  }
+
   async function clearHistory() {
     for (const entry of history.value) {
       await api.delete(`/readings/history/${entry.id}`)
@@ -93,5 +118,5 @@ export const useReadingHistoryStore = defineStore('readingHistory', () => {
     clearPageCache()
   }
 
-  return { history, fetchHistory, deleteReading, clearHistory, clearPageCache }
+  return { history, fetchHistory, deleteReading, setOutcome, fetchInsights, clearHistory, clearPageCache }
 })

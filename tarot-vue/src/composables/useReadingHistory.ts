@@ -10,6 +10,8 @@ export function useReadingHistory() {
     history,
     fetchHistory: s.fetchHistory,
     deleteReading: s.deleteReading,
+    setOutcome: s.setOutcome,
+    fetchInsights: s.fetchInsights,
     clearHistory: s.clearHistory,
   }
 }

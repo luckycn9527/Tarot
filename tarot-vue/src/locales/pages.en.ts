@@ -395,6 +395,19 @@ export const pagesEn = {
       followupFail: 'Failed, please try again',
       loginRequired: 'Please log in first',
     },
+    outcome: {
+      question: 'How did the last prediction turn out?',
+      full: 'Spot on',
+      partial: 'Partly',
+      none: 'Off',
+      recorded: 'Recorded: ',
+      thanks: 'Thanks—this helps readings understand you better',
+      fail: 'Could not submit, try again',
+    },
+    insights: {
+      title: 'AI insights · last {months} months',
+      coreTheme: 'Core theme',
+    },
     readerNames: {
       qinghe: 'Qinghe', yanxi: 'Yanxi', haruka: 'Haruka', xuanyin: 'Xuanyin', mirelle: 'Mirelle', lingsha: 'Lingsha',
       norick: 'Norick', amara: 'Amara', vikram: 'Vikram', catalina: 'Catalina', kazuki: 'Kazuki', solveig: 'Solveig',

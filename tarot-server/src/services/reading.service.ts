@@ -502,3 +502,135 @@ export async function deleteHistory(userId: number, id: number) {
   const deleted = await ReadingModel.deleteById(id, userId);
   if (!deleted) throw new Error('记录不存在或无权删除');
 }
+
+/** 设置某次占卜的应验程度评分（次日回访） */
+export async function setReadingOutcome(
+  userId: number,
+  id: number,
+  rating: 'full' | 'partial' | 'none',
+) {
+  const ok = await ReadingModel.setOutcome(id, userId, rating);
+  if (!ok) throw new Error('记录不存在或无权访问');
+  return { id, rating };
+}
+
+/* ——— AI 历史分析：类别分布 + 核心课题 ——— */
+const INSIGHT_CATEGORIES = ['事业', '财富', '感情', '健康', '人际', '抉择', '其他'] as const;
+type InsightCategory = (typeof INSIGHT_CATEGORIES)[number];
+
+interface InsightResult {
+  rangeMonths: number;
+  total: number;
+  distribution: { category: string; count: number; percent: number }[];
+  coreTheme: string;
+  generatedAt: string;
+}
+
+// 简单按用户+当日+样本量缓存，避免重复 AI 调用
+const insightCache = new Map<string, { key: string; data: InsightResult }>();
+
+export async function getInsights(userId: number, months = 6): Promise<InsightResult> {
+  const rows = await ReadingModel.listRecentQuestions(userId, months);
+  const total = rows.length;
+  const today = new Date().toISOString().slice(0, 10);
+  const cacheKey = `${today}:${total}`;
+  const cached = insightCache.get(String(userId));
+  if (cached && cached.key === cacheKey) return cached.data;
+
+  if (total === 0) {
+    const empty: InsightResult = { rangeMonths: months, total: 0, distribution: [], coreTheme: '', generatedAt: new Date().toISOString() };
+    insightCache.set(String(userId), { key: cacheKey, data: empty });
+    return empty;
+  }
+
+  const questionList = rows.map((r, i) => `${i + 1}. ${r.question}`).join('\n');
+  const system = `你是一位占卜数据分析师。下面是用户最近 ${months} 个月的占卜提问列表。请：
+1. 把每个问题归类到下列之一：${INSIGHT_CATEGORIES.join(' / ')}。
+2. 统计各类别的数量。
+3. 用一句不超过 12 字的话总结用户当前的「核心课题」（聚焦占比最高的领域，点出深层关注点，如"事业方向感""亲密关系安全感"）。
+严格只输出一个 JSON 对象，不要 markdown：
+{"counts":{"事业":数量,"财富":数量,"感情":数量,"健康":数量,"人际":数量,"抉择":数量,"其他":数量},"coreTheme":"核心课题"}
+没有的类别填 0。所有 counts 之和应等于问题总数 ${total}。`;
+
+  let counts: Record<string, number> = {};
+  let coreTheme = '';
+  try {
+    const raw = await callDeepSeek(
+      [
+        { role: 'system', content: system },
+        { role: 'user', content: questionList },
+      ],
+      45000,
+      600,
+    );
+    const parsed = parseJsonResponse(raw);
+    const c = parsed.counts as Record<string, unknown> | undefined;
+    if (c && typeof c === 'object') {
+      for (const cat of INSIGHT_CATEGORIES) {
+        const n = Math.max(0, Math.round(Number(c[cat]) || 0));
+        if (n > 0) counts[cat] = n;
+      }
+    }
+    coreTheme = typeof parsed.coreTheme === 'string' ? parsed.coreTheme.trim().slice(0, 24) : '';
+  } catch {
+    counts = {};
+  }
+
+  // 兜底：AI 不可用时按关键词粗分类
+  const sum = Object.values(counts).reduce((a, b) => a + b, 0);
+  if (sum === 0) {
+    counts = keywordClassify(rows.map((r) => r.question));
+    if (!coreTheme) {
+      const top = topCategory(counts);
+      coreTheme = top ? `${top}方向感` : '';
+    }
+  }
+
+  const grand = Object.values(counts).reduce((a, b) => a + b, 0) || 1;
+  const distribution = (Object.entries(counts) as [string, number][])
+    .map(([category, count]) => ({ category, count, percent: Math.round((count / grand) * 100) }))
+    .sort((a, b) => b.count - a.count);
+
+  const data: InsightResult = {
+    rangeMonths: months,
+    total,
+    distribution,
+    coreTheme,
+    generatedAt: new Date().toISOString(),
+  };
+  insightCache.set(String(userId), { key: cacheKey, data });
+  return data;
+}
+
+function topCategory(counts: Record<string, number>): string | null {
+  let best: string | null = null;
+  let max = 0;
+  for (const [k, v] of Object.entries(counts)) {
+    if (v > max) { max = v; best = k; }
+  }
+  return best;
+}
+
+const CATEGORY_KEYWORDS: Record<InsightCategory, string[]> = {
+  事业: ['工作', '事业', '职', '升职', '跳槽', '创业', '老板', '同事', '面试', '项目', '生意'],
+  财富: ['钱', '财', '投资', '收入', '理财', '债', '买房', '股', '薪'],
+  感情: ['感情', '爱', '恋', '喜欢', '复合', '前任', '暧昧', '婚', '对象', 'TA', '他', '她'],
+  健康: ['健康', '身体', '病', '睡', '作息', '焦虑', '情绪', '心理'],
+  人际: ['朋友', '家人', '父母', '关系', '人际', '矛盾', '贵人', '社交'],
+  抉择: ['选择', '该不该', '要不要', '决定', '抉择', '犹豫'],
+  其他: [],
+};
+
+function keywordClassify(questions: string[]): Record<string, number> {
+  const counts: Record<string, number> = {};
+  for (const q of questions) {
+    let matched: string | null = null;
+    for (const cat of INSIGHT_CATEGORIES) {
+      if (cat === '其他') continue;
+      if (CATEGORY_KEYWORDS[cat].some((k) => q.includes(k))) { matched = cat; break; }
+    }
+    const key = matched ?? '其他';
+    counts[key] = (counts[key] ?? 0) + 1;
+  }
+  return counts;
+}

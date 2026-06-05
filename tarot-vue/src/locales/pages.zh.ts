@@ -411,6 +411,19 @@ export const pagesZh = {
       followupFail: '反馈失败，请稍后重试',
       loginRequired: '请先登录',
     },
+    outcome: {
+      question: '上次的预测，结果如何？',
+      full: '完全符合',
+      partial: '部分符合',
+      none: '不符合',
+      recorded: '已记录：',
+      thanks: '感谢反馈，这会让解读更懂你',
+      fail: '提交失败，请稍后重试',
+    },
+    insights: {
+      title: 'AI 分析 · 最近 {months} 个月',
+      coreTheme: '核心课题',
+    },
     readerNames: {
       qinghe: '清和', yanxi: '岩溪', haruka: '遥', xuanyin: '玄引', mirelle: '米蕾', lingsha: '灵砂',
       norick: '诺里克', amara: '阿玛拉', vikram: '维克拉姆', catalina: '卡塔琳娜', kazuki: '和树', solveig: '索尔维格',

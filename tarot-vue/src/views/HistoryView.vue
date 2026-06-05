@@ -11,7 +11,7 @@ const route = useRoute()
 const router = useRouter()
 const { t, tm, locale } = useI18n()
 const { isLoggedIn, isInitialized } = useAuth()
-const { fetchHistory, deleteReading } = useReadingHistory()
+const { fetchHistory, deleteReading, setOutcome, fetchInsights } = useReadingHistory()
 const toast = useToast()
 
 const entries = ref<ReadingHistoryEntry[]>([])
@@ -60,6 +60,8 @@ async function loadData(page = 1, force = false) {
     currentPage.value = result.page
     totalPages.value = result.totalPages
     total.value = result.total
+    // 首页有数据时加载 AI 分析（store 自身按天缓存）
+    if (result.page === 1 && entries.value.length > 0) void loadInsights()
   } catch {
     if (seq !== loadSeq) return
     // 出错时若已有内容则保留，不清空，避免"闪一下消失"
@@ -133,6 +135,13 @@ function adviceOf(entry: ReadingHistoryEntry): string {
   return entry.answer || ''
 }
 
+/** 提取一条记录的应验评分 */
+function outcomeOf(entry: ReadingHistoryEntry): 'full' | 'partial' | 'none' | null {
+  const d = entry.resultData as { outcome?: { rating?: string } } | null
+  const r = d?.outcome?.rating
+  return r === 'full' || r === 'partial' || r === 'none' ? r : null
+}
+
 /** 回访复盘：基于最近一条「有问题」的记录，且仅在首页无筛选时展示 */
 const noFilterActive = computed(
   () => !searchQuery.value && !typeFilter.value && !dateFrom.value && !dateTo.value,
@@ -143,14 +152,59 @@ const followUp = computed(() => {
   if (!last) return null
   const days = Math.max(0, Math.floor((Date.now() - new Date(last.createdAt).getTime()) / 86400000))
   const advice = adviceOf(last)
+  // 次日提醒：记录不是「今天」创建的才提示评分
+  const isPastDay = new Date(last.createdAt).toDateString() !== new Date().toDateString()
   return {
+    id: last.id,
     days,
     question: last.question,
     advice: advice.length > 60 ? advice.slice(0, 60) + '…' : advice,
     type: last.type,
     readerId: last.readerId,
+    rating: outcomeOf(last),
+    isPastDay,
+    entry: last,
   }
 })
+
+/** 提交应验评分 */
+const ratingLoading = ref(false)
+async function rateOutcome(rating: 'full' | 'partial' | 'none') {
+  const fu = followUp.value
+  if (!fu || ratingLoading.value) return
+  ratingLoading.value = true
+  try {
+    await setOutcome(fu.id, rating)
+    // 本地同步，避免重拉
+    const d = (fu.entry.resultData ?? {}) as { outcome?: { rating: string; at: string } }
+    d.outcome = { rating, at: new Date().toISOString() }
+    fu.entry.resultData = d
+    toast.success(t('pages.history.outcome.thanks'))
+  } catch {
+    toast.error(t('pages.history.outcome.fail'))
+  } finally {
+    ratingLoading.value = false
+  }
+}
+
+/* ——— AI 历史分析 ——— */
+interface InsightItem { category: string; count: number; percent: number }
+const insights = ref<{ rangeMonths: number; total: number; distribution: InsightItem[]; coreTheme: string } | null>(null)
+const insightsLoading = ref(false)
+const catColors: Record<string, string> = {
+  事业: '#D4AF37', 财富: '#FBBF24', 感情: '#E879F9', 健康: '#34D399', 人际: '#60A5FA', 抉择: '#A78BFA', 其他: '#94A3B8',
+}
+async function loadInsights() {
+  if (insightsLoading.value) return
+  insightsLoading.value = true
+  try {
+    insights.value = await fetchInsights()
+  } catch {
+    insights.value = null
+  } finally {
+    insightsLoading.value = false
+  }
+}
 
 /** 回访 CTA：展开最近一条记录详情；reader-reading 可直接在详情里反馈追问 */
 function followUpAgain() {
@@ -329,6 +383,27 @@ watch(
                 {{ followUp.advice }}
               </p>
             </div>
+
+            <!-- 次日提醒：应验程度评分 -->
+            <div v-if="followUp.isPastDay" class="mt-4">
+              <p class="text-gold-300/90 text-sm mb-2">{{ t('pages.history.outcome.question') }}</p>
+              <div v-if="followUp.rating" class="text-sm text-emerald-300/90">
+                {{ t('pages.history.outcome.recorded') }}「{{ t('pages.history.outcome.' + followUp.rating) }}」
+              </div>
+              <div v-else class="flex flex-wrap gap-2">
+                <button
+                  v-for="opt in (['full','partial','none'] as const)"
+                  :key="opt"
+                  type="button"
+                  :disabled="ratingLoading"
+                  class="px-3.5 py-1.5 rounded-full border border-gold-500/25 bg-white/4 text-gray-200 text-sm hover:border-gold-400/60 hover:bg-gold-500/10 transition-colors cursor-pointer disabled:opacity-50"
+                  @click="rateOutcome(opt)"
+                >
+                  {{ t('pages.history.outcome.' + opt) }}
+                </button>
+              </div>
+            </div>
+
             <div class="mt-4 flex flex-wrap items-center gap-3">
               <p class="text-gold-300/90 text-sm">{{ t('pages.history.followUp.prompt') }}</p>
               <button
@@ -340,6 +415,30 @@ watch(
               </button>
             </div>
           </div>
+        </div>
+      </div>
+
+      <!-- AI 历史分析卡 -->
+      <div
+        v-if="insights && insights.total > 0 && noFilterActive && currentPage === 1"
+        class="relative overflow-hidden rounded-2xl border border-violet-500/20 bg-gradient-to-br from-violet-500/[0.07] to-gold-500/[0.04] p-5 sm:p-6 mb-6"
+      >
+        <div class="flex items-center gap-2 mb-4">
+          <svg class="w-4 h-4 text-violet-300" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M3 3v18h18" stroke-linecap="round"/><path d="M7 14l4-4 3 3 5-6" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          <h3 class="text-violet-100 font-serif text-base">{{ t('pages.history.insights.title', { months: insights.rangeMonths }) }}</h3>
+        </div>
+        <div class="space-y-2.5">
+          <div v-for="(d, di) in insights.distribution.slice(0, 5)" :key="d.category" class="flex items-center gap-3">
+            <span class="w-12 shrink-0 text-sm" :class="di === 0 ? 'text-gold-200 font-medium' : 'text-gray-400'">{{ d.category }}</span>
+            <div class="flex-1 h-2.5 rounded-full bg-white/[0.06] overflow-hidden">
+              <div class="h-full rounded-full transition-all duration-700" :style="{ width: d.percent + '%', background: catColors[d.category] || '#94A3B8' }" />
+            </div>
+            <span class="w-10 shrink-0 text-right text-sm tabular-nums" :class="di === 0 ? 'text-gold-200' : 'text-gray-500'">{{ d.percent }}%</span>
+          </div>
+        </div>
+        <div v-if="insights.coreTheme" class="mt-5 flex items-center gap-2 rounded-xl border border-gold-500/20 bg-gold-500/[0.06] px-4 py-3">
+          <span class="text-[11px] tracking-widest text-gold-500/60 shrink-0">{{ t('pages.history.insights.coreTheme') }}</span>
+          <span class="text-gold-100 font-medium">{{ insights.coreTheme }}</span>
         </div>
       </div>
 
