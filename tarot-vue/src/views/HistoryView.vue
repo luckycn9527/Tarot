@@ -134,7 +134,7 @@ watch(
 </script>
 
 <template>
-  <div class="min-h-screen bg-gradient-to-b from-void via-obsidian to-void pt-20 pb-12 px-4">
+  <div class="relative z-10 min-h-screen bg-gradient-to-b from-void via-obsidian to-void pt-20 pb-12 px-4">
     <div class="max-w-4xl mx-auto">
       <!-- Header -->
       <div class="text-center mb-8">
