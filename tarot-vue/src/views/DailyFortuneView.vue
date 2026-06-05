@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { useToast } from '../composables/useToast'
@@ -8,6 +8,7 @@ import { tarotCards, getCardImageUrl } from '../data/tarotCards'
 import { generateAiDailyFortune } from '../services/tarotAiReading'
 import { useCardBack } from '../composables/useCardBack'
 import { useZodiac } from '../composables/useZodiac'
+import { useAuth } from '../composables/useAuth'
 import { useDailyCache } from '../composables/useDailyCache'
 import { useShuffle } from '../composables/useShuffle'
 import TarotCard3D from '../components/TarotCard3D.vue'
@@ -17,9 +18,10 @@ import { StorageKeys, storageSet } from '@/utils/storage'
 
 useScrollReveal()
 const { loadCardBack, cardBackUrl } = useCardBack()
-const { birthYear, birthMonth, birthDay, zodiacSign, loadFromStorage, onBirthdayChange, clearBirthday } = useZodiac()
+const { birthYear, birthMonth, birthDay, zodiacSign, loadFromStorage, onBirthdayChange, setFromDate, clearBirthday } = useZodiac()
 const { hasDrawnToday, hasCachedResult, countdown, loadCache, saveDraw, saveFortune } = useDailyCache()
 const { drawRandom } = useShuffle()
+const { isInitialized, isLoggedIn, user } = useAuth()
 
 const route = useRoute()
 const router = useRouter()
@@ -101,6 +103,7 @@ async function handleViewFortune() {
 onMounted(() => {
   void loadCardBack(true)
   loadFromStorage()
+  applyProfileBirthday()
   const cache = loadCache()
   if (cache) {
     hasDrawnToday.value = true
@@ -109,6 +112,18 @@ onMounted(() => {
     flipped.value = true
     hasCachedResult.value = !!cache.fortune
   }
+})
+
+/** 个人中心已填生日时，自动带入星座，免去用户在此页重复输入 */
+function applyProfileBirthday() {
+  if (isLoggedIn.value && user.value?.birthday) {
+    setFromDate(user.value.birthday)
+  }
+}
+
+// 登录态/资料在挂载后才就绪时，补充带入一次
+watch([isInitialized, isLoggedIn, () => user.value?.birthday], () => {
+  applyProfileBirthday()
 })
 
 const ritualMessages = computed(() => tm('pages.dailyFortune.ritualMessages') as string[])

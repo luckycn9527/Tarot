@@ -5,6 +5,7 @@ import * as UserModel from '../models/user.model.js';
 import * as TokenModel from '../models/token.model.js';
 import * as PasswordResetModel from '../models/passwordReset.model.js';
 import { normalizeEmail } from '../utils/emailNormalize.js';
+import { toDateOnly } from '../utils/dateOnly.js';
 import { signAccessToken, signRefreshToken } from '../utils/jwt.js';
 import { sendPasswordResetEmail } from '../utils/mailer.js';
 import { env } from '../config/env.js';
@@ -19,7 +20,7 @@ function toPublicUser(user: DbUser): PublicUser {
     nickname: user.nickname,
     avatar: user.avatar ?? '🔮',
     gender: user.gender,
-    birthday: user.birthday,
+    birthday: toDateOnly(user.birthday),
     zodiacSign: user.zodiac_sign,
     location: user.location,
     bio: user.bio,
@@ -28,6 +29,25 @@ function toPublicUser(user: DbUser): PublicUser {
     remainingFreeQuota: user.remaining_free_quota,
     createdAt: user.created_at,
   };
+}
+
+/**
+ * 规范化生日为 'YYYY-MM-DD'。
+ * mysql2 把 DATE 列解析为「本地零点」的 Date 对象，直接 toISOString() 会按 UTC 回退一天，
+ * 因此用本地年月日分量还原，避免前端预填生日 / 星座出现 -1 天偏差。
+ */
+function formatBirthday(value: unknown): string | null {
+  if (value == null) return null;
+  if (value instanceof Date) {
+    if (Number.isNaN(value.getTime())) return null;
+    const y = value.getFullYear();
+    const m = `${value.getMonth() + 1}`.padStart(2, '0');
+    const d = `${value.getDate()}`.padStart(2, '0');
+    return `${y}-${m}-${d}`;
+  }
+  const s = String(value);
+  const match = s.match(/^\d{4}-\d{2}-\d{2}/);
+  return match ? match[0] : null;
 }
 
 /** 用户名规则：3–20 位，字母/数字/下划线，且不能是纯数字（避免与手机号歧义） */

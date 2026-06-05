@@ -72,6 +72,19 @@ export function useZodiac() {
     }
   }
 
+  /** 从 YYYY-MM-DD 生日字符串填充（用于从个人中心资料自动带入，免去重复输入） */
+  function setFromDate(dateStr: string | null | undefined): boolean {
+    if (!dateStr || !/^\d{4}-\d{2}-\d{2}/.test(dateStr)) return false
+    const [y, m, d] = dateStr.slice(0, 10).split('-').map((s) => parseInt(s, 10))
+    if (!y || !m || !d) return false
+    birthYear.value = String(y)
+    birthMonth.value = String(m)
+    birthDay.value = String(d)
+    zodiacSign.value = calculateZodiac(m, d)
+    saveToStorage()
+    return true
+  }
+
   function clearBirthday() {
     birthYear.value = ''
     birthMonth.value = ''
@@ -82,6 +95,6 @@ export function useZodiac() {
 
   return {
     birthYear, birthMonth, birthDay, zodiacSign,
-    loadFromStorage, onBirthdayChange, clearBirthday,
+    loadFromStorage, onBirthdayChange, setFromDate, clearBirthday,
   }
 }

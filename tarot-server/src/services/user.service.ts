@@ -3,6 +3,7 @@ import * as UserModel from '../models/user.model.js';
 import * as SettingsModel from '../models/settings.model.js';
 import { toPublicUser } from './auth.service.js';
 import { getZodiacFromDate } from '../utils/zodiac.js';
+import { toDateOnly } from '../utils/dateOnly.js';
 import { cacheGet, cacheSet, cacheDel, CACHE_KEYS } from './cacheRedis.service.js';
 
 const SETTINGS_CACHE_TTL_SEC = 600;
@@ -125,7 +126,7 @@ export async function getBirthInfo(userId: number) {
   const user = await UserModel.findById(userId);
   if (!user) throw new Error('用户不存在');
   return {
-    birthday: user.birthday,
+    birthday: toDateOnly(user.birthday),
     zodiacSign: user.zodiac_sign,
   };
 }

@@ -125,6 +125,7 @@ const selectedCards = computed(() =>
 const spreadPositions = computed(() => tm('pages.fateDual.spreadPositions') as string[])
 
 const birthDateWheelTouched = ref(false)
+const profilePrefilled = ref(false)
 const questionFieldFocused = ref(false)
 const altarPanelMounted = ref(false)
 const ctaInvoking = ref(false)
@@ -137,9 +138,15 @@ watch(
   ([init, logged]) => {
     if (!init) return
     if (!logged) { void router.replace({ path: '/login', query: { redirect: route.fullPath } }); return }
-    if (user.value?.birthday && !birthDate.value) {
-      birthDate.value = user.value.birthday.slice(0, 10)
-      birthDateWheelTouched.value = true
+    if (!profilePrefilled.value && user.value) {
+      profilePrefilled.value = true
+      if (user.value.birthday && /^\d{4}-\d{2}-\d{2}/.test(user.value.birthday)) {
+        birthDate.value = user.value.birthday.slice(0, 10)
+        birthDateWheelTouched.value = true
+      }
+      if (user.value.gender === 'male' || user.value.gender === 'female') {
+        gender.value = user.value.gender
+      }
     }
   },
   { immediate: true },

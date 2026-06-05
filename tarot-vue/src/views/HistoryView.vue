@@ -24,8 +24,16 @@ const loadError = ref(false)
 // 筛选
 const searchQuery = ref('')
 const typeFilter = ref('')
-const dateFrom = ref('')
-const dateTo = ref('')
+// 日期默认显示「今天」，但未主动调整前不参与过滤（保留回访卡/AI分析卡所需的全部最近记录）
+function todayStr(): string {
+  const d = new Date()
+  const m = `${d.getMonth() + 1}`.padStart(2, '0')
+  const day = `${d.getDate()}`.padStart(2, '0')
+  return `${d.getFullYear()}-${m}-${day}`
+}
+const dateFrom = ref(todayStr())
+const dateTo = ref(todayStr())
+const dateTouched = ref(false)
 
 const typeLabels = computed(() => tm('pages.history.typeLabels') as Record<string, string>)
 
@@ -51,8 +59,8 @@ async function loadData(page = 1, force = false) {
       limit: 10,
       type: typeFilter.value || undefined,
       search: searchQuery.value || undefined,
-      dateFrom: dateFrom.value || undefined,
-      dateTo: dateTo.value || undefined,
+      dateFrom: dateTouched.value ? dateFrom.value || undefined : undefined,
+      dateTo: dateTouched.value ? dateTo.value || undefined : undefined,
     }, force)
     // 竞态防护：只有最新一次请求可写入状态，过期响应直接丢弃
     if (seq !== loadSeq) return
@@ -83,8 +91,9 @@ function handleSearch() {
 function resetFilters() {
   searchQuery.value = ''
   typeFilter.value = ''
-  dateFrom.value = ''
-  dateTo.value = ''
+  dateFrom.value = todayStr()
+  dateTo.value = todayStr()
+  dateTouched.value = false
   loadData(1, true)
 }
 
@@ -144,7 +153,7 @@ function outcomeOf(entry: ReadingHistoryEntry): 'full' | 'partial' | 'none' | nu
 
 /** 回访复盘：基于最近一条「有问题」的记录，且仅在首页无筛选时展示 */
 const noFilterActive = computed(
-  () => !searchQuery.value && !typeFilter.value && !dateFrom.value && !dateTo.value,
+  () => !searchQuery.value && !typeFilter.value && !dateTouched.value,
 )
 const followUp = computed(() => {
   if (currentPage.value !== 1 || !noFilterActive.value) return null
@@ -333,6 +342,7 @@ watch(
               v-model="dateFrom"
               type="date"
               class="flex-1 px-3 py-2 rounded-xl bg-white/4 border border-gold-500/10 text-gray-300 text-sm focus:border-gold-400 focus:outline-none"
+              @change="dateTouched = true"
             />
           </div>
           <div class="flex items-center gap-2 flex-1">
@@ -341,6 +351,7 @@ watch(
               v-model="dateTo"
               type="date"
               class="flex-1 px-3 py-2 rounded-xl bg-white/4 border border-gold-500/10 text-gray-300 text-sm focus:border-gold-400 focus:outline-none"
+              @change="dateTouched = true"
             />
           </div>
           <div class="flex gap-2">
