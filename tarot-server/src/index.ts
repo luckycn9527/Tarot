@@ -28,6 +28,10 @@ import { startHoroscopeScheduler } from './services/horoscope.service.js';
 const app = express();
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
+// 反向代理（Nginx）后部署：信任代理，使 req.protocol/secure 反映真实的 https，
+// 保证 Secure Cookie、X-Forwarded-* 等行为正确。
+app.set('trust proxy', 1);
+
 // 上传目录（multer 不落盘若目录不存在；与 cwd 无关）
 const uploadsRoot = getUploadsRoot();
 for (const sub of ['', 'avatars', 'admin', 'card-backs', 'cards'] as const) {
