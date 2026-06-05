@@ -214,6 +214,37 @@ export async function deleteById(id: number, userId: number) {
   return result.affectedRows > 0;
 }
 
+/** 把一轮追问/反馈持久化到该占卜记录的 result_data.followups（从现在起记录后续对话） */
+export async function appendFollowupTurn(
+  id: number,
+  userId: number,
+  turn: { question: string; answer: string },
+): Promise<boolean> {
+  const [rows] = await pool.execute<RowDataPacket[]>(
+    'SELECT result_data FROM reading_history WHERE id = ? AND user_id = ? LIMIT 1',
+    [id, userId],
+  );
+  const row = rows[0];
+  if (!row) return false;
+  let data: Record<string, unknown> = {};
+  try {
+    data = typeof row.result_data === 'string' ? JSON.parse(row.result_data) : (row.result_data ?? {});
+  } catch {
+    data = {};
+  }
+  if (!data || typeof data !== 'object') data = {};
+  const list = Array.isArray((data as { followups?: unknown }).followups)
+    ? ((data as { followups: unknown[] }).followups as unknown[])
+    : [];
+  list.push({ question: turn.question, answer: turn.answer, at: new Date().toISOString() });
+  (data as { followups: unknown[] }).followups = list;
+  await pool.execute(
+    'UPDATE reading_history SET result_data = ? WHERE id = ? AND user_id = ?',
+    [JSON.stringify(data), id, userId],
+  );
+  return true;
+}
+
 export async function getDailyFortuneCache(userId: number, date: string) {
   const [rows] = await pool.execute<RowDataPacket[]>(
     'SELECT * FROM daily_fortune_cache WHERE user_id = ? AND fortune_date = ?',

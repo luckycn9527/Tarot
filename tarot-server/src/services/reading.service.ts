@@ -478,6 +478,12 @@ export async function readerFollowup(
   // 追问消耗一次配额（与初次占卜一致的限额策略）
   await UserModel.decrementQuota(userId);
 
+  // 持久化本轮追问到该记录（历史详情可回看；旧记录从现在起开始累积）
+  await ReadingModel.appendFollowupTurn(readingId, userId, {
+    question: followupQuestion,
+    answer,
+  });
+
   return { readingId, question: followupQuestion, answer };
 }
 

@@ -1,6 +1,7 @@
 <script setup lang="ts">
-import { ref, watch, computed } from 'vue'
+import { ref, watch, computed, nextTick } from 'vue'
 import { useReadingHistory, type ReadingHistoryEntry } from '../composables/useReadingHistory'
+import { askReaderFollowUp } from '../services/tarotAiReading'
 import { useAuth } from '../composables/useAuth'
 import { useRoute, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
@@ -151,13 +152,80 @@ const followUp = computed(() => {
   }
 })
 
-/** 回访 CTA：基于上次类型，引导再做一次同类占卜 */
+/** 回访 CTA：展开最近一条记录详情；reader-reading 可直接在详情里反馈追问 */
 function followUpAgain() {
-  const fu = followUp.value
-  if (fu?.type === 'reader-reading' && fu.readerId) {
-    void router.push(`/reader/${fu.readerId}/ask`)
-  } else {
-    void router.push('/tarot')
+  const last = entries.value.find((e) => e.question && e.question.trim())
+  if (!last) return
+  expandedId.value = last.id
+  void nextTick(() => {
+    document.getElementById('hist-entry-' + last.id)?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+  })
+}
+
+/* ——— 详情展开 + 追问/反馈 ——— */
+const expandedId = ref<number | null>(null)
+const followupInput = ref('')
+const followupLoading = ref(false)
+
+function toggleDetail(id: number) {
+  expandedId.value = expandedId.value === id ? null : id
+  followupInput.value = ''
+}
+
+interface ReaderMsg { type: string; content: string }
+interface FollowupTurn { question: string; answer: string; at?: string }
+
+/** reader-reading 解读正文（messages 拼接） */
+function readingMessages(entry: ReadingHistoryEntry): ReaderMsg[] {
+  const d = entry.resultData as { messages?: unknown } | null
+  if (d && Array.isArray(d.messages)) {
+    return (d.messages as ReaderMsg[]).filter((m) => m && typeof m.content === 'string')
+  }
+  return []
+}
+function readingSummary(entry: ReadingHistoryEntry): string {
+  const d = entry.resultData as { summary?: unknown } | null
+  return d && typeof d.summary === 'string' ? d.summary : ''
+}
+/** 单/三卡详情字段 */
+function readingField(entry: ReadingHistoryEntry, key: 'interpretation' | 'advice' | 'conclusion'): string {
+  const d = entry.resultData as Record<string, unknown> | null
+  return d && typeof d[key] === 'string' ? (d[key] as string) : ''
+}
+/** 已记录的追问/反馈轮次 */
+function entryFollowups(entry: ReadingHistoryEntry): FollowupTurn[] {
+  const d = entry.resultData as { followups?: unknown } | null
+  if (d && Array.isArray(d.followups)) {
+    return (d.followups as FollowupTurn[]).filter((f) => f && typeof f.question === 'string' && typeof f.answer === 'string')
+  }
+  return []
+}
+
+async function submitFollowup(entry: ReadingHistoryEntry) {
+  const q = followupInput.value.trim()
+  if (followupLoading.value) return
+  if (q.length < 2) { toast.error(t('pages.history.detail.followupMin')); return }
+  if (q.length > 200) { toast.error(t('pages.history.detail.followupMax')); return }
+  followupLoading.value = true
+  try {
+    const prior = entryFollowups(entry).map((f) => ({ question: f.question, answer: f.answer }))
+    const data = await askReaderFollowUp({ readingId: entry.id, question: q, priorTurns: prior })
+    // 后端已持久化；本地同步追加，避免重新拉取
+    const d = (entry.resultData ?? {}) as { followups?: FollowupTurn[] }
+    if (!Array.isArray(d.followups)) d.followups = []
+    d.followups.push({ question: q, answer: data.answer, at: new Date().toISOString() })
+    entry.resultData = d
+    followupInput.value = ''
+  } catch (err: unknown) {
+    const ax = err as { response?: { status?: number; data?: { message?: string } }; message?: string }
+    if (ax.response?.status === 401) {
+      toast.error(t('pages.history.detail.loginRequired'))
+      void router.replace({ path: '/login', query: { redirect: route.fullPath } })
+    } else {
+      toast.error(ax.response?.data?.message || ax.message || t('pages.history.detail.followupFail'))
+    }
+  } finally {
+    followupLoading.value = false
   }
 }
 
@@ -302,32 +370,99 @@ watch(
 
         <div
           v-for="entry in entries"
+          :id="'hist-entry-' + entry.id"
           :key="entry.id"
-          class="card-panel p-4 hover:border-gold-500/20 transition-colors"
+          class="card-panel p-4 transition-colors"
+          :class="expandedId === entry.id ? 'border-gold-500/30' : 'hover:border-gold-500/20'"
         >
           <div class="flex items-start justify-between gap-3">
-            <div class="flex-1 min-w-0">
+            <button type="button" class="flex-1 min-w-0 text-left cursor-pointer" @click="toggleDetail(entry.id)">
               <div class="flex items-center gap-2 mb-2">
                 <span class="px-2 py-0.5 rounded-full text-xs" :class="typeColors[entry.type] || 'bg-gray-500/20 text-gray-300'">
                   {{ typeLabel(entry.type) }}
                 </span>
                 <span class="text-gray-500 text-xs">{{ formatDate(entry.createdAt) }}</span>
+                <svg class="w-3.5 h-3.5 text-gray-500 transition-transform duration-300" :class="expandedId === entry.id ? 'rotate-180' : ''" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 9l6 6 6-6" stroke-linecap="round" stroke-linejoin="round"/></svg>
               </div>
-              <p v-if="entry.question" class="text-white text-sm mb-1 truncate">{{ entry.question }}</p>
-              <p v-if="entry.answer" class="text-gray-400 text-xs">{{ t('pages.history.answerPrefix') }}{{ entry.answer }}</p>
+              <p v-if="entry.question" class="text-white text-sm mb-1" :class="expandedId === entry.id ? '' : 'truncate'">{{ entry.question }}</p>
+              <p v-if="entry.answer && expandedId !== entry.id" class="text-gray-400 text-xs truncate">{{ t('pages.history.answerPrefix') }}{{ entry.answer }}</p>
               <p v-if="entry.type === 'reader-reading' && entry.readerId" class="text-gray-400 text-xs">
                 {{ t('pages.history.readerPrefix') }}{{ readerLabel(entry.readerId) }}
-                <span v-if="resultSummary(entry.resultData)"> · {{ resultSummary(entry.resultData) }}</span>
+                <span v-if="resultSummary(entry.resultData) && expandedId !== entry.id"> · {{ resultSummary(entry.resultData) }}</span>
               </p>
-            </div>
+            </button>
             <button
-              class="text-gray-500 hover:text-red-400 transition-colors p-1"
+              class="text-gray-500 hover:text-red-400 transition-colors p-1 shrink-0"
               :title="t('pages.history.deleteTitle')"
               @click="handleDelete(entry.id)"
             >
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"/></svg>
             </button>
           </div>
+
+          <!-- 详情展开 -->
+          <Transition name="fade">
+            <div v-if="expandedId === entry.id" class="mt-4 pt-4 border-t border-white/[0.06] space-y-4">
+              <!-- reader-reading：解读对话 + 摘要 -->
+              <template v-if="entry.type === 'reader-reading'">
+                <div v-for="(m, mi) in readingMessages(entry)" :key="'m'+mi" class="text-sm text-gray-300 leading-relaxed whitespace-pre-wrap">{{ m.content }}</div>
+                <div v-if="readingSummary(entry)" class="rounded-xl border border-gold-500/15 bg-gold-500/[0.05] p-3">
+                  <p class="text-[11px] tracking-widest text-gold-500/60 mb-1">{{ t('pages.history.detail.summary') }}</p>
+                  <p class="text-sm text-gold-100/90 leading-relaxed whitespace-pre-wrap">{{ readingSummary(entry) }}</p>
+                </div>
+              </template>
+              <!-- single / three-card：解读 / 建议 / 结论 -->
+              <template v-else>
+                <div v-if="readingField(entry, 'interpretation')">
+                  <p class="text-[11px] tracking-widest text-gray-500 mb-1">{{ t('pages.history.detail.interpretation') }}</p>
+                  <p class="text-sm text-gray-300 leading-relaxed whitespace-pre-wrap">{{ readingField(entry, 'interpretation') }}</p>
+                </div>
+                <div v-if="readingField(entry, 'advice')">
+                  <p class="text-[11px] tracking-widest text-gray-500 mb-1">{{ t('pages.history.detail.advice') }}</p>
+                  <p class="text-sm text-gray-300 leading-relaxed whitespace-pre-wrap">{{ readingField(entry, 'advice') }}</p>
+                </div>
+                <div v-if="readingField(entry, 'conclusion')">
+                  <p class="text-[11px] tracking-widest text-gray-500 mb-1">{{ t('pages.history.detail.conclusion') }}</p>
+                  <p class="text-sm text-gray-300 leading-relaxed whitespace-pre-wrap">{{ readingField(entry, 'conclusion') }}</p>
+                </div>
+              </template>
+
+              <!-- 已记录的追问/反馈 -->
+              <div v-if="entryFollowups(entry).length" class="space-y-3 pt-2 border-t border-white/[0.06]">
+                <p class="text-[11px] tracking-widest text-violet-300/60">{{ t('pages.history.detail.followupHistory') }}</p>
+                <div v-for="(f, fi) in entryFollowups(entry)" :key="'f'+fi" class="space-y-1.5">
+                  <p class="text-sm text-gold-100/90"><span class="text-gray-500">{{ t('pages.history.detail.youAsked') }}</span>{{ f.question }}</p>
+                  <p class="text-sm text-gray-300 leading-relaxed whitespace-pre-wrap pl-3 border-l-2 border-violet-500/30">{{ f.answer }}</p>
+                </div>
+              </div>
+
+              <!-- 反馈/追问输入（仅塔罗师占卜支持基于上下文的追问） -->
+              <div v-if="entry.type === 'reader-reading'" class="pt-2">
+                <p class="text-xs text-gray-500 mb-2">{{ t('pages.history.detail.followupHint') }}</p>
+                <div class="flex items-end gap-2 rounded-2xl bg-white/4 border border-gold-500/15 p-2 focus-within:border-gold-500/40 transition-colors">
+                  <textarea
+                    v-model="followupInput"
+                    rows="1"
+                    maxlength="200"
+                    :placeholder="t('pages.history.detail.followupPlaceholder')"
+                    class="flex-1 resize-none bg-transparent px-2 py-1.5 text-sm text-gray-200 placeholder:text-gray-600 outline-none"
+                    :disabled="followupLoading"
+                    @keydown.enter.exact.prevent="submitFollowup(entry)"
+                  />
+                  <button
+                    type="button"
+                    class="cursor-pointer shrink-0 w-9 h-9 rounded-full flex items-center justify-center bg-gold-500/30 border border-gold-500/30 text-gold-100 hover:bg-gold-500/45 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+                    :disabled="followupLoading || followupInput.trim().length < 2"
+                    :aria-label="t('pages.history.detail.send')"
+                    @click="submitFollowup(entry)"
+                  >
+                    <svg v-if="!followupLoading" class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M22 2L11 13M22 2l-7 20-4-9-9-4 20-7z" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                    <span v-else class="w-4 h-4 border-2 border-gold-200/40 border-t-gold-100 rounded-full animate-spin" />
+                  </button>
+                </div>
+              </div>
+            </div>
+          </Transition>
         </div>
 
         <!-- Pagination -->
@@ -354,3 +489,10 @@ watch(
     </div>
   </div>
 </template>
+
+<style scoped>
+.fade-enter-active,
+.fade-leave-active { transition: opacity 0.25s ease; }
+.fade-enter-from,
+.fade-leave-to { opacity: 0; }
+</style>
