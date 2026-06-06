@@ -84,11 +84,11 @@ function goNext() {
       </div>
 
       <!-- Spread grid -->
-      <div class="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-8">
+      <div class="grid grid-cols-1 sm:grid-cols-2 gap-4 pb-36">
         <button
           v-for="spread in readerSpreads"
           :key="spread.id"
-          class="text-left p-4 rounded-xl border transition-all"
+          class="text-left p-4 rounded-xl border transition-all cursor-pointer"
           :class="selectedSpread?.id === spread.id
             ? 'bg-gold-500/10 border-gold-500/40 shadow-lg shadow-gold-500/10'
             : 'bg-white/[0.03] border-gold-500/10 hover:border-gold-500/20 hover:bg-white/4'"
@@ -116,21 +116,26 @@ function goNext() {
           </div>
         </button>
       </div>
+    </div>
 
-      <!-- Submit -->
-      <div class="animate-fade-in-up">
+    <!-- 吸底确认栏：固定在视口底部，选好牌阵无需滚动即可点击 -->
+    <div
+      v-if="ready && reader"
+      class="fixed bottom-0 left-0 right-0 z-30 px-4 pt-4 pb-[calc(0.75rem+env(safe-area-inset-bottom))] bg-gradient-to-t from-[#030108] via-[#030108]/95 to-transparent"
+    >
+      <div class="max-w-3xl mx-auto">
         <button
           :disabled="!canProceed"
           class="w-full py-3.5 rounded-xl text-white font-medium transition-all"
           :class="canProceed
-            ? 'cta-button hover:shadow-lg hover:shadow-gold-500/20'
-            : 'bg-gray-700 text-gray-400 cursor-not-allowed'"
+            ? 'cta-button cursor-pointer hover:shadow-lg hover:shadow-gold-500/20'
+            : 'bg-gray-700/80 text-gray-400 cursor-not-allowed'"
           @click="goNext"
         >
-          开始占卜 🔮
+          {{ canProceed ? `开始占卜 · ${selectedSpread?.name}` : '请选择一个牌阵' }}
         </button>
-        <div class="text-center mt-4">
-          <button class="text-gray-500 text-sm hover:text-gold-300 transition-colors" @click="router.back()">
+        <div class="text-center mt-2">
+          <button class="text-gray-500 text-sm hover:text-gold-300 transition-colors cursor-pointer" @click="router.back()">
             ← 返回修改问题
           </button>
         </div>
