@@ -4,6 +4,7 @@ import { useRoute, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { getReaderById } from '../../data/readers'
 import { questionCategories, type QuestionCategory, type SubCategory } from '../../data/questionCategories'
+import { recommendSpreads } from '../../utils/recommendSpread'
 import { useAuth } from '../../composables/useAuth'
 import { useDynamicSeoTitle } from '../../composables/useDynamicSeoTitle'
 import ReaderAvatarMedia from '../../components/ui/ReaderAvatarMedia.vue'
@@ -45,6 +46,13 @@ const selectedSub = ref<SubCategory | null>(null)
 
 const questionValid = computed(() => question.value.length >= 5 && question.value.length <= 200)
 
+/** 根据问题文本 + 分类智能推荐牌阵（问题有效后展示，点击可直接开始占卜） */
+const recommendedSpreads = computed(() =>
+  questionValid.value
+    ? recommendSpreads(question.value, selectedCategory.value?.id ?? null, 3)
+    : [],
+)
+
 function selectCategory(cat: QuestionCategory) {
   if (selectedCategory.value?.id === cat.id) {
     selectedCategory.value = null
@@ -71,6 +79,20 @@ function goNext() {
     query: {
       q: question.value,
       cat: selectedCategory.value?.name || '综合',
+    },
+  })
+}
+
+/** 直接用推荐牌阵开始占卜，跳过牌阵列表 */
+function goWithSpread(spreadId: string) {
+  if (!questionValid.value || !reader.value) return
+  router.push({
+    name: 'reader-reading',
+    params: { readerId },
+    query: {
+      q: question.value,
+      cat: selectedCategory.value?.name || '综合',
+      spread: spreadId,
     },
   })
 }
@@ -177,17 +199,47 @@ function goNext() {
           </div>
         </div>
 
+        <!-- 智能推荐牌阵 -->
+        <div v-if="recommendedSpreads.length" class="mb-6 animate-fade-in-up">
+          <p class="text-gray-400 text-sm mb-3">
+            为你推荐牌阵
+            <span class="text-gray-600">（根据问题智能匹配，点击直接开始）</span>
+          </p>
+          <div class="space-y-2">
+            <button
+              v-for="(sp, i) in recommendedSpreads"
+              :key="sp.id"
+              class="w-full text-left p-3 rounded-xl border transition-all cursor-pointer flex items-center gap-3"
+              :class="i === 0
+                ? 'bg-gold-500/10 border-gold-500/40 shadow-lg shadow-gold-500/10'
+                : 'bg-white/[0.03] border-gold-500/10 hover:border-gold-500/25 hover:bg-white/4'"
+              @click="goWithSpread(sp.id)"
+            >
+              <span class="text-2xl flex-shrink-0">{{ sp.emoji }}</span>
+              <div class="min-w-0 flex-1">
+                <div class="flex items-center gap-2 flex-wrap">
+                  <h3 class="text-white font-medium font-serif text-sm">{{ sp.name }}</h3>
+                  <span v-if="i === 0" class="text-[10px] px-1.5 py-0.5 rounded-full bg-gold-500/25 text-gold-200">最契合</span>
+                  <span class="text-gray-500 text-xs">{{ sp.cardCount }}张牌</span>
+                </div>
+                <p class="text-gray-400 text-xs leading-snug truncate">{{ sp.description }}</p>
+              </div>
+              <svg class="w-4 h-4 text-gold-400 flex-shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 18l6-6-6-6" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            </button>
+          </div>
+        </div>
+
         <!-- Submit button -->
         <div class="animate-fade-in-up anim-delay-3">
           <button
             :disabled="!questionValid"
-            class="w-full py-3.5 rounded-xl text-white font-medium transition-all"
+            class="w-full py-3.5 rounded-xl font-medium transition-all border"
             :class="questionValid
-              ? 'cta-button hover:shadow-lg hover:shadow-gold-500/20'
-              : 'bg-gray-700 text-gray-400 cursor-not-allowed'"
+              ? 'bg-white/4 border-gold-500/25 text-gold-200 hover:bg-white/[0.07] hover:border-gold-500/40 cursor-pointer'
+              : 'bg-gray-700 border-transparent text-gray-400 cursor-not-allowed'"
             @click="goNext"
           >
-            选择牌阵 →
+            {{ recommendedSpreads.length ? '查看全部牌阵 →' : '选择牌阵 →' }}
           </button>
           <div class="text-center mt-4">
             <RouterLink to="/tarot" class="text-gray-500 text-sm hover:text-gold-300 transition-colors">← 返回选择塔罗师</RouterLink>
