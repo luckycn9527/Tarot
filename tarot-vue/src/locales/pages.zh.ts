@@ -361,7 +361,7 @@ export const pagesZh = {
     sectionCareer: '事业指引',
   },
   history: {
-    title: '📜 历史记录',
+    title: '历史记录',
     subtitle: '查看你的所有占卜记录',
     searchPlaceholder: '搜索问题...',
     typeAll: '全部类型',
@@ -933,9 +933,9 @@ export const pagesZh = {
     placeholder: '例如：我应该接受这份新工作吗？',
     back: '← 返回是否占卜',
     examples: [
-      { category: '💕 爱情', items: ['我应该对这段关系保持开放态度吗？', '现在是寻找爱情的好时机吗？'] },
-      { category: '💼 事业', items: ['接受这个工作机会对我最有利吗？', '我应该开始创业吗？'] },
-      { category: '🌱 个人成长', items: ['我应该开始学习新技能吗？', '搬到新城市对我有益吗？'] },
+      { category: '爱情', items: ['我应该对这段关系保持开放态度吗？', '现在是寻找爱情的好时机吗？'] },
+      { category: '事业', items: ['接受这个工作机会对我最有利吗？', '我应该开始创业吗？'] },
+      { category: '个人成长', items: ['我应该开始学习新技能吗？', '搬到新城市对我有益吗？'] },
     ],
   },
   yesNoThree: {
@@ -952,9 +952,9 @@ export const pagesZh = {
       { name: '最终结果', color: 'from-gold-400 to-gold-600', desc: '基于当前能量的宇宙最终判决' },
     ],
     examples: [
-      { category: '💕 关系', items: ['这段关系值得我继续投入吗？', '我应该主动联系对方吗？'] },
-      { category: '💼 职业', items: ['跳槽到新公司对我有利吗？', '我应该接受这次晋升机会吗？'] },
-      { category: '🌟 生活', items: ['现在是投资的好时机吗？', '我应该开始新的学习计划吗？'] },
+      { category: '关系', items: ['这段关系值得我继续投入吗？', '我应该主动联系对方吗？'] },
+      { category: '职业', items: ['跳槽到新公司对我有利吗？', '我应该接受这次晋升机会吗？'] },
+      { category: '生活', items: ['现在是投资的好时机吗？', '我应该开始新的学习计划吗？'] },
     ],
   },
   tarot: {

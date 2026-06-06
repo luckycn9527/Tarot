@@ -4,6 +4,7 @@ import { useRoute, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { getReaderById } from '../../data/readers'
 import { readerSpreads, type ReaderSpread } from '../../data/spreadsData'
+import { spreadIcon } from '../../utils/uiIcons'
 import { useDynamicSeoTitle } from '../../composables/useDynamicSeoTitle'
 import ReaderAvatarMedia from '../../components/ui/ReaderAvatarMedia.vue'
 
@@ -95,7 +96,9 @@ function goNext() {
           @click="selectSpread(spread)"
         >
           <div class="flex items-center gap-3 mb-2">
-            <span class="text-2xl">{{ spread.emoji }}</span>
+            <span class="flex-shrink-0 w-9 h-9 rounded-lg bg-gold-500/10 text-gold-300 flex items-center justify-center">
+              <component :is="spreadIcon(spread.id)" class="w-5 h-5" :stroke-width="1.6" />
+            </span>
             <div>
               <h3 class="text-white font-medium font-serif text-sm">{{ spread.name }}</h3>
               <span class="text-gray-500 text-xs">{{ spread.cardCount }}张牌</span>

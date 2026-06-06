@@ -2,6 +2,7 @@
 import { useI18n } from 'vue-i18n'
 import { useScrollReveal } from '../composables/useScrollReveal'
 import { spreads } from '../data/spreadsData'
+import { spreadIcon } from '../utils/uiIcons'
 
 useScrollReveal()
 
@@ -30,7 +31,9 @@ const { t } = useI18n()
             <!-- Info -->
             <div>
               <div class="flex items-center gap-3 mb-4">
-                <span class="text-3xl">{{ spread.emoji }}</span>
+                <span class="flex-shrink-0 w-11 h-11 rounded-xl bg-gold-500/10 text-gold-300 flex items-center justify-center">
+                  <component :is="spreadIcon(spread.id)" class="w-6 h-6" :stroke-width="1.6" />
+                </span>
                 <div>
                   <h2 class="text-xl font-bold font-serif text-white">{{ spread.name }}</h2>
                   <p class="text-gray-500 text-sm">{{ t('pages.spreads.cardCount', { n: spread.cardCount }) }}</p>

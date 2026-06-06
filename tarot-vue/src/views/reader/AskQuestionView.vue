@@ -5,6 +5,7 @@ import { useI18n } from 'vue-i18n'
 import { getReaderById } from '../../data/readers'
 import { questionCategories, type QuestionCategory, type SubCategory } from '../../data/questionCategories'
 import { recommendSpreads } from '../../utils/recommendSpread'
+import { categoryIcon, spreadIcon } from '../../utils/uiIcons'
 import { useAuth } from '../../composables/useAuth'
 import { useDynamicSeoTitle } from '../../composables/useDynamicSeoTitle'
 import ReaderAvatarMedia from '../../components/ui/ReaderAvatarMedia.vue'
@@ -105,7 +106,12 @@ function goWithSpread(spreadId: string) {
 
       <!-- VIP gate -->
       <div v-if="needsVip && ready" class="text-center py-20">
-        <div class="text-6xl mb-4">{{ reader?.emoji }}</div>
+        <ReaderAvatarMedia
+          v-if="reader"
+          :reader="reader"
+          wrapper-class="w-20 h-20 mx-auto rounded-2xl flex items-center justify-center overflow-hidden mb-4"
+          emoji-class="text-4xl"
+        />
         <h2 class="text-xl font-bold font-serif text-white mb-2">{{ reader?.name }} 是VIP专属塔罗师</h2>
         <p class="text-gray-400 mb-6">升级会员即可解锁全部塔罗师</p>
         <RouterLink to="/membership" class="inline-block px-8 py-3 rounded-full bg-gradient-to-r from-amber-600 to-yellow-500 text-white font-medium hover:shadow-lg transition-all">
@@ -158,13 +164,14 @@ function goWithSpread(spreadId: string) {
             <button
               v-for="cat in questionCategories"
               :key="cat.id"
-              class="px-3 py-1.5 rounded-full text-xs border transition-all"
+              class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs border transition-all cursor-pointer"
               :class="selectedCategory?.id === cat.id
                 ? cat.color + ' border-current'
                 : 'bg-white/4 text-gray-400 border-gold-500/10 hover:border-gold-500/20'"
               @click="selectCategory(cat)"
             >
-              {{ cat.emoji }} {{ cat.name }}
+              <component :is="categoryIcon(cat.id)" class="w-3.5 h-3.5" :stroke-width="1.8" />
+              {{ cat.name }}
             </button>
           </div>
 
@@ -215,7 +222,9 @@ function goWithSpread(spreadId: string) {
                 : 'bg-white/[0.03] border-gold-500/10 hover:border-gold-500/25 hover:bg-white/4'"
               @click="goWithSpread(sp.id)"
             >
-              <span class="text-2xl flex-shrink-0">{{ sp.emoji }}</span>
+              <span class="flex-shrink-0 w-9 h-9 rounded-lg bg-gold-500/10 text-gold-300 flex items-center justify-center">
+                <component :is="spreadIcon(sp.id)" class="w-5 h-5" :stroke-width="1.6" />
+              </span>
               <div class="min-w-0 flex-1">
                 <div class="flex items-center gap-2 flex-wrap">
                   <h3 class="text-white font-medium font-serif text-sm">{{ sp.name }}</h3>

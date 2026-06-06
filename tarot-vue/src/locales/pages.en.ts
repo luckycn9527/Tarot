@@ -345,7 +345,7 @@ export const pagesEn = {
     sectionCareer: 'Career',
   },
   history: {
-    title: '📜 History',
+    title: 'History',
     subtitle: 'All your readings in one place',
     searchPlaceholder: 'Search questions…',
     typeAll: 'All types',
@@ -916,9 +916,9 @@ export const pagesEn = {
     placeholder: 'e.g. Should I take this job offer?',
     back: '← Back to yes / no',
     examples: [
-      { category: '💕 Love', items: ['Should I stay open to this relationship?', 'Is now a good time to seek love?'] },
-      { category: '💼 Work', items: ['Is this offer good for me right now?', 'Should I start my own project?'] },
-      { category: '🌱 Growth', items: ['Should I start learning a new skill?', 'Would moving help me grow?'] },
+      { category: 'Love', items: ['Should I stay open to this relationship?', 'Is now a good time to seek love?'] },
+      { category: 'Work', items: ['Is this offer good for me right now?', 'Should I start my own project?'] },
+      { category: 'Growth', items: ['Should I start learning a new skill?', 'Would moving help me grow?'] },
     ],
   },
   yesNoThree: {
@@ -935,9 +935,9 @@ export const pagesEn = {
       { name: 'Outcome', color: 'from-gold-400 to-gold-600', desc: 'Overall tilt from the spread' },
     ],
     examples: [
-      { category: '💕 Relationships', items: ['Should I keep investing in this bond?', 'Should I reach out first?'] },
-      { category: '💼 Career', items: ['Is the new company a good move?', 'Should I accept the promotion?'] },
-      { category: '🌟 Life', items: ['Is now a good time to invest?', 'Should I start a new study plan?'] },
+      { category: 'Relationships', items: ['Should I keep investing in this bond?', 'Should I reach out first?'] },
+      { category: 'Career', items: ['Is the new company a good move?', 'Should I accept the promotion?'] },
+      { category: 'Life', items: ['Is now a good time to invest?', 'Should I start a new study plan?'] },
     ],
   },
   tarot: {

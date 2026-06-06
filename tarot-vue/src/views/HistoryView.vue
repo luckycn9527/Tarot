@@ -6,6 +6,8 @@ import { useAuth } from '../composables/useAuth'
 import { useRoute, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { useToast } from '../composables/useToast'
+import TriangleAlertIcon from '@icons/triangle-alert.vue'
+import SparklesIcon from '@icons/sparkles.vue'
 
 const route = useRoute()
 const router = useRouter()
@@ -457,7 +459,7 @@ watch(
       <div v-if="loading" class="text-center py-12 text-gray-400">{{ t('pages.history.loading') }}</div>
 
       <div v-else-if="loadError" class="text-center py-16">
-        <p class="text-5xl mb-4">⚠️</p>
+        <TriangleAlertIcon class="w-12 h-12 mx-auto mb-4 text-amber-400/70" :stroke-width="1.5" />
         <p class="text-gray-400 mb-4">{{ t('pages.history.loadFailed') }}</p>
         <button
           class="inline-block px-6 py-2 rounded-full cta-button text-white text-sm font-medium hover:shadow-lg hover:shadow-gold-500/25 transition-all"
@@ -468,7 +470,7 @@ watch(
       </div>
 
       <div v-else-if="entries.length === 0" class="text-center py-16">
-        <p class="text-5xl mb-4">🔮</p>
+        <SparklesIcon class="w-12 h-12 mx-auto mb-4 text-gold-400/60" :stroke-width="1.5" />
         <p class="text-gray-400">{{ t('pages.history.empty') }}</p>
         <RouterLink to="/yes-no-tarot" class="inline-block mt-4 px-6 py-2 rounded-full cta-button text-white text-sm font-medium hover:shadow-lg hover:shadow-gold-500/25 transition-all">
           {{ t('pages.history.ctaRead') }}

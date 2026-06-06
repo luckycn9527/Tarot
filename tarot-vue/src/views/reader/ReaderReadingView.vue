@@ -12,6 +12,7 @@ import ChatBubble from '../../components/ChatBubble.vue'
 import TarotCard3D from '../../components/TarotCard3D.vue'
 import RitualLoader from '../../components/RitualLoader.vue'
 import ReaderAvatarMedia from '../../components/ui/ReaderAvatarMedia.vue'
+import UserRoundIcon from '@icons/user-round.vue'
 import { useToast } from '../../composables/useToast'
 import { useCardBack } from '../../composables/useCardBack'
 import { useStripDeckTilt } from '../../composables/usePointerTilt'
@@ -325,7 +326,7 @@ function goHome() { router.push('/tarot') }
         <!-- Action buttons -->
         <div class="text-center space-y-4 animate-fade-in-up" style="animation-delay: 0.25s;">
           <button v-if="allSelected" class="px-12 py-4 rounded-2xl cta-button text-white text-lg font-medium hover:shadow-xl hover:shadow-gold-500/15 transition-all animate-fade-in-up" @click="startReading">
-            {{ reader.emoji }} 请{{ reader.name }}解读
+            请{{ reader.name }}解读
           </button>
           <div v-if="selectedIndices.length > 0 && !allSelected">
             <button class="px-8 py-2.5 rounded-full bg-white/4 border border-gold-500/10 text-gray-400 text-sm hover:bg-gold-500/5 transition-all" @click="resetSelection">重新选牌</button>
@@ -340,7 +341,7 @@ function goHome() { router.push('/tarot') }
             :progress="Math.min(loadingProgress, 100)"
             :messages="['感应牌面能量...', `${reader.name}正在冥想...`, '解读星象密码...', '启示即将降临...']"
           />
-          <p class="text-gold-200 text-lg font-serif mt-6">{{ reader.emoji }} {{ reader.name }}正在解读...</p>
+          <p class="text-gold-200 text-lg font-serif mt-6">{{ reader.name }}正在解读...</p>
           <p class="text-gray-600 mt-2">塔罗师正在感应牌面能量，请稍候</p>
         </div>
       </template>
@@ -373,7 +374,8 @@ function goHome() { router.push('/tarot') }
       <!-- CHAT PHASE -->
       <template v-if="phase === 'chat' && result">
         <div ref="chatContainer" class="space-y-5">
-          <ChatBubble side="right" avatar="🙋" class="animate-fade-in-up">
+          <ChatBubble side="right" class="animate-fade-in-up">
+            <template #avatar><UserRoundIcon class="w-5 h-5 text-blue-300" :stroke-width="2" /></template>
             {{ question }}
           </ChatBubble>
 
@@ -411,7 +413,8 @@ function goHome() { router.push('/tarot') }
 
           <!-- 追问对话历史 -->
           <template v-for="(turn, turnIndex) in followups" :key="'fu-' + turnIndex">
-            <ChatBubble side="right" avatar="🙋">
+            <ChatBubble side="right">
+              <template #avatar><UserRoundIcon class="w-5 h-5 text-blue-300" :stroke-width="2" /></template>
               {{ turn.question }}
             </ChatBubble>
             <ChatBubble side="left" :name="reader.name">
@@ -428,7 +431,8 @@ function goHome() { router.push('/tarot') }
 
           <!-- 正在追问中：用户气泡 + 加载气泡 -->
           <template v-if="followupLoading">
-            <ChatBubble side="right" avatar="🙋">
+            <ChatBubble side="right">
+              <template #avatar><UserRoundIcon class="w-5 h-5 text-blue-300" :stroke-width="2" /></template>
               {{ followupPending }}
             </ChatBubble>
             <ChatBubble side="left" :name="reader.name">

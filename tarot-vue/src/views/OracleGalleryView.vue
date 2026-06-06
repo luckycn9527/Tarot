@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { useI18n } from 'vue-i18n'
 import { useScrollReveal } from '../composables/useScrollReveal'
+import SparklesIcon from '@icons/sparkles.vue'
 
 useScrollReveal()
 
@@ -11,7 +12,7 @@ const { t } = useI18n()
   <div class="relative z-10">
     <section class="w-full flex flex-col items-center justify-center px-4 pt-24 pb-12 min-h-[70vh] text-center">
       <div class="animate-fade-in-up">
-        <div class="text-8xl mb-6">🔮</div>
+        <SparklesIcon class="w-20 h-20 mx-auto mb-6 text-gold-400/70" :stroke-width="1.2" />
         <h1 class="text-4xl sm:text-5xl font-bold font-serif text-white mb-4">{{ t('pages.oracleGallery.heroTitle') }}</h1>
         <p class="text-gray-400 text-lg mb-2">{{ t('pages.oracleGallery.heroSub') }}</p>
         <div class="mt-6 inline-flex items-center gap-2 px-5 py-2 rounded-full bg-gold-500/10 border border-gold-500/20">
