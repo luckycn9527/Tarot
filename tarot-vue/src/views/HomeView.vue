@@ -1,18 +1,51 @@
 <script setup lang="ts">
-import { ref, computed } from 'vue'
+import { ref, computed, onMounted } from 'vue'
 import { useI18n } from 'vue-i18n'
 import ChevronsDown from '@icons/chevrons-down.vue'
 import { readers as apiReaders } from '../data/readers'
 import { getReaderAvatarSrc } from '../utils/readerDisplay'
 import { useScrollReveal } from '../composables/useScrollReveal'
-import TarotCardHero from '../components/TarotCardHero.vue'
+import { useCardBack } from '../composables/useCardBack'
+import { useShuffle, type ShuffledCard } from '../composables/useShuffle'
+import { getCardImageUrl } from '../data/tarotCards'
+import TarotCard3D from '../components/TarotCard3D.vue'
 import FaqAccordion from '../components/FaqAccordion.vue'
 
 useScrollReveal()
 
 const { t, tm } = useI18n()
+const { cardBackUrl, loadCardBack } = useCardBack()
+const { drawRandom } = useShuffle()
 
 const activeMethod = ref(0)
+
+/* —— 首屏即抽即占 —— */
+const drawnCard = ref<ShuffledCard | null>(null)
+const flipped = ref(false)
+
+const orientationKeywords = computed(() => {
+  const d = drawnCard.value
+  if (!d) return ''
+  return d.isReversed ? d.card.reversedKeywords : d.card.uprightKeywords
+})
+
+function handleDraw() {
+  if (flipped.value) return
+  drawnCard.value = drawRandom()
+  flipped.value = true
+}
+
+function redraw() {
+  flipped.value = false
+  window.setTimeout(() => {
+    drawnCard.value = drawRandom()
+    flipped.value = true
+  }, 450)
+}
+
+onMounted(() => {
+  void loadCardBack(true)
+})
 
 type MethodItem = { title: string; desc: string }
 type ExploreLink = { to: string; title: string; desc: string; variant: 'gold' | 'violet' }
@@ -52,7 +85,8 @@ const readers = computed(() =>
   <div class="relative z-10">
     <!-- HERO -->
     <section class="home-hero-section flex w-full flex-col items-center justify-center">
-      <div class="text-center mb-8 animate-fade-in-up">
+      <div class="text-center mb-6 animate-fade-in-up">
+        <p class="hero-eyebrow">{{ t('home.heroEyebrow') }}</p>
         <h1 class="text-4xl sm:text-5xl md:text-6xl font-bold leading-tight mb-4 font-serif">
           <span class="text-gold-200">{{ t('home.heroTitle') }}</span>
         </h1>
@@ -61,16 +95,54 @@ const readers = computed(() =>
         </p>
       </div>
 
-      <div class="animate-fade-in-up anim-delay-1">
-        <TarotCardHero />
+      <!-- 即抽即占：点击牌面抽取今日指引 -->
+      <div class="animate-fade-in-up anim-delay-1 relative flex flex-col items-center">
+        <div class="card-glow-hero pointer-events-none" aria-hidden="true" />
+        <TarotCard3D
+          :card-image-url="drawnCard ? getCardImageUrl(drawnCard.card.nameEn) : undefined"
+          :card-back-url="cardBackUrl"
+          :is-reversed="drawnCard?.isReversed"
+          :is-flipped="flipped"
+          :clickable="!flipped"
+          size="lg"
+          @flip="handleDraw"
+        />
+        <p v-if="!flipped" class="mt-5 text-gold-300/70 text-sm animate-pulse-soft tracking-wide">
+          {{ t('home.drawPrompt') }}
+        </p>
       </div>
 
-      <div class="animate-fade-in-up anim-delay-2">
-        <RouterLink to="/tarot" class="cta-button group relative overflow-hidden inline-flex items-center gap-2 px-10 py-4 rounded-full text-white font-semibold text-lg transition-all duration-300 hover:shadow-2xl hover:shadow-gold-500/20">
-          {{ t('home.ctaStart') }}
+      <!-- 抽牌结果：牌名 + 一句话今日指引 -->
+      <transition name="reveal-fade">
+        <div v-if="flipped && drawnCard" class="text-center mt-5 max-w-md mx-auto px-4">
+          <p class="text-gold-100 font-serif text-lg">
+            {{ drawnCard.card.name }}
+            <span class="text-gray-500 text-sm font-sans">· {{ drawnCard.isReversed ? t('home.reversed') : t('home.upright') }}</span>
+          </p>
+          <p class="text-[0.7rem] uppercase tracking-[0.2em] text-gold-500/60 mt-3 mb-1">{{ t('home.todayGuidance') }}</p>
+          <p class="text-gray-300 text-sm leading-relaxed">{{ orientationKeywords }}</p>
+        </div>
+      </transition>
+
+      <!-- CTA -->
+      <div class="animate-fade-in-up anim-delay-2 mt-7 flex flex-wrap items-center justify-center gap-3">
+        <RouterLink to="/tarot" class="cta-button group relative overflow-hidden inline-flex items-center gap-2 px-9 py-3.5 rounded-full text-white font-semibold transition-all duration-300 hover:shadow-2xl hover:shadow-gold-500/20">
+          {{ flipped ? t('home.fullReadingCta') : t('home.ctaStart') }}
           <div class="cta-shimmer"></div>
         </RouterLink>
+        <button
+          v-if="flipped"
+          type="button"
+          class="px-6 py-3.5 rounded-full border border-gold-500/25 text-gold-300 text-sm hover:bg-gold-500/10 hover:border-gold-500/40 transition-all cursor-pointer"
+          @click="redraw"
+        >
+          {{ t('home.redraw') }}
+        </button>
       </div>
+
+      <p class="mt-6 text-gray-600 text-xs tracking-wide animate-fade-in-up anim-delay-3">
+        {{ t('home.heroActivity', { readers: readers.length }) }}
+      </p>
 
       <div class="absolute bottom-8 animate-bounce">
         <ChevronsDown :size="24" class="text-gold-500/40" />
@@ -191,3 +263,51 @@ const readers = computed(() =>
     </section>
   </div>
 </template>
+
+<style scoped>
+.hero-eyebrow {
+  display: inline-block;
+  font-size: 0.7rem;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  color: rgba(212, 168, 83, 0.7);
+  margin-bottom: 0.9rem;
+  padding: 0.3rem 0.95rem;
+  border: 1px solid rgba(212, 168, 83, 0.2);
+  border-radius: 999px;
+  background: rgba(212, 168, 83, 0.05);
+}
+
+/* 3D 牌后的金色光晕（原 TarotCardHero 的样式，组件移除后在此本地化） */
+.card-glow-hero {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -48%);
+  width: 150%;
+  height: 140%;
+  border-radius: 50%;
+  background: radial-gradient(
+    circle,
+    rgba(212, 168, 83, 0.16) 0%,
+    rgba(212, 168, 83, 0.05) 42%,
+    transparent 70%
+  );
+  z-index: -1;
+}
+
+.animate-pulse-soft { animation: pulseSoft 2.4s ease-in-out infinite; }
+@keyframes pulseSoft {
+  0%, 100% { opacity: 0.5; }
+  50% { opacity: 1; }
+}
+
+/* 抽牌结果淡入 */
+.reveal-fade-enter-active { transition: opacity 0.5s ease, transform 0.5s ease; }
+.reveal-fade-enter-from { opacity: 0; transform: translateY(8px); }
+
+@media (prefers-reduced-motion: reduce) {
+  .animate-pulse-soft { animation: none; }
+  .reveal-fade-enter-active { transition: none; }
+}
+</style>
