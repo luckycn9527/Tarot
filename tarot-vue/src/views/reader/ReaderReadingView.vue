@@ -16,6 +16,8 @@ import UserRoundIcon from '@icons/user-round.vue'
 import { useToast } from '../../composables/useToast'
 import { useCardBack } from '../../composables/useCardBack'
 import { useStripDeckTilt } from '../../composables/usePointerTilt'
+import { useAuth } from '../../composables/useAuth'
+import { publicAssetUrl } from '../../utils/publicAssetUrl'
 
 const route = useRoute()
 const router = useRouter()
@@ -24,6 +26,13 @@ const toast = useToast()
 const { deck, shuffle } = useShuffle()
 const { cardBackUrl, loadCardBack } = useCardBack()
 const deckTilt = useStripDeckTilt()
+const { user } = useAuth()
+
+/** 用户上传了图片头像则用图片，否则在气泡里用通用图标（不回退 emoji，保持简洁） */
+const userAvatarImg = computed(() => {
+  const a = user.value?.avatar
+  return a && (a.startsWith('/') || a.startsWith('http')) ? publicAssetUrl(a) : ''
+})
 
 function onStripPointerMove(e: MouseEvent) {
   deckTilt.onStripMouseMove(e, {
@@ -375,7 +384,10 @@ function goHome() { router.push('/tarot') }
       <template v-if="phase === 'chat' && result">
         <div ref="chatContainer" class="space-y-5">
           <ChatBubble side="right" class="animate-fade-in-up">
-            <template #avatar><UserRoundIcon class="w-5 h-5 text-blue-300" :stroke-width="2" /></template>
+            <template #avatar>
+              <img v-if="userAvatarImg" :src="userAvatarImg" alt="" class="w-full h-full object-cover" />
+              <UserRoundIcon v-else class="w-5 h-5 text-blue-300" :stroke-width="2" />
+            </template>
             {{ question }}
           </ChatBubble>
 
@@ -414,7 +426,10 @@ function goHome() { router.push('/tarot') }
           <!-- 追问对话历史 -->
           <template v-for="(turn, turnIndex) in followups" :key="'fu-' + turnIndex">
             <ChatBubble side="right">
-              <template #avatar><UserRoundIcon class="w-5 h-5 text-blue-300" :stroke-width="2" /></template>
+              <template #avatar>
+                <img v-if="userAvatarImg" :src="userAvatarImg" alt="" class="w-full h-full object-cover" />
+                <UserRoundIcon v-else class="w-5 h-5 text-blue-300" :stroke-width="2" />
+              </template>
               {{ turn.question }}
             </ChatBubble>
             <ChatBubble side="left" :name="reader.name">
@@ -432,7 +447,10 @@ function goHome() { router.push('/tarot') }
           <!-- 正在追问中：用户气泡 + 加载气泡 -->
           <template v-if="followupLoading">
             <ChatBubble side="right">
-              <template #avatar><UserRoundIcon class="w-5 h-5 text-blue-300" :stroke-width="2" /></template>
+              <template #avatar>
+                <img v-if="userAvatarImg" :src="userAvatarImg" alt="" class="w-full h-full object-cover" />
+                <UserRoundIcon v-else class="w-5 h-5 text-blue-300" :stroke-width="2" />
+              </template>
               {{ followupPending }}
             </ChatBubble>
             <ChatBubble side="left" :name="reader.name">

@@ -3,6 +3,7 @@ import { ref, computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 import ChevronsDown from '@icons/chevrons-down.vue'
 import { readers as apiReaders } from '../data/readers'
+import { getReaderAvatarSrc } from '../utils/readerDisplay'
 import { useScrollReveal } from '../composables/useScrollReveal'
 import TarotCardHero from '../components/TarotCardHero.vue'
 import FaqAccordion from '../components/FaqAccordion.vue'
@@ -39,6 +40,7 @@ const readers = computed(() =>
     return {
       name: reader.name,
       emoji: reader.emoji,
+      avatarUrl: getReaderAvatarSrc(reader),
       from: splitAt >= 0 ? gradient.slice(0, splitAt) : gradient,
       to: splitAt >= 0 ? gradient.slice(splitAt + 1) : 'to-purple-600/30',
     }
@@ -160,8 +162,9 @@ const readers = computed(() =>
         <div class="reader-track">
           <template v-for="repeatIndex in 3" :key="repeatIndex">
             <div v-for="readerItem in readers" :key="`${repeatIndex}-${readerItem.name}`" class="reader-card">
-              <div class="reader-avatar" :class="`bg-gradient-to-br ${readerItem.from} ${readerItem.to}`">
-                <span class="text-4xl">{{ readerItem.emoji }}</span>
+              <div class="reader-avatar overflow-hidden" :class="`bg-gradient-to-br ${readerItem.from} ${readerItem.to}`">
+                <img v-if="readerItem.avatarUrl" :src="readerItem.avatarUrl" :alt="readerItem.name" class="w-full h-full object-cover" loading="lazy" decoding="async" />
+                <span v-else class="text-4xl">{{ readerItem.emoji }}</span>
               </div>
               <p class="text-sm text-gray-500 mt-2">{{ readerItem.name }}</p>
             </div>
