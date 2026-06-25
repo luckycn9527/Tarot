@@ -6,7 +6,7 @@ interface AdminTokenPayload {
   adminId: number;
 }
 
-const ADMIN_TOKEN_EXPIRES_IN = '12h';
+const ADMIN_TOKEN_EXPIRES_IN: '12h' = '12h';
 
 export function hashAdminUsername(username: string): string {
   const normalized = username.trim().toLowerCase();
@@ -17,12 +17,13 @@ export function hashAdminUsername(username: string): string {
 }
 
 function getAdminJwtSecret(): string {
-  return env.ADMIN_JWT_SECRET || env.JWT_ACCESS_SECRET;
+  // env 已强制要求 ADMIN_JWT_SECRET，生产环境不会回退
+  return env.ADMIN_JWT_SECRET;
 }
 
 export function signAdminToken(payload: AdminTokenPayload): string {
   return jwt.sign(payload, getAdminJwtSecret(), {
-    expiresIn: ADMIN_TOKEN_EXPIRES_IN as any,
+    expiresIn: ADMIN_TOKEN_EXPIRES_IN,
   });
 }
 

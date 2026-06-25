@@ -48,9 +48,9 @@ const envSchema = z.object({
   COOKIE_SECURE: z.string().optional().transform(v => v === 'true'),
   COOKIE_DOMAIN: z.string().optional(),
 
-  // 管理后台登录：用户名哈希时使用的 pepper（务必在生产设置强随机值）
-  ADMIN_USERNAME_PEPPER: z.string().default('change-this-admin-pepper'),
-  ADMIN_JWT_SECRET: z.string().optional(),
+  // 管理后台登录：用户名哈希时使用的 pepper（生产环境必须设置强随机值）
+  ADMIN_USERNAME_PEPPER: z.string().min(16),
+  ADMIN_JWT_SECRET: z.string().min(16),
 
   /** Google Identity 前端 Client ID；未配置时 POST /api/auth/google 返回 503 */
   GOOGLE_CLIENT_ID: z

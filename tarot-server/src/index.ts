@@ -150,10 +150,8 @@ async function start() {
     } else {
       console.warn('⚠️ Redis:', rh.status, rh.message ?? '');
     }
-    if (env.NODE_ENV === 'production' && !env.ADMIN_JWT_SECRET?.trim()) {
-      console.warn(
-        '⚠️ ADMIN_JWT_SECRET 未设置：管理后台 JWT 将回退使用 JWT_ACCESS_SECRET，与用户访问令牌共钥存在风险。建议在 .env 中配置独立的 ADMIN_JWT_SECRET（当前为仅告警，不阻止启动）。',
-      );
+    if (env.NODE_ENV === 'production') {
+      console.log('🔒 Admin JWT 已配置独立密钥');
     }
     app.listen(env.PORT, env.HOST, () => {
       console.log(`🚀 Server running on http://${env.HOST}:${env.PORT}`);
