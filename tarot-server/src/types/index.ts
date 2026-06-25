@@ -16,6 +16,7 @@ export interface DbUser {
   bio: string | null;
   membership: 'free' | 'vip';
   membership_expires_at: string | null;
+  access_token_revoked_at: string | null;
   remaining_free_quota: number;
   quota_reset_date: string | null;
   google_id: string | null;

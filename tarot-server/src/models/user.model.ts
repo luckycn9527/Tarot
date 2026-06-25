@@ -182,3 +182,14 @@ export async function resetQuotaIfNeeded(id: number): Promise<void> {
   );
 }
 
+/**
+ * 吊销用户所有已签发的 access token。
+ * 将 access_token_revoked_at 设为当前时间，此后 iat 小于等于该时间的 token 均失效。
+ */
+export async function revokeAccessTokens(id: number): Promise<void> {
+  await pool.execute(
+    'UPDATE users SET access_token_revoked_at = NOW() WHERE id = ?',
+    [id]
+  );
+}
+

@@ -278,6 +278,8 @@ export async function resetPasswordWithToken(plainToken: string, newPassword: st
   await PasswordResetModel.invalidateUnusedTokensForUser(row.user_id);
   // 重置密码后注销该用户所有已登录会话，防止账号被盗后攻击者的旧会话仍然有效
   await TokenModel.deleteAllUserTokens(row.user_id);
+  // 同时吊销所有已签发的 access token
+  await UserModel.revokeAccessTokens(row.user_id);
 }
 
 export async function refresh(oldRefreshToken: string) {
