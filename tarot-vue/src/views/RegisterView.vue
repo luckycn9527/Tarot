@@ -29,6 +29,8 @@ const errors = ref<Record<string, string>>({})
 const toastMessage = ref('')
 const showToast = ref(false)
 const submitting = ref(false)
+const showVipModal = ref(false)
+const redirectPath = ref('/')
 
 async function handleRegister() {
   errors.value = {}
@@ -60,8 +62,8 @@ async function handleRegister() {
       }
     } else {
       const r = route.query.redirect
-      const path = typeof r === 'string' && r.startsWith('/') ? r : '/'
-      router.push(path)
+      redirectPath.value = typeof r === 'string' && r.startsWith('/') ? r : '/'
+      showVipModal.value = true
     }
   } finally {
     submitting.value = false
@@ -93,6 +95,11 @@ onMounted(async () => {
     setTimeout(() => { showToast.value = false }, 4000)
   }
 })
+
+function closeVipModal() {
+  showVipModal.value = false
+  router.push(redirectPath.value)
+}
 
 onBeforeUnmount(() => {
   cancelGoogleOneTap()
@@ -205,6 +212,22 @@ onBeforeUnmount(() => {
   <Transition name="toast">
     <div v-if="showToast" class="fixed top-20 left-1/2 -translate-x-1/2 z-50 px-6 py-3 rounded-xl bg-gold-600/90 backdrop-blur-sm text-abyss text-sm font-medium shadow-lg shadow-gold-500/20">
       {{ toastMessage }}
+    </div>
+  </Transition>
+
+  <!-- VIP 赠送弹窗 -->
+  <Transition name="fade">
+    <div v-if="showVipModal" class="fixed inset-0 z-[60] flex items-center justify-center px-4 bg-black/70 backdrop-blur-sm" @click.self="closeVipModal">
+      <div class="w-full max-w-sm rounded-2xl border border-gold-500/30 bg-abyss p-8 text-center shadow-2xl shadow-gold-500/10 animate-fade-in-up">
+        <div class="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-gold-500/20">
+          <span class="text-3xl">🎁</span>
+        </div>
+        <h2 class="mb-2 text-xl font-bold text-white">恭喜您！</h2>
+        <p class="mb-6 text-gray-300">注册成功，已获得一年 VIP 会员资格，畅享全部占卜功能。</p>
+        <button class="w-full rounded-xl cta-button py-3 text-white font-semibold" @click="closeVipModal">
+          开始体验
+        </button>
+      </div>
     </div>
   </Transition>
 </template>

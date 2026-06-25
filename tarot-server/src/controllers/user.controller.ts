@@ -97,20 +97,7 @@ export async function updateBirthInfo(req: Request, res: Response) {
 }
 
 export async function activateVip(req: Request, res: Response) {
-  try {
-    const { plan } = req.body;
-    if (!plan || !['monthly', 'yearly'].includes(plan)) {
-      res.status(400).json(fail('请选择有效的VIP套餐'));
-      return;
-    }
-    const daysMap: Record<string, number> = {
-      monthly: 30,
-      yearly: 365,
-    };
-    const days = daysMap[plan];
-    const profile = await UserService.activateVip(req.userId!, days);
-    res.json(success(profile, `VIP已开通${days}天`));
-  } catch (err: unknown) {
-    res.status(400).json(fail(getErrMsg(err, 'VIP开通失败')));
-  }
+  // 付费功能暂未开放，直接返回敬请期待
+  void req.body;
+  res.status(503).json(fail('支付功能即将上线，敬请期待', { code: 'payment_not_available' }));
 }

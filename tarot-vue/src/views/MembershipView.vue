@@ -3,21 +3,12 @@ import { ref, computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useScrollReveal } from '../composables/useScrollReveal'
 import { useAuth } from '../composables/useAuth'
-import { useToast } from '../composables/useToast'
-import { useUserResourcesStore } from '../stores/userResources'
-import { useRoute, useRouter } from 'vue-router'
-import api from '../services/api'
 import FaqAccordion from '../components/FaqAccordion.vue'
 
 useScrollReveal()
 
 const { t, tm, locale } = useI18n()
-const { user, isLoggedIn, refreshUser } = useAuth()
-const userResources = useUserResourcesStore()
-const toast = useToast()
-const route = useRoute()
-const router = useRouter()
-const activating = ref(false)
+const { user } = useAuth()
 
 const qty = ref(1)
 const unitPrice = 1.38
@@ -26,29 +17,6 @@ const totalPrice = computed(() => 'US$' + (qty.value * unitPrice).toFixed(2))
 
 function changeQty(delta: number) {
   qty.value = Math.max(1, qty.value + delta)
-}
-
-async function activateVip(plan: string) {
-  if (!isLoggedIn.value) {
-    toast.error(t('auth.loginFirst'))
-    void router.push({ path: '/login', query: { redirect: route.fullPath } })
-    return
-  }
-  activating.value = true
-  try {
-    const res = await api.post('/user/activate-vip', { plan })
-    if (res.data.success) {
-      toast.success(res.data.message || t('pages.membership.toastVipOk'))
-      await refreshUser()
-      await userResources.fetchQuota(true)
-    } else {
-      toast.error(res.data.message || t('pages.membership.toastActivateFail'))
-    }
-  } catch (err: any) {
-    toast.error(err.response?.data?.message || t('pages.membership.toastActivateRetry'))
-  } finally {
-    activating.value = false
-  }
 }
 
 const freeFeatures = computed(() => tm('pages.membership.freeFeatures') as string[])
@@ -105,11 +73,10 @@ const faqItems = computed(() => tm('pages.membership.faq') as { question: string
             </li>
           </ul>
           <button
-            :disabled="activating"
-            class="w-full py-3 rounded-full cta-button text-white font-semibold hover:shadow-lg hover:shadow-gold-500/30 transition-all disabled:opacity-50"
-            @click="activateVip('monthly')"
+            disabled
+            class="w-full py-3 rounded-full bg-white/10 text-gray-400 font-semibold cursor-not-allowed"
           >
-            {{ activating ? t('pages.membership.activating') : t('pages.membership.btnSubscribe') }}
+            敬请期待
           </button>
         </div>
 
@@ -128,11 +95,10 @@ const faqItems = computed(() => tm('pages.membership.faq') as { question: string
             </li>
           </ul>
           <button
-            :disabled="activating"
-            class="w-full py-3 rounded-full cta-button text-white font-semibold hover:shadow-lg hover:shadow-gold-500/30 transition-all disabled:opacity-50"
-            @click="activateVip('yearly')"
+            disabled
+            class="w-full py-3 rounded-full bg-white/10 text-gray-400 font-semibold cursor-not-allowed"
           >
-            {{ activating ? t('pages.membership.activating') : t('pages.membership.btnSubscribe') }}
+            敬请期待
           </button>
         </div>
 
@@ -153,11 +119,10 @@ const faqItems = computed(() => tm('pages.membership.faq') as { question: string
             <button class="w-8 h-8 rounded-full bg-white/10 text-white flex items-center justify-center hover:bg-white/20 transition-colors" @click="changeQty(1)">+</button>
           </div>
           <button
-            :disabled="activating"
-            class="w-full py-3 rounded-full cta-button text-white font-semibold hover:shadow-lg hover:shadow-gold-500/30 transition-all disabled:opacity-50"
-            @click="activateVip('monthly')"
+            disabled
+            class="w-full py-3 rounded-full bg-white/10 text-gray-400 font-semibold cursor-not-allowed"
           >
-            {{ activating ? t('pages.membership.activating') : t('pages.membership.btnBuy') }}
+            敬请期待
           </button>
         </div>
       </div>

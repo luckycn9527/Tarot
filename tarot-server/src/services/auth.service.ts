@@ -117,6 +117,15 @@ export async function register(
     passwordHash,
     username: usernameNorm,
   });
+  // 新用户注册赠送一年 VIP
+  const { pool } = await import('../config/database.js');
+  await pool.execute(
+    `UPDATE users SET
+      membership = 'vip',
+      membership_expires_at = NOW() + INTERVAL 365 DAY
+     WHERE id = ?`,
+    [userId],
+  );
   return issueNewSession(userId);
 }
 
