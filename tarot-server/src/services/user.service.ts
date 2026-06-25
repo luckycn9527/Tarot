@@ -12,20 +12,13 @@ export async function getProfile(userId: number) {
   const user = await UserModel.findById(userId);
   if (!user) throw new Error('用户不存在');
 
-  // Auto reset quota if needed
-  const today = new Date().toISOString().slice(0, 10);
-  if (user.quota_reset_date !== today) {
-    await UserModel.updateProfile(userId, {} as any);
-    // Reset quota in response
-    const { pool } = await import('../config/database.js');
-    await pool.execute(
-      'UPDATE users SET remaining_free_quota = 3, quota_reset_date = ? WHERE id = ?',
-      [today, userId]
-    );
-    user.remaining_free_quota = 3;
-  }
+  // 若每日配额已过期，自动重置为 3 次
+  await UserModel.resetQuotaIfNeeded(userId);
+  // 重新读取以确保返回最新配额
+  const refreshed = await UserModel.findById(userId);
+  if (!refreshed) throw new Error('用户不存在');
 
-  return toPublicUser(user);
+  return toPublicUser(refreshed);
 }
 
 export async function updateProfile(userId: number, data: {
@@ -70,28 +63,22 @@ export async function getQuota(userId: number) {
   const user = await UserModel.findById(userId);
   if (!user) throw new Error('用户不存在');
 
-  const today = new Date().toISOString().slice(0, 10);
-  let remaining = user.remaining_free_quota;
+  await UserModel.resetQuotaIfNeeded(userId);
+  const refreshed = await UserModel.findById(userId);
+  if (!refreshed) throw new Error('用户不存在');
 
-  if (user.quota_reset_date !== today) {
-    const { pool } = await import('../config/database.js');
-    await pool.execute(
-      'UPDATE users SET remaining_free_quota = 3, quota_reset_date = ? WHERE id = ?',
-      [today, userId]
-    );
-    remaining = 3;
-  }
+  const remaining = refreshed.remaining_free_quota;
 
-  const isVip = user.membership === 'vip' &&
-    user.membership_expires_at &&
-    new Date(user.membership_expires_at) > new Date();
+  const isVip = refreshed.membership === 'vip' &&
+    refreshed.membership_expires_at &&
+    new Date(refreshed.membership_expires_at) > new Date();
 
   return {
     remaining,
     total: 3,
     isVip,
-    membership: user.membership,
-    membershipExpiresAt: user.membership_expires_at,
+    membership: refreshed.membership,
+    membershipExpiresAt: refreshed.membership_expires_at,
   };
 }
 

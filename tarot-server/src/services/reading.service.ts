@@ -122,9 +122,6 @@ export async function singleCardReading(userId: number, question: string, client
     conclusion: data.conclusion as string,
   };
 
-  // Decrement quota
-  await UserModel.decrementQuota(userId);
-
   // Save to history
   const historyId = await ReadingModel.create({
     userId,
@@ -196,8 +193,6 @@ export async function threeCardReading(userId: number, question: string, clientC
     conclusion: data.conclusion as string,
     cardReadings: data.cardReadings as { summary: string }[],
   };
-
-  await UserModel.decrementQuota(userId);
 
   const historyId = await ReadingModel.create({
     userId,
@@ -374,9 +369,6 @@ export async function readerReading(
   const data = parseJsonResponse(responseText);
   const resultData = normalizeReaderReadingPayload(data);
 
-  // Decrement quota
-  await UserModel.decrementQuota(userId);
-
   // Save to history
   const historyId = await ReadingModel.create({
     userId,
@@ -474,9 +466,6 @@ export async function readerFollowup(
 
   const answer = (await callDeepSeek(messages, 60000, 1200)).trim();
   if (!answer) throw new Error('追问解读生成失败，请稍后重试');
-
-  // 追问消耗一次配额（与初次占卜一致的限额策略）
-  await UserModel.decrementQuota(userId);
 
   // 持久化本轮追问到该记录（历史详情可回看；旧记录从现在起开始累积）
   await ReadingModel.appendFollowupTurn(readingId, userId, {

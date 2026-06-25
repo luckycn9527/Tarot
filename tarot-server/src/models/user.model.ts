@@ -122,9 +122,63 @@ export async function updatePassword(id: number, passwordHash: string): Promise<
   );
 }
 
-export async function decrementQuota(id: number): Promise<void> {
+/**
+ * 原子性检查并扣减用户免费配额。
+ * 在同一事务中完成：重置过期配额 → VIP 判断 → 扣减 1 次。
+ * 返回 'vip'（VIP 用户不扣减）、'ok'（成功扣减）、'exhausted'（配额不足）、'not_found'（用户不存在）。
+ */
+export async function consumeQuota(id: number): Promise<'vip' | 'ok' | 'exhausted' | 'not_found'> {
+  const today = new Date().toISOString().slice(0, 10);
+  const connection = await pool.getConnection();
+  try {
+    await connection.beginTransaction();
+
+    // 1. 若配额已过期，先原子重置为 3 次
+    await connection.execute(
+      'UPDATE users SET remaining_free_quota = 3, quota_reset_date = ? WHERE id = ? AND (quota_reset_date IS NULL OR quota_reset_date < ?)',
+      [today, id, today]
+    );
+
+    // 2. VIP 用户直接放行，不扣减
+    const [vipRows] = await connection.execute<RowDataPacket[]>(
+      'SELECT 1 FROM users WHERE id = ? AND membership = ? AND membership_expires_at > NOW()',
+      [id, 'vip']
+    );
+    if (vipRows.length > 0) {
+      await connection.commit();
+      return 'vip';
+    }
+
+    // 3. 原子扣减：仅当 remaining_free_quota > 0 时才扣减
+    const [result] = await connection.execute<ResultSetHeader>(
+      'UPDATE users SET remaining_free_quota = remaining_free_quota - 1 WHERE id = ? AND remaining_free_quota > 0',
+      [id]
+    );
+
+    if (result.affectedRows === 0) {
+      await connection.commit();
+      return 'exhausted';
+    }
+
+    await connection.commit();
+    return 'ok';
+  } catch (err) {
+    await connection.rollback();
+    throw err;
+  } finally {
+    connection.release();
+  }
+}
+
+/**
+ * 若用户每日配额已过期，则原子重置为 3 次。
+ * 用于 getProfile / getQuota 等只读接口，确保前端看到最新剩余次数。
+ */
+export async function resetQuotaIfNeeded(id: number): Promise<void> {
+  const today = new Date().toISOString().slice(0, 10);
   await pool.execute(
-    'UPDATE users SET remaining_free_quota = GREATEST(remaining_free_quota - 1, 0) WHERE id = ?',
-    [id]
+    'UPDATE users SET remaining_free_quota = 3, quota_reset_date = ? WHERE id = ? AND (quota_reset_date IS NULL OR quota_reset_date < ?)',
+    [today, id, today]
   );
 }
+
