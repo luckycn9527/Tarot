@@ -19,12 +19,9 @@ UPDATE tarot_cards_config
 SET image_url = CONCAT('/uploads/cards/', REPLACE(name_en, ' ', '_'), '.jpg')
 WHERE name_en IS NOT NULL AND name_en <> '';
 
--- 2) 写入 4 款原创牌背 (覆盖式 upsert)
+-- 2) 仅保留经典牌背 pocket，禁用其他牌背
 INSERT INTO card_backs (code, name, description, asset_url, is_active, sort_order, access_type) VALUES
-  ('celestial', '星轨',     '深紫金调 · 星轨环绕罗盘',   '/uploads/card-backs/celestial.svg', 1, 1, 'free'),
-  ('lunar',     '月相',     '靛蓝银调 · 八相月轮',       '/uploads/card-backs/lunar.svg',     1, 2, 'free'),
-  ('sacred',    '生命之花', '翡翠金调 · 神圣几何',       '/uploads/card-backs/sacred.svg',    1, 3, 'free'),
-  ('rose',      '玫瑰十字', '暗红金调 · 经典玫瑰十字',   '/uploads/card-backs/rose.svg',      1, 4, 'free')
+  ('pocket', '经典牌背', '简约经典的塔罗牌背面设计', '/uploads/card-backs/pocket.png', 1, 1, 'free')
 ON DUPLICATE KEY UPDATE
   name = VALUES(name),
   description = VALUES(description),
@@ -32,3 +29,5 @@ ON DUPLICATE KEY UPDATE
   is_active = 1,
   sort_order = VALUES(sort_order),
   access_type = VALUES(access_type);
+
+UPDATE card_backs SET is_active = 0 WHERE code != 'pocket';
