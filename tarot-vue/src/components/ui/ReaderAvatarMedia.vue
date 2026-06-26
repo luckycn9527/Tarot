@@ -2,6 +2,7 @@
 import { computed } from 'vue'
 import type { ReaderInfo } from '@/data/readers'
 import { getReaderAvatarSrc } from '@/utils/readerDisplay'
+import { publicAssetUrl } from '@/utils/publicAssetUrl'
 
 const props = withDefaults(
   defineProps<{
@@ -14,16 +15,26 @@ const props = withDefaults(
     emojiClass?: string
     /** 有头像时是否加细 ring（塔罗师列表用） */
     avatarRing?: boolean
+    /** 是否优先使用原图（默认缩略图），用于大卡片展示 */
+    preferOriginal?: boolean
   }>(),
   {
     wrapperClass: 'w-14 h-14 rounded-2xl flex items-center justify-center text-2xl flex-shrink-0 overflow-hidden',
     useGradientFallback: true,
     emojiClass: 'text-2xl',
     avatarRing: true,
+    preferOriginal: false,
   },
 )
 
-const imageSrc = computed(() => (props.reader.avatarUrl ? getReaderAvatarSrc(props.reader) : ''))
+const imageSrc = computed(() => {
+  if (!props.reader.avatarUrl) return ''
+  if (props.preferOriginal) {
+    const raw = props.reader.avatarUrl
+    return raw ? publicAssetUrl(String(raw).trim()) : ''
+  }
+  return getReaderAvatarSrc(props.reader)
+})
 </script>
 
 <template>

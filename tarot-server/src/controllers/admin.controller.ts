@@ -109,6 +109,24 @@ export async function putReaderPrompts(req: Request, res: Response, next: NextFu
   }
 }
 
+export async function getFeaturedReaders(_req: Request, res: Response, next: NextFunction): Promise<void> {
+  try {
+    const data = await AdminService.listFeaturedReaders();
+    res.json(success(data));
+  } catch (e) {
+    next(new ApiError(500, adminSafeServerMessage(e, '查询失败')));
+  }
+}
+
+export async function putFeaturedReaders(req: Request, res: Response, next: NextFunction): Promise<void> {
+  try {
+    await AdminService.saveFeaturedReaders(req.body.items);
+    res.json(success(null, '保存成功'));
+  } catch (e) {
+    next(new ApiError(400, e instanceof Error ? e.message : '保存失败'));
+  }
+}
+
 export async function getStats(_req: Request, res: Response, next: NextFunction): Promise<void> {
   try {
     const data = await AdminService.getStats();

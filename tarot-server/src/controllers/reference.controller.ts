@@ -25,6 +25,16 @@ export async function getReferenceBundle(_req: Request, res: Response) {
   const dbPrompts = await AdminModel.listReaderPromptsConfig();
   const mergedReaders = mergeReadersBundle(dbPrompts);
 
+  const dbFeatured = await AdminModel.listFeaturedReadersConfig();
+  const readerByCode = new Map(mergedReaders.map((r) => [r.id, r]));
+  const featuredReaders = dbFeatured
+    .filter((f) => f.is_active === 1 && readerByCode.has(f.reader_code))
+    .sort((a, b) => {
+      if (a.sort_order !== b.sort_order) return a.sort_order - b.sort_order;
+      return a.reader_code.localeCompare(b.reader_code);
+    })
+    .map((f) => readerByCode.get(f.reader_code)!);
+
   const dbBacks = await AdminModel.listCardBacks();
   const activeBacks = dbBacks.filter(b => b.is_active).map(b => ({
     code: b.code,
@@ -41,6 +51,7 @@ export async function getReferenceBundle(_req: Request, res: Response) {
     cards: mergedCards,
     cardDetails: tarotCardDetails,
     readers: mergedReaders,
+    featuredReaders,
     spreads,
     readerSpreads,
     cardBacks: activeBacks,

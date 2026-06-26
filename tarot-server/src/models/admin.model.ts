@@ -50,6 +50,14 @@ export interface AdminReaderPrompt extends RowDataPacket {
   updated_at: string;
 }
 
+export interface AdminFeaturedReader extends RowDataPacket {
+  id: number;
+  reader_code: string;
+  sort_order: number;
+  is_active: number;
+  updated_at: string;
+}
+
 export async function findAdminByUsernameHash(usernameHash: string): Promise<DbAdminUser | null> {
   const [rows] = await pool.execute<DbAdminUser[]>(
     'SELECT * FROM admin_users WHERE username_hash = ? LIMIT 1',
@@ -304,6 +312,41 @@ export async function findReaderPromptByCode(readerCode: string): Promise<AdminR
     [readerCode],
   );
   return rows[0] || null;
+}
+
+export async function listFeaturedReadersConfig(): Promise<AdminFeaturedReader[]> {
+  const [rows] = await pool.execute<AdminFeaturedReader[]>(
+    `SELECT id, reader_code, sort_order, is_active, updated_at
+     FROM featured_readers ORDER BY sort_order ASC, reader_code ASC`,
+  );
+  return rows;
+}
+
+export async function upsertFeaturedReadersConfig(items: Array<{
+  readerCode: string;
+  sortOrder: number;
+  isActive: boolean;
+}>): Promise<void> {
+  const conn = await pool.getConnection();
+  try {
+    await conn.beginTransaction();
+    for (const item of items) {
+      await conn.execute(
+        `INSERT INTO featured_readers (reader_code, sort_order, is_active)
+         VALUES (?, ?, ?)
+         ON DUPLICATE KEY UPDATE
+           sort_order = VALUES(sort_order),
+           is_active = VALUES(is_active)`,
+        [item.readerCode, item.sortOrder, item.isActive ? 1 : 0],
+      );
+    }
+    await conn.commit();
+  } catch (e) {
+    await conn.rollback();
+    throw e;
+  } finally {
+    conn.release();
+  }
 }
 
 export async function getStats() {

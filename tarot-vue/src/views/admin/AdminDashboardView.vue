@@ -335,6 +335,14 @@ interface ReaderPromptRow {
 }
 
 const prompts = ref<ReaderPromptRow[]>([])
+
+interface FeaturedReaderRow {
+  readerCode: string
+  isActive: boolean
+  sortOrder: number
+}
+const featuredList = ref<FeaturedReaderRow[]>([])
+
 const readerMeta = [
   { code: 'qinghe', emoji: '🌿' },
   { code: 'yanxi', emoji: '🏔️' },
@@ -457,6 +465,54 @@ async function savePrompt(code: string) {
   finally { setTabLoading('prompts', false) }
 }
 
+function ensureFeaturedRow(code: string): FeaturedReaderRow {
+  let row = featuredList.value.find((x) => x.readerCode === code)
+  if (!row) {
+    row = { readerCode: code, isActive: false, sortOrder: 0 }
+    featuredList.value.push(row)
+  }
+  return row
+}
+
+function featuredRow(code: string): FeaturedReaderRow {
+  return ensureFeaturedRow(code)
+}
+
+async function fetchFeatured() {
+  try {
+    const r = await adminApi.get('/config/featured-readers')
+    if (!r.data?.success) {
+      showToast(typeof r.data?.message === 'string' ? r.data.message : t('pages.admin.toastFeaturedLoadFail'), 'err')
+      return
+    }
+    const rows = (r.data?.data ?? []) as Record<string, unknown>[]
+    const byCode = new Map(rows.map((row) => [String(row.readerCode ?? ''), row]))
+    featuredList.value = readerMeta.map((m) => {
+      const db = byCode.get(m.code)
+      return {
+        readerCode: m.code,
+        isActive: db?.isActive === true,
+        sortOrder: db?.sortOrder != null ? Number(db.sortOrder) : 0,
+      }
+    })
+  } catch (e) { showToast(formatAdminApiError(e, t('pages.admin.errGeneric')), 'err') }
+}
+
+async function saveFeatured() {
+  setTabLoading('prompts', true)
+  try {
+    await adminApi.put('/config/featured-readers', {
+      items: featuredList.value.map((row) => ({
+        readerCode: row.readerCode,
+        isActive: Boolean(row.isActive),
+        sortOrder: Number(row.sortOrder) || 0,
+      })),
+    })
+    showToast(t('pages.admin.toastFeaturedSaved'))
+  } catch (e) { showToast(formatAdminApiError(e, t('pages.admin.errGeneric')), 'err') }
+  finally { setTabLoading('prompts', false) }
+}
+
 // ===== Feedback =====
 const feedbackList = ref<Record<string, unknown>[]>([])
 const feedbackTotal = ref(0)
@@ -552,7 +608,7 @@ watch(activeTab, (tab, prev) => {
   if (tab === 'users') void fetchUsers()
   if (tab === 'backs') void fetchCardBacks()
   if (tab === 'cards') void fetchCards()
-  if (tab === 'prompts') void fetchPrompts()
+  if (tab === 'prompts') { void fetchPrompts(); void fetchFeatured() }
   if (tab === 'feedback') void fetchFeedback()
 })
 
@@ -927,6 +983,68 @@ function cardBackRowKey(b: Record<string, unknown>, index: number): string {
               {{ t('pages.admin.promptsBoxBody') }}
             </p>
           </div>
+
+          <!-- 推荐热门塔罗师配置 -->
+          <div class="mb-6 rounded-xl border border-gold-500/10 bg-white/[0.02] overflow-hidden">
+            <div class="px-4 py-3 border-b border-gold-500/8">
+              <p class="font-medium text-gold-200 text-sm">{{ t('pages.admin.featuredTitle') }}</p>
+              <p class="text-gray-500 text-xs mt-0.5">{{ t('pages.admin.featuredHint') }}</p>
+            </div>
+            <div class="divide-y divide-gold-500/6">
+              <div
+                v-for="r in readerMeta"
+                :key="`featured-${r.code}`"
+                class="flex items-center gap-3 px-4 py-3 hover:bg-gold-500/[0.02] transition-colors"
+              >
+                <span v-if="promptRow(r.code).avatarUrl" class="w-8 h-8 rounded-lg overflow-hidden flex-shrink-0 ring-1 ring-gold-500/15">
+                  <img
+                    :src="publicAssetUrl(promptRow(r.code).avatarThumbUrl || promptRow(r.code).avatarUrl)"
+                    :alt="readerLocalizedName(r.code)"
+                    class="w-full h-full object-cover"
+                    loading="lazy"
+                    decoding="async"
+                  />
+                </span>
+                <span v-else class="w-8 h-8 rounded-lg flex items-center justify-center text-base bg-white/5 flex-shrink-0">{{ (promptRow(r.code).emoji || '').trim() || promptRow(r.code).defaultEmoji || r.emoji }}</span>
+                <div class="flex-1 min-w-0">
+                  <p class="text-sm text-gray-200 truncate">
+                    {{ (promptRow(r.code).displayName || '').trim() || promptRow(r.code).defaultDisplayName || readerLocalizedName(r.code) }}
+                  </p>
+                  <p class="text-xs text-gray-600">{{ r.code }}</p>
+                </div>
+                <label class="flex items-center gap-2 text-sm text-gray-400 cursor-pointer flex-shrink-0"
+                >
+                  <input
+                    v-model="featuredRow(r.code).isActive"
+                    type="checkbox"
+                    class="accent-gold-500 w-4 h-4"
+                  />
+                  {{ t('pages.admin.featuredIsActive') }}
+                </label>
+                <div class="flex items-center gap-2 flex-shrink-0">
+                  <span class="text-xs text-gray-500">{{ t('pages.admin.featuredSort') }}</span>
+                  <input
+                    v-model.number="featuredRow(r.code).sortOrder"
+                    type="number"
+                    min="0"
+                    max="9999"
+                    class="admin-input w-16 text-center"
+                  />
+                </div>
+              </div>
+            </div>
+            <div class="px-4 py-3 border-t border-gold-500/8 flex justify-end">
+              <button
+                type="button"
+                :disabled="tabLoading.prompts"
+                class="admin-btn-primary"
+                @click="saveFeatured"
+              >
+                {{ tabLoading.prompts ? t('pages.admin.saving') : t('pages.admin.saveFeatured') }}
+              </button>
+            </div>
+          </div>
+
           <div class="space-y-3">
             <div v-for="r in readerMeta" :key="r.code" class="rounded-xl border border-gold-500/8 bg-white/2 overflow-hidden">
               <button

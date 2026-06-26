@@ -5,9 +5,10 @@ import { useScrollReveal } from '../composables/useScrollReveal'
 import { useQuota } from '../composables/useQuota'
 import { useAuth } from '../composables/useAuth'
 import { useRoute, useRouter } from 'vue-router'
-import { readers } from '../data/readers'
+import { readers, featuredReaders } from '../data/readers'
 import FaqAccordion from '../components/FaqAccordion.vue'
 import ReaderAvatarMedia from '../components/ui/ReaderAvatarMedia.vue'
+import FeaturedReaders from '../components/FeaturedReaders.vue'
 import Crown from '@icons/crown.vue'
 
 useScrollReveal()
@@ -59,6 +60,13 @@ const noticeFaq = computed(() => tm('pages.tarot.noticeFaq') as { question: stri
         </span>
       </div>
     </section>
+
+    <!-- Featured Readers -->
+    <FeaturedReaders
+      v-if="featuredReaders.length"
+      :readers="featuredReaders"
+      @select="(r) => selectReader(r.id, r.accessLevel)"
+    />
 
     <!-- Readers Grid -->
     <section class="w-full max-w-6xl mx-auto px-4 pb-20">

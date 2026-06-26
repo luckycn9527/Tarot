@@ -146,6 +146,31 @@ export async function getReaderPromptOverride(readerCode: string) {
   return AdminModel.findReaderPromptByCode(readerCode);
 }
 
+export interface AdminFeaturedReaderListItem {
+  readerCode: string;
+  isActive: boolean;
+  sortOrder: number;
+}
+
+export async function listFeaturedReaders(): Promise<AdminFeaturedReaderListItem[]> {
+  const dbRows = await AdminModel.listFeaturedReadersConfig();
+  const byCode = new Map(dbRows.map((r) => [r.reader_code, r]));
+  return staticReaders.map((sr) => {
+    const db = byCode.get(sr.id);
+    return {
+      readerCode: sr.id,
+      isActive: db?.is_active === 1,
+      sortOrder: db?.sort_order ?? 0,
+    };
+  });
+}
+
+export async function saveFeaturedReaders(items: AdminFeaturedReaderListItem[]): Promise<void> {
+  const validCodes = new Set(staticReaders.map((r) => r.id));
+  const filtered = items.filter((item) => validCodes.has(item.readerCode));
+  await AdminModel.upsertFeaturedReadersConfig(filtered);
+}
+
 export async function getStats() {
   return AdminModel.getStats();
 }

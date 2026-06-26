@@ -20,10 +20,17 @@ export interface ReaderInfo {
 /** 响应式列表：bundle 异步到达后视图能更新（勿用普通数组，否则 computed 不刷新） */
 export const readers: ShallowRef<ReaderInfo[]> = shallowRef([])
 
+/** 首页 /tarot 顶部推荐的热门塔罗师 */
+export const featuredReaders: ShallowRef<ReaderInfo[]> = shallowRef([])
+
 export function getReaderById(id: string): ReaderInfo | undefined {
   return readers.value.find(r => r.id === id)
 }
 
 export function applyReadersFromApi(list: ReaderInfo[]) {
   readers.value = list.length ? [...list] : []
+}
+
+export function applyFeaturedReadersFromApi(list: ReaderInfo[]) {
+  featuredReaders.value = list.length ? [...list] : []
 }

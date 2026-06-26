@@ -5,7 +5,7 @@ import { applyTarotCardsFromApi } from '../data/tarotCards'
 import type { TarotCardDetail } from '../data/tarotCardDetails'
 import { applyTarotCardDetailsFromApi } from '../data/tarotCardDetails'
 import type { ReaderInfo } from '../data/readers'
-import { applyReadersFromApi } from '../data/readers'
+import { applyReadersFromApi, applyFeaturedReadersFromApi } from '../data/readers'
 import type { Spread, ReaderSpread } from '../data/spreadsData'
 import { applySpreadsFromApi } from '../data/spreadsData'
 
@@ -23,6 +23,7 @@ export interface ReferenceBundle {
   cards: TarotCard[]
   cardDetails: Record<number, TarotCardDetail>
   readers: ReaderInfo[]
+  featuredReaders: ReaderInfo[]
   spreads: Spread[]
   readerSpreads: ReaderSpread[]
   cardBacks: CardBackInfo[]
@@ -40,6 +41,7 @@ export async function loadReferenceBundle(): Promise<void> {
   applyTarotCardsFromApi(b.cards, b.cdnBase)
   applyTarotCardDetailsFromApi(b.cardDetails ?? {})
   applyReadersFromApi(b.readers ?? [])
+  applyFeaturedReadersFromApi(b.featuredReaders ?? [])
   applySpreadsFromApi(b.spreads ?? [], b.readerSpreads ?? [])
   cardBacksList.value = b.cardBacks ?? []
 }

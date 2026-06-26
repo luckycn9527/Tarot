@@ -69,6 +69,16 @@ const putReaderPromptsSchema = z.object({
   items: z.array(readerPromptItemSchema).max(200),
 });
 
+const featuredReaderItemSchema = z.object({
+  readerCode: z.string().min(1).max(64),
+  isActive: z.boolean(),
+  sortOrder: z.number().int().min(0).max(1_000_000),
+});
+
+const putFeaturedReadersSchema = z.object({
+  items: z.array(featuredReaderItemSchema).max(200),
+});
+
 const replyFeedbackSchema = z.object({
   adminReply: z.string().min(1, '请填写回复内容').max(20_000),
   status: z.enum(['pending', 'processing', 'resolved', 'closed']).default('resolved'),
@@ -121,6 +131,16 @@ router.put(
   adminWriteLimiter,
   validate(putReaderPromptsSchema),
   AdminController.putReaderPrompts,
+);
+
+router.get('/config/featured-readers', adminAuth, AdminController.getFeaturedReaders);
+router.put(
+  '/config/featured-readers',
+  adminAuth,
+  adminAuditLog,
+  adminWriteLimiter,
+  validate(putFeaturedReadersSchema),
+  AdminController.putFeaturedReaders,
 );
 
 router.get('/stats', adminAuth, AdminController.getStats);
