@@ -19,15 +19,18 @@ UPDATE tarot_cards_config
 SET image_url = CONCAT('/uploads/cards/', REPLACE(name_en, ' ', '_'), '.jpg')
 WHERE name_en IS NOT NULL AND name_en <> '';
 
--- 2) 仅保留经典牌背 pocket，禁用其他牌背
+-- 2) 写入默认牌背（pocket + 用户提供的两款原创牌背）
 INSERT INTO card_backs (code, name, description, asset_url, is_active, sort_order, access_type) VALUES
-  ('pocket', '经典牌背', '简约经典的塔罗牌背面设计', '/uploads/card-backs/pocket.png', 1, 1, 'free')
+  ('pocket',         '经典牌背', '简约经典的塔罗牌背面设计', '/uploads/card-backs/pocket.png',         1, 1, 'free'),
+  ('celestial-gold', '星轨金箔', '深蓝金箔星月罗盘牌背',   '/uploads/card-backs/celestial-gold.png', 1, 2, 'free'),
+  ('amethyst',       '紫水晶',   '紫水晶神秘风格牌背',     '/uploads/card-backs/amethyst.png',       1, 3, 'free')
 ON DUPLICATE KEY UPDATE
   name = VALUES(name),
   description = VALUES(description),
   asset_url = VALUES(asset_url),
-  is_active = 1,
+  is_active = VALUES(is_active),
   sort_order = VALUES(sort_order),
   access_type = VALUES(access_type);
 
-UPDATE card_backs SET is_active = 0 WHERE code != 'pocket';
+-- 禁用不在默认列表中的其他牌背
+UPDATE card_backs SET is_active = 0 WHERE code NOT IN ('pocket', 'celestial-gold', 'amethyst');
