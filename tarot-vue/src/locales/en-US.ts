@@ -30,6 +30,7 @@ export default {
       nicknameMax: 'Nickname must be at most 20 characters',
       identifierRequired: 'Enter your username or email',
       usernameInvalid: 'Username must be 3-20 letters, digits or underscores',
+      emailCodeLength: 'Enter the 6-digit verification code',
     },
   },
   userMenu: {

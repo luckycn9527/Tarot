@@ -4,10 +4,11 @@ import { OAuth2Client, type TokenPayload } from 'google-auth-library';
 import * as UserModel from '../models/user.model.js';
 import * as TokenModel from '../models/token.model.js';
 import * as PasswordResetModel from '../models/passwordReset.model.js';
+import * as EmailVerificationModel from '../models/emailVerification.model.js';
 import { normalizeEmail } from '../utils/emailNormalize.js';
 import { toDateOnly } from '../utils/dateOnly.js';
 import { signAccessToken, signRefreshToken } from '../utils/jwt.js';
-import { sendPasswordResetEmail } from '../utils/mailer.js';
+import { sendPasswordResetEmail, sendRegisterVerificationEmail } from '../utils/mailer.js';
 import { env } from '../config/env.js';
 import type { PublicUser } from '../types/index.js';
 import type { DbUser } from '../types/index.js';
@@ -86,10 +87,60 @@ async function issueNewSession(userId: number): Promise<{
   return { user: toPublicUser(user), accessToken, refreshToken };
 }
 
+function generateVerificationCode(): string {
+  return String(Math.floor(100000 + Math.random() * 900000));
+}
+
+export async function sendRegisterCode(email: string): Promise<void> {
+  const emailNorm = normalizeEmail(email);
+  if (!emailNorm) {
+    throw new Error('请输入邮箱');
+  }
+
+  const existing = await UserModel.findByEmail(emailNorm);
+  if (existing) {
+    throw new Error('该邮箱已被注册');
+  }
+
+  // 同邮箱 60 秒内不能重复发送
+  const latest = await EmailVerificationModel.findLatestUnusedCode(emailNorm, 'register');
+  if (latest) {
+    const createdAt = new Date(latest.created_at).getTime();
+    const elapsedMs = Date.now() - createdAt;
+    if (elapsedMs < 60_000) {
+      const waitSeconds = Math.ceil((60_000 - elapsedMs) / 1000);
+      throw new Error(`请 ${waitSeconds} 秒后再试`);
+    }
+  }
+
+  // 24 小时内最多发送 5 次
+  const recentCount = await EmailVerificationModel.countRecentCodes(emailNorm, 'register', 24 * 60);
+  if (recentCount >= 5) {
+    throw new Error('该邮箱今日验证码发送次数已达上限，请明天再试');
+  }
+
+  // 清理旧验证码并生成新验证码
+  await EmailVerificationModel.cleanExpiredCodes();
+  await EmailVerificationModel.invalidateExistingCodes(emailNorm, 'register');
+  const code = generateVerificationCode();
+  await EmailVerificationModel.createVerificationCode(emailNorm, code, 'register');
+
+  try {
+    await sendRegisterVerificationEmail(emailNorm, code);
+  } catch (err) {
+    // 邮件发送失败时，开发环境仍可看到控制台打印的验证码；生产环境则抛出错误
+    if (env.NODE_ENV === 'production') {
+      throw new Error('验证码邮件发送失败，请稍后重试');
+    }
+    console.warn('[auth] 发送验证码邮件失败（开发环境继续）:', err);
+  }
+}
+
 export async function register(
   email: string,
   nickname: string,
   password: string,
+  emailCode: string,
   username?: string | null,
 ) {
   const emailNorm = normalizeEmail(email);
@@ -99,6 +150,12 @@ export async function register(
   const existing = await UserModel.findByEmail(emailNorm);
   if (existing) {
     throw new Error('该邮箱已被注册');
+  }
+
+  // 校验邮箱验证码
+  const codeRecord = await EmailVerificationModel.findValidCode(emailNorm, emailCode, 'register');
+  if (!codeRecord) {
+    throw new Error('验证码错误或已过期');
   }
 
   // 用户名可选；提供则校验格式并查重
@@ -117,6 +174,10 @@ export async function register(
     passwordHash,
     username: usernameNorm,
   });
+
+  // 标记验证码已使用
+  await EmailVerificationModel.markCodeUsed(codeRecord.id);
+
   // 新用户注册赠送一年 VIP
   const { pool } = await import('../config/database.js');
   await pool.execute(

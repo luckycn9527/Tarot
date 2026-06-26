@@ -9,17 +9,21 @@ import Lock from '@icons/lock.vue'
 import Eye from '@icons/eye.vue'
 import EyeOff from '@icons/eye-off.vue'
 import { useAuth } from '../composables/useAuth'
+import { useToast } from '../composables/useToast'
 import { getRegisterFormSchema, formatZodFieldErrors } from '@/schemas/auth'
 import { getGoogleClientId, renderGoogleSignInButton, cancelGoogleOneTap } from '@/composables/useGoogleSignIn'
+import api from '../services/api'
 
 const route = useRoute()
 const router = useRouter()
 const { t } = useI18n()
 const { register, loginWithGoogle } = useAuth()
+const toast = useToast()
 
 const nickname = ref('')
 const username = ref('')
 const email = ref('')
+const emailCode = ref('')
 const password = ref('')
 const confirmPassword = ref('')
 const showPassword = ref(false)
@@ -29,6 +33,8 @@ const errors = ref<Record<string, string>>({})
 const toastMessage = ref('')
 const showToast = ref(false)
 const submitting = ref(false)
+const sendCodeLoading = ref(false)
+const countdown = ref(0)
 const showVipModal = ref(false)
 const redirectPath = ref('/')
 
@@ -38,6 +44,7 @@ async function handleRegister() {
     nickname: nickname.value,
     username: username.value || undefined,
     email: email.value,
+    emailCode: emailCode.value,
     password: password.value,
     confirmPassword: confirmPassword.value,
   })
@@ -51,6 +58,7 @@ async function handleRegister() {
       nickname: parsed.data.nickname,
       username: parsed.data.username || undefined,
       email: parsed.data.email,
+      emailCode: parsed.data.emailCode,
       password: parsed.data.password,
       confirmPassword: parsed.data.confirmPassword,
     })
@@ -67,6 +75,36 @@ async function handleRegister() {
     }
   } finally {
     submitting.value = false
+  }
+}
+
+async function sendCode() {
+  errors.value.email = ''
+  if (!email.value) {
+    errors.value.email = t('auth.validation.emailRequired')
+    return
+  }
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.value)) {
+    errors.value.email = t('auth.validation.emailInvalid')
+    return
+  }
+  sendCodeLoading.value = true
+  try {
+    const res = await api.post('/auth/send-register-code', { email: email.value })
+    if (res.data.success) {
+      toast.success(res.data.message || '验证码已发送')
+      countdown.value = 60
+      const timer = setInterval(() => {
+        countdown.value--
+        if (countdown.value <= 0) clearInterval(timer)
+      }, 1000)
+    } else {
+      toast.error(res.data.message || '发送失败')
+    }
+  } catch (err: any) {
+    toast.error(err.response?.data?.message || '发送失败，请稍后重试')
+  } finally {
+    sendCodeLoading.value = false
   }
 }
 
@@ -139,6 +177,30 @@ onBeforeUnmount(() => {
               <input v-model="email" type="email" :placeholder="t('pages.register.emailPh')" class="login-input pl-11">
             </div>
             <p v-if="errors.email" class="text-red-400 text-xs mt-1 ml-1">{{ errors.email }}</p>
+          </div>
+          <!-- Email Verification Code -->
+          <div>
+            <div class="flex gap-2">
+              <div class="relative flex-1">
+                <Lock class="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-500" :size="16" />
+                <input
+                  v-model="emailCode"
+                  type="text"
+                  maxlength="6"
+                  :placeholder="t('pages.register.emailCodePh')"
+                  class="login-input pl-11 w-full"
+                >
+              </div>
+              <button
+                type="button"
+                :disabled="countdown > 0 || sendCodeLoading"
+                class="px-4 py-2 rounded-xl bg-gold-600/90 text-abyss text-sm font-semibold whitespace-nowrap hover:bg-gold-500 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                @click="sendCode"
+              >
+                {{ countdown > 0 ? `${countdown}s` : (sendCodeLoading ? t('pages.register.sending') : t('pages.register.sendCode')) }}
+              </button>
+            </div>
+            <p v-if="errors.emailCode" class="text-red-400 text-xs mt-1 ml-1">{{ errors.emailCode }}</p>
           </div>
           <!-- Password -->
           <div>

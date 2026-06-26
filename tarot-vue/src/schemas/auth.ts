@@ -31,6 +31,9 @@ export function getRegisterFormSchema(t: (key: string) => string) {
         .string()
         .min(6, t('auth.validation.passwordMin'))
         .max(128, t('auth.validation.passwordMax')),
+      emailCode: z
+        .string()
+        .length(6, t('auth.validation.emailCodeLength')),
       confirmPassword: z.string().min(1, t('auth.validation.confirmRequired')),
       nickname: z
         .string()

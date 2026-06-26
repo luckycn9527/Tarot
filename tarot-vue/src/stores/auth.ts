@@ -80,11 +80,12 @@ export const useAuthStore = defineStore('auth', () => {
   async function register(data: {
     nickname: string
     email: string
+    emailCode: string
     password: string
     confirmPassword: string
     username?: string
   }): Promise<AuthError | null> {
-    const { nickname, email, password, confirmPassword, username } = data
+    const { nickname, email, emailCode, password, confirmPassword, username } = data
 
     if (!nickname || nickname.trim().length < 2 || nickname.trim().length > 20) {
       return { field: 'nickname', message: '昵称长度需要2-20个字符' }
@@ -92,6 +93,9 @@ export const useAuthStore = defineStore('auth', () => {
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
     if (!email || !emailRegex.test(email)) {
       return { field: 'email', message: '请输入有效的邮箱地址' }
+    }
+    if (!emailCode || emailCode.length !== 6) {
+      return { field: 'emailCode', message: '请输入6位验证码' }
     }
     const usernameTrimmed = (username ?? '').trim()
     if (usernameTrimmed && !/^[a-zA-Z0-9_]{3,20}$/.test(usernameTrimmed)) {
@@ -107,6 +111,7 @@ export const useAuthStore = defineStore('auth', () => {
     try {
       const res = await api.post('/auth/register', {
         email,
+        emailCode,
         nickname: nickname.trim(),
         password,
         ...(usernameTrimmed ? { username: usernameTrimmed } : {}),

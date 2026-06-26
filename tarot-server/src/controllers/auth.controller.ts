@@ -14,10 +14,20 @@ function refreshCookieOptions(): CookieOptions {
   };
 }
 
+export async function sendRegisterCode(req: Request, res: Response) {
+  try {
+    const { email } = req.body as { email?: string };
+    await AuthService.sendRegisterCode(String(email ?? ''));
+    res.json(success(null, '验证码已发送，请查收邮箱'));
+  } catch (err: any) {
+    res.status(400).json(fail(err.message));
+  }
+}
+
 export async function register(req: Request, res: Response) {
   try {
-    const { email, nickname, password, username } = req.body;
-    const result = await AuthService.register(email, nickname, password, username);
+    const { email, nickname, password, emailCode, username } = req.body;
+    const result = await AuthService.register(email, nickname, password, emailCode, username);
 
     // Set refresh token as httpOnly cookie
     res.cookie('refreshToken', result.refreshToken, refreshCookieOptions());

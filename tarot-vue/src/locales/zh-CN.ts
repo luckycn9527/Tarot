@@ -30,6 +30,7 @@ export default {
       nicknameMax: '昵称最多 20 个字符',
       identifierRequired: '请输入用户名或邮箱',
       usernameInvalid: '用户名需为 3-20 位字母、数字或下划线',
+      emailCodeLength: '请输入 6 位验证码',
     },
   },
   userMenu: {

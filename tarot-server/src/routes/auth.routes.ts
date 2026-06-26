@@ -13,6 +13,7 @@ const router = Router();
 
 const registerSchema = z.object({
   email: z.string().email('邮箱格式不正确'),
+  emailCode: z.string().length(6, '请输入6位验证码'),
   // 用户名可选：3-20 位字母/数字/下划线
   username: z
     .string()
@@ -21,6 +22,10 @@ const registerSchema = z.object({
     .optional(),
   nickname: z.string().min(2, '昵称至少2个字符').max(20, '昵称最多20个字符'),
   password: z.string().min(6, '密码至少6个字符').max(50, '密码最多50个字符'),
+});
+
+const sendRegisterCodeSchema = z.object({
+  email: z.string().email('邮箱格式不正确'),
 });
 
 // 登录支持「用户名或邮箱」：用 identifier 字段，兼容旧的 email 字段
@@ -55,6 +60,7 @@ const resetPasswordSchema = z.object({
 });
 
 router.post('/register', authLimiter, validate(registerSchema), AuthController.register);
+router.post('/send-register-code', authLimiter, validate(sendRegisterCodeSchema), AuthController.sendRegisterCode);
 router.post('/login', authLimiter, validate(loginSchema), AuthController.login);
 router.post('/phone-login', authLimiter, validate(phoneLoginSchema), AuthController.phoneLogin);
 router.post('/google', authLimiter, validate(googleSignInSchema), AuthController.googleSignIn);

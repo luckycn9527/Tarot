@@ -35,3 +35,38 @@ export async function sendPasswordResetEmail(to: string, resetUrl: string): Prom
     html,
   });
 }
+
+export async function sendRegisterVerificationEmail(to: string, code: string): Promise<void> {
+  if (!smtpConfigured()) {
+    if (env.NODE_ENV === 'development') {
+      console.warn('[mailer] SMTP 未配置，跳过注册验证码邮件。开发环境验证码:', code);
+    }
+    return;
+  }
+
+  const transporter = nodemailer.createTransport({
+    host: env.SMTP_HOST,
+    port: env.SMTP_PORT,
+    secure: env.SMTP_PORT === 465,
+    auth:
+      env.SMTP_USER && env.SMTP_PASS
+        ? { user: env.SMTP_USER, pass: env.SMTP_PASS }
+        : undefined,
+  });
+
+  const subject = '您的 E-Tomd 注册验证码';
+  const text = `您好，\n\n您的注册验证码是：${code}\n\n验证码 10 分钟内有效，请勿泄露给他人。\n若您未申请注册，请忽略本邮件。\n`;
+  const html = `<p>您好，</p>
+    <p>您的注册验证码是：</p>
+    <p style="font-size:24px;font-weight:bold;letter-spacing:4px;">${code}</p>
+    <p>验证码 <strong>10 分钟</strong> 内有效，请勿泄露给他人。</p>
+    <p>若您未申请注册，请忽略本邮件。</p>`;
+
+  await transporter.sendMail({
+    from: env.SMTP_FROM,
+    to,
+    subject,
+    text,
+    html,
+  });
+}
