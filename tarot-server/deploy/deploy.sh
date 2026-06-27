@@ -115,9 +115,13 @@ SMTP_USER=${smtpuser}
 SMTP_PASS=${smtppass}
 SMTP_FROM=${smtpuser}
 PASSWORD_RESET_EXPIRES_HOURS=1
+
+# —— 管理后台安全密钥（生产环境务必使用强随机值，丢失后管理员密码将失效） ——
+ADMIN_USERNAME_PEPPER=$(gen_secret)
+ADMIN_JWT_SECRET=$(gen_secret)
 EOF
   chmod 600 "$ENV_FILE"
-  ok "已写入 $ENV_FILE（权限 600，JWT 密钥已随机生成）"
+  ok "已写入 $ENV_FILE（权限 600，JWT/Admin 密钥已随机生成）"
 }
 
 # ---------------- .env 校验 ----------------
@@ -127,7 +131,8 @@ check_envfile(){
   local k miss=0
   for k in NODE_ENV APP_PUBLIC_ORIGIN COOKIE_SECURE SERVE_STATIC_FRONTEND \
            DB_PASSWORD JWT_ACCESS_SECRET JWT_REFRESH_SECRET \
-           SMTP_HOST SMTP_USER SMTP_PASS SMTP_FROM; do
+           SMTP_HOST SMTP_USER SMTP_PASS SMTP_FROM \
+           ADMIN_USERNAME_PEPPER ADMIN_JWT_SECRET; do
     if grep -qE "^${k}=.+" "$ENV_FILE"; then :; else warn ".env 缺少或为空：$k"; miss=1; fi
   done
   grep -qE "^APP_PUBLIC_ORIGIN=https://${DOMAIN}" "$ENV_FILE" || warn "APP_PUBLIC_ORIGIN 应为 https://${DOMAIN}"
