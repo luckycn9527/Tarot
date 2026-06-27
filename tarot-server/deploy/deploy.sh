@@ -162,7 +162,9 @@ deploy_frontend(){
   info "构建并发布前端"
   cd "$WEB_DIR"
   npm ci
-  npm run build
+  # 使用 build:prod：跳过 vue-tsc 全量类型检查，避免低内存服务器 OOM
+  # 本地开发/CI 中仍可用 npm run build 做类型检查
+  npm run build:prod
   mkdir -p "$DIST_TARGET"
   if command -v rsync >/dev/null 2>&1; then
     rsync -a --delete "$WEB_DIR/dist/" "$DIST_TARGET/"
