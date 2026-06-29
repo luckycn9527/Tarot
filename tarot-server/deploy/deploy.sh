@@ -161,7 +161,14 @@ deploy_backend(){
 deploy_frontend(){
   info "构建并发布前端"
   cd "$WEB_DIR"
-  npm ci
+  if [ "${SKIP_NPM_CI:-false}" = "true" ]; then
+    warn "SKIP_NPM_CI=true，跳过 npm ci（使用现有 node_modules）"
+    if [ ! -d "$WEB_DIR/node_modules" ]; then
+      die "$WEB_DIR/node_modules 不存在，无法跳过 npm ci"
+    fi
+  else
+    npm ci
+  fi
   # 使用 build:prod：跳过 vue-tsc 全量类型检查，避免低内存服务器 OOM
   # 本地开发/CI 中仍可用 npm run build 做类型检查
   npm run build:prod

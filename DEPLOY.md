@@ -59,6 +59,17 @@ chmod +x deploy.sh
 
 ---
 
+## 部署脚本环境变量
+
+| 变量 | 说明 | 示例 |
+|------|------|------|
+| `SKIP_NPM_CI=true` | 跳过 `npm ci`，直接使用现有 `node_modules`（适合低内存服务器） | `SKIP_NPM_CI=true sudo ./deploy.sh frontend` |
+| `DOMAIN` | 覆盖默认域名 | `DOMAIN=tarot.zaopic.cn ./deploy.sh nginx` |
+| `DIST_TARGET` | 覆盖前端 dist 发布路径 | `DIST_TARGET=/var/www/tarot/dist ./deploy.sh frontend` |
+| `BACKEND_PORT` | 覆盖后端端口 | `BACKEND_PORT=5174 ./deploy.sh backend` |
+
+---
+
 ## 关键环境变量（tarot-server/.env）
 
 生产 `.env` 由 `./deploy.sh init-env` 生成。关键项如下：
