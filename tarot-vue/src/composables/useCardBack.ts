@@ -1,8 +1,9 @@
 import { computed } from 'vue'
-import defaultCardBack from '../assets/back/pocket.png'
 import { useUserResourcesStore } from '@/stores/userResources'
 import { cardBacksList } from '@/services/referenceBootstrap'
-import { publicAssetUrl } from '@/utils/publicAssetUrl'
+import { ossAssetUrl, publicAssetUrl } from '@/utils/publicAssetUrl'
+
+const defaultCardBack = ossAssetUrl('/frontend-assets/back/pocket.webp')
 
 /** 模块级默认（仅作兜底，优先用 useCardBack().cardBackUrl） */
 export const cardBackUrl = defaultCardBack

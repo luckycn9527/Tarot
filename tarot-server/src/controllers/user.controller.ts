@@ -1,6 +1,7 @@
 import type { Request, Response } from 'express';
 import * as UserService from '../services/user.service.js';
 import { success, fail } from '../utils/response.js';
+import { storeUploadedImage } from '../utils/imageUpload.js';
 
 function getErrMsg(err: unknown, fallback: string): string {
   return err instanceof Error ? err.message : fallback;
@@ -68,8 +69,13 @@ export async function uploadAvatar(req: Request, res: Response) {
     if (!req.file) {
       return res.status(400).json(fail('请选择头像文件'));
     }
-    const avatarPath = `/uploads/avatars/${req.file.filename}`;
-    const profile = await UserService.updateProfile(req.userId!, { avatar: avatarPath });
+    const image = await storeUploadedImage(req.file, {
+      folder: 'avatars',
+      prefix: 'avatar',
+      maxDimension: 512,
+      quality: 84,
+    });
+    const profile = await UserService.updateProfile(req.userId!, { avatar: image.publicUrl });
     res.json(success(profile, '头像上传成功'));
   } catch (err: unknown) {
     res.status(400).json(fail(getErrMsg(err, '头像上传失败')));

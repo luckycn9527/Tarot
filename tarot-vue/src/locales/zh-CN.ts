@@ -70,6 +70,7 @@ export default {
     contactEmail: '联络邮箱',
   },
   common: {
+    loading: '加载中...',
     retry: '重试',
     reload: '刷新页面',
     backHome: '返回首页',

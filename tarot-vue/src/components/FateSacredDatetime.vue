@@ -1,6 +1,5 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
-import { Solar } from 'lunar-javascript'
 
 const birthDate = defineModel<string>('birthDate', { default: '' })
 const birthTime = defineModel<string>('birthTime', { default: '' })
@@ -21,6 +20,16 @@ const minute = ref(0)
 
 const ZODIAC = ['♈', '♉', '♊', '♋', '♌', '♍', '♎', '♏', '♐', '♑', '♒', '♓'] as const
 const ZODIAC_CN = ['白羊', '金牛', '双子', '巨蟹', '狮子', '处女', '天秤', '天蝎', '射手', '摩羯', '水瓶', '双鱼'] as const
+
+interface CalendarMeta {
+  lunarLine: string
+  xingZuo: string
+  zodiacGlyph: string
+  yearGZ: string
+  monthGZ: string
+  dayGZ: string
+  timeGZ: string
+}
 
 function daysInMonth(year: number, month: number) {
   return new Date(year, month, 0).getDate()
@@ -122,15 +131,20 @@ function deltaYear(delta: number) {
   commitDate()
 }
 
-const calendarMeta = computed(() => {
+const calendarMeta = ref<CalendarMeta | null>(null)
+let calendarMetaSeq = 0
+watch([y, m, d, hour, minute], async ([year, month, day, h, mm]) => {
+  const seq = ++calendarMetaSeq
   try {
-    const solar = Solar.fromYmdHms(y.value, m.value, d.value, hour.value, minute.value, 0)
+    const { Solar } = await import('lunar-javascript')
+    const solar = Solar.fromYmdHms(year, month, day, h, mm, 0)
     const lunar = solar.getLunar()
     const ec = lunar.getEightChar()
     const xz = solar.getXingZuo()
     const xzLabel = xz.endsWith('座') ? xz : `${xz}座`
     const idx = ZODIAC_CN.findIndex((z) => xzLabel.startsWith(z))
-    return {
+    if (seq !== calendarMetaSeq) return
+    calendarMeta.value = {
       lunarLine: lunar.toString().replace(/\s+/g, ' ').trim(),
       xingZuo: xzLabel,
       zodiacGlyph: idx >= 0 ? ZODIAC[idx] : '✧',
@@ -140,9 +154,9 @@ const calendarMeta = computed(() => {
       timeGZ: ec.getTime(),
     }
   } catch {
-    return null
+    if (seq === calendarMetaSeq) calendarMeta.value = null
   }
-})
+}, { immediate: true })
 
 const SHICHEN = [
   { name: '子', pickH: 0 }, { name: '丑', pickH: 2 }, { name: '寅', pickH: 4 },

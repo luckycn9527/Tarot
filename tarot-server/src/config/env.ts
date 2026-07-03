@@ -76,4 +76,44 @@ if (!parsed.success) {
   process.exit(1);
 }
 
-export const env = parsed.data;
+const data = parsed.data;
+
+if (data.NODE_ENV === 'production') {
+  const errors: Record<string, string[]> = {};
+  const addError = (key: string, message: string) => {
+    errors[key] = [...(errors[key] ?? []), message];
+  };
+
+  if (!data.COOKIE_SECURE) {
+    addError('COOKIE_SECURE', 'production requires COOKIE_SECURE=true');
+  }
+  if (data.JWT_ACCESS_SECRET.length < 32) {
+    addError('JWT_ACCESS_SECRET', 'production secret must be at least 32 characters');
+  }
+  if (data.JWT_REFRESH_SECRET.length < 32) {
+    addError('JWT_REFRESH_SECRET', 'production secret must be at least 32 characters');
+  }
+  if (data.ADMIN_JWT_SECRET.length < 32) {
+    addError('ADMIN_JWT_SECRET', 'production secret must be at least 32 characters');
+  }
+  if (data.ADMIN_USERNAME_PEPPER.length < 32) {
+    addError('ADMIN_USERNAME_PEPPER', 'production pepper must be at least 32 characters');
+  }
+  const corsOrigins = data.CORS_ORIGIN.split(',').map((o) => o.trim()).filter(Boolean);
+  if (
+    corsOrigins.length === 0 ||
+    corsOrigins.some((origin) => origin.includes('localhost') || origin.includes('127.0.0.1'))
+  ) {
+    addError('CORS_ORIGIN', 'production CORS_ORIGIN must contain only real public origins');
+  }
+  if (!data.APP_PUBLIC_ORIGIN?.startsWith('https://')) {
+    addError('APP_PUBLIC_ORIGIN', 'production APP_PUBLIC_ORIGIN must be an https URL');
+  }
+
+  if (Object.keys(errors).length > 0) {
+    console.error('❌ Unsafe production environment variables:', errors);
+    process.exit(1);
+  }
+}
+
+export const env = data;

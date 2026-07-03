@@ -10,10 +10,10 @@ const arcana = ['0', 'I', 'II', 'III', 'IV', 'V', 'VI', 'VII', 'VIII', 'IX', 'X'
 
 /** 推演阶段文案，循环播放，营造"正在思考"的真实进度感 */
 const phases = [
-  { zh: '排布四柱 · 校准日主旺衰', en: 'Casting the four pillars' },
-  { zh: '流转五行 · 权衡喜忌格局', en: 'Weighing the five elements' },
-  { zh: '翻阅塔罗 · 解过去现在未来', en: 'Reading past · present · future' },
-  { zh: '东西合参 · 推演命运岔路', en: 'Merging East & West' },
+  { zh: '校准本命盘 · 抽取长期底色', en: 'Reading the birth chart baseline' },
+  { zh: '翻译变量牌 · 捕捉当下暗流', en: 'Translating the three Tarot variables' },
+  { zh: '让两张盘面相遇 · 计算冲突频率', en: 'Finding the East and West tension' },
+  { zh: '分离稳守与破局路线 · 凝结结论', en: 'Preparing the two path strategies' },
 ]
 const phaseIndex = ref(0)
 let phaseTimer: number | undefined
@@ -48,6 +48,10 @@ function sparkStyle(n: number) {
     <div class="fate-astro-stage relative">
       <!-- 氛围底光 -->
       <div class="fate-astro-canvas" aria-hidden="true" />
+      <div class="fate-dual-beams" aria-hidden="true">
+        <span class="fate-beam fate-beam--left" />
+        <span class="fate-beam fate-beam--right" />
+      </div>
 
       <div class="fate-astro-svg-wrap">
         <svg
@@ -58,18 +62,19 @@ function sparkStyle(n: number) {
         >
           <defs>
             <radialGradient id="fa-bg-g" cx="50%" cy="45%" r="65%">
-              <stop offset="0%" stop-color="#171033" />
-              <stop offset="55%" stop-color="#0b0820" />
-              <stop offset="100%" stop-color="#050310" />
+              <stop offset="0%" stop-color="#24164d" />
+              <stop offset="58%" stop-color="#0b0822" />
+              <stop offset="100%" stop-color="#020108" />
             </radialGradient>
-            <linearGradient id="fa-gold-line" x1="0%" y1="0%" x2="100%" y2="100%">
-              <stop offset="0%" stop-color="#f0d98a" stop-opacity="0.95" />
-              <stop offset="55%" stop-color="#d4af37" stop-opacity="0.7" />
-              <stop offset="100%" stop-color="#a67c2d" stop-opacity="0.85" />
+            <linearGradient id="fa-silver-line" x1="0%" y1="0%" x2="100%" y2="100%">
+              <stop offset="0%" stop-color="#ffffff" stop-opacity="0.98" />
+              <stop offset="54%" stop-color="#d8d9f2" stop-opacity="0.76" />
+              <stop offset="100%" stop-color="#8b91b5" stop-opacity="0.84" />
             </linearGradient>
             <linearGradient id="fa-violet-line" x1="0%" y1="0%" x2="100%" y2="100%">
-              <stop offset="0%" stop-color="#d8b4fe" stop-opacity="0.9" />
-              <stop offset="100%" stop-color="#7c3aed" stop-opacity="0.8" />
+              <stop offset="0%" stop-color="#f0e8ff" stop-opacity="0.95" />
+              <stop offset="46%" stop-color="#a78bfa" stop-opacity="0.88" />
+              <stop offset="100%" stop-color="#5b21b6" stop-opacity="0.78" />
             </linearGradient>
             <filter id="fa-core-glow" x="-80%" y="-80%" width="260%" height="260%">
               <feGaussianBlur stdDeviation="3.2" result="blur" />
@@ -88,48 +93,53 @@ function sparkStyle(n: number) {
           </g>
 
           <g transform="translate(200,200)">
-            <!-- 外环：天干（金，顺时针） -->
-            <g class="fate-spin fate-spin--outer">
-              <circle r="186" fill="none" stroke="url(#fa-gold-line)" stroke-width="0.5" opacity="0.4" />
-              <circle r="170" fill="none" stroke="rgba(212,175,55,0.14)" stroke-width="0.35" stroke-dasharray="2 6" />
+            <g class="fate-impact-wave">
+              <circle r="54" fill="none" stroke="rgba(232,231,255,0.22)" stroke-width="0.5" />
+              <circle r="74" fill="none" stroke="rgba(167,139,250,0.16)" stroke-width="0.5" />
+            </g>
+
+            <!-- 外环：天干（银，左盘） -->
+            <g class="fate-spin fate-spin--outer fate-disc fate-disc--left">
+              <circle r="132" fill="none" stroke="url(#fa-silver-line)" stroke-width="0.55" opacity="0.48" />
+              <circle r="116" fill="none" stroke="rgba(232,231,255,0.14)" stroke-width="0.35" stroke-dasharray="2 6" />
               <g v-for="(ch, i) in stems" :key="'s' + i" :transform="`rotate(${i * 36 - 90})`">
-                <circle cy="-178" r="0.9" fill="rgba(212,175,55,0.6)" />
+                <circle cy="-124" r="0.9" fill="rgba(232,231,255,0.64)" />
                 <text
-                  x="0" y="-162" text-anchor="middle"
-                  fill="rgba(238,210,130,0.9)" font-size="13"
+                  x="0" y="-108" text-anchor="middle"
+                  fill="rgba(238,238,255,0.9)" font-size="12"
                   class="select-none" style="font-family: 'Songti SC', 'Noto Serif SC', serif"
                 >{{ ch }}</text>
               </g>
             </g>
 
-            <!-- 中环：地支（逆时针） -->
-            <g class="fate-spin fate-spin--mid">
-              <circle r="138" fill="none" stroke="url(#fa-gold-line)" stroke-width="0.55" opacity="0.42" />
+            <!-- 中环：地支（紫，右盘） -->
+            <g class="fate-spin fate-spin--mid fate-disc fate-disc--right">
+              <circle r="132" fill="none" stroke="url(#fa-violet-line)" stroke-width="0.55" opacity="0.5" />
               <g v-for="(ch, i) in branches" :key="'b' + i" :transform="`rotate(${i * 30 - 90})`">
-                <line x1="0" y1="-138" x2="0" y2="-110" stroke="rgba(212,175,55,0.18)" stroke-width="0.4" />
+                <line x1="0" y1="-132" x2="0" y2="-106" stroke="rgba(167,139,250,0.22)" stroke-width="0.4" />
                 <text
-                  x="0" y="-122" text-anchor="middle"
-                  fill="rgba(196,168,255,0.78)" font-size="12"
+                  x="0" y="-116" text-anchor="middle"
+                  fill="rgba(208,195,255,0.84)" font-size="12"
                   class="select-none" style="font-family: 'Songti SC', 'Noto Serif SC', serif"
                 >{{ ch }}</text>
               </g>
             </g>
 
-            <!-- 内环：塔罗大阿尔卡那（紫，顺时针快） -->
+            <!-- 内环：塔罗大阿尔卡那（中心共振） -->
             <g class="fate-spin fate-spin--inner">
-              <circle r="96" fill="rgba(10,7,26,0.4)" stroke="url(#fa-violet-line)" stroke-width="0.55" opacity="0.5" />
+              <circle r="96" fill="rgba(10,7,26,0.32)" stroke="url(#fa-violet-line)" stroke-width="0.55" opacity="0.52" />
               <g v-for="(ch, i) in arcana" :key="'a' + i" :transform="`rotate(${i * (360 / 13) - 90})`">
                 <text
                   x="0" y="-82" text-anchor="middle"
-                  fill="rgba(216,180,254,0.7)" font-size="8.5"
+                  fill="rgba(232,231,255,0.68)" font-size="8.5"
                   class="select-none" style="font-family: ui-serif, Georgia, serif; letter-spacing: 0.5px"
                 >{{ ch }}</text>
               </g>
             </g>
 
-            <!-- 双引擎能量弧：东(金) vs 西(紫) 对向旋转 -->
-            <g class="fate-arc fate-arc--gold">
-              <path d="M0,-58 A58,58 0 0 1 50,29" fill="none" stroke="url(#fa-gold-line)" stroke-width="2.2" stroke-linecap="round" />
+            <!-- 双引擎能量弧：银 vs 紫 对向旋转 -->
+            <g class="fate-arc fate-arc--silver">
+              <path d="M0,-58 A58,58 0 0 1 50,29" fill="none" stroke="url(#fa-silver-line)" stroke-width="2.2" stroke-linecap="round" />
             </g>
             <g class="fate-arc fate-arc--violet">
               <path d="M0,58 A58,58 0 0 1 -50,-29" fill="none" stroke="url(#fa-violet-line)" stroke-width="2.2" stroke-linecap="round" />
@@ -137,15 +147,15 @@ function sparkStyle(n: number) {
 
             <!-- 中心：太极核（脉动） -->
             <g filter="url(#fa-core-glow)" class="fate-core-grp">
-              <circle r="40" fill="none" stroke="rgba(212,175,55,0.25)" stroke-width="0.5" class="fate-core-ring" />
+              <circle r="40" fill="none" stroke="rgba(232,231,255,0.28)" stroke-width="0.5" class="fate-core-ring" />
               <g class="fate-taiji">
-                <circle r="28" fill="none" stroke="rgba(212,175,55,0.4)" stroke-width="0.5" />
-                <path d="M0,-28 A28,28 0 1,1 0,28 A14,14 0 0,0 0,0 A14,14 0 0,1 0,-28 Z" fill="#ede9f7" opacity="0.94" />
-                <path d="M0,-28 A28,28 0 0,0 0,28 A14,14 0 0,1 0,0 A14,14 0 0,0 0,-28 Z" fill="#0b0820" opacity="0.96" />
-                <circle cx="0" cy="-14" r="4.5" fill="#0b0820" />
-                <circle cx="0" cy="14" r="4.5" fill="#ede9f7" />
-                <circle cx="0" cy="-14" r="1.5" fill="#ede9f7" />
-                <circle cx="0" cy="14" r="1.5" fill="#0b0820" />
+                <circle r="28" fill="none" stroke="rgba(232,231,255,0.4)" stroke-width="0.5" />
+                <path d="M0,-28 A28,28 0 1,1 0,28 A14,14 0 0,0 0,0 A14,14 0 0,1 0,-28 Z" fill="#f4f2ff" opacity="0.94" />
+                <path d="M0,-28 A28,28 0 0,0 0,28 A14,14 0 0,1 0,0 A14,14 0 0,0 0,-28 Z" fill="#14082e" opacity="0.96" />
+                <circle cx="0" cy="-14" r="4.5" fill="#14082e" />
+                <circle cx="0" cy="14" r="4.5" fill="#f4f2ff" />
+                <circle cx="0" cy="-14" r="1.5" fill="#f4f2ff" />
+                <circle cx="0" cy="14" r="1.5" fill="#14082e" />
               </g>
             </g>
           </g>
@@ -158,8 +168,8 @@ function sparkStyle(n: number) {
       </div>
     </div>
 
-    <p class="fate-astro-title mt-10 max-w-md text-center font-serif text-xl tracking-wide text-[#ead7a8] sm:mt-14 sm:text-2xl">
-      星盘推演中…
+    <p class="fate-astro-title mt-10 max-w-md text-center font-serif text-xl tracking-wide text-[#eeeaff] sm:mt-14 sm:text-2xl">
+      双盘碰撞中…
     </p>
 
     <!-- 阶段进度 -->
@@ -181,23 +191,26 @@ function sparkStyle(n: number) {
 
 <style scoped>
 .fate-astro-root {
-  --fa-gold: #d4af37;
+  --fa-violet: #8b5cf6;
+  --fa-silver: #e8e7ff;
 }
 
 .fate-astro-stage {
   position: relative;
-  width: min(92vw, 420px);
-  height: min(92vw, 420px);
+  width: min(92vw, 460px);
+  height: min(92vw, 460px);
+  perspective: 1100px;
 }
 
 .fate-astro-canvas {
   position: absolute;
-  inset: -10%;
+  inset: -14%;
   border-radius: 50%;
   background:
-    radial-gradient(circle at 38% 32%, rgba(212, 175, 55, 0.14) 0%, transparent 46%),
-    radial-gradient(circle at 64% 70%, rgba(138, 43, 226, 0.16) 0%, transparent 44%);
-  filter: blur(3px);
+    radial-gradient(circle at 34% 38%, rgba(232, 231, 255, 0.14) 0%, transparent 38%),
+    radial-gradient(circle at 64% 62%, rgba(139, 92, 246, 0.24) 0%, transparent 46%),
+    conic-gradient(from 220deg, transparent, rgba(232, 231, 255, 0.08), transparent 20%, rgba(124, 58, 237, 0.2), transparent 58%, rgba(232, 231, 255, 0.08), transparent);
+  filter: blur(4px);
   animation: fa-canvas-breathe 5s ease-in-out infinite;
 }
 
@@ -206,22 +219,61 @@ function sparkStyle(n: number) {
   50% { opacity: 1; transform: scale(1.04); }
 }
 
+.fate-dual-beams {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 2;
+}
+
+.fate-beam {
+  position: absolute;
+  top: 50%;
+  width: 44%;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, rgba(232,231,255,0.85), rgba(139,92,246,0.7), transparent);
+  filter: drop-shadow(0 0 10px rgba(167,139,250,0.72));
+  opacity: 0.36;
+  transform-origin: center;
+}
+
+.fate-beam--left {
+  left: 1%;
+  animation: fa-beam-left 2.8s ease-in-out infinite;
+}
+
+.fate-beam--right {
+  right: 1%;
+  animation: fa-beam-right 2.8s ease-in-out infinite;
+}
+
+@keyframes fa-beam-left {
+  0%, 100% { transform: translate3d(-10px, -50%, 0) rotate(0deg) scaleX(0.8); opacity: 0.18; }
+  48%, 58% { transform: translate3d(22px, -50%, 0) rotate(0deg) scaleX(1.06); opacity: 0.72; }
+}
+
+@keyframes fa-beam-right {
+  0%, 100% { transform: translate3d(10px, -50%, 0) rotate(180deg) scaleX(0.8); opacity: 0.18; }
+  48%, 58% { transform: translate3d(-22px, -50%, 0) rotate(180deg) scaleX(1.06); opacity: 0.72; }
+}
+
 .fate-astro-svg-wrap {
   position: relative;
   width: 100%;
   height: 100%;
-  border-radius: 14px;
+  border-radius: 50%;
   box-shadow:
-    0 0 60px rgba(138, 43, 226, 0.18),
-    0 0 110px rgba(212, 175, 55, 0.08),
+    0 0 70px rgba(139, 92, 246, 0.24),
+    0 0 120px rgba(232, 231, 255, 0.08),
     inset 0 0 44px rgba(0, 0, 0, 0.5);
+  transform: rotateX(8deg);
 }
 
 .fate-astro-svg {
   display: block;
   width: 100%;
   height: 100%;
-  border-radius: 14px;
+  border-radius: 50%;
 }
 
 /* 各环旋转 */
@@ -229,10 +281,34 @@ function sparkStyle(n: number) {
 .fate-spin--outer { animation: fa-rot 88s linear infinite; }
 .fate-spin--mid { animation: fa-rot-rev 60s linear infinite; }
 .fate-spin--inner { animation: fa-rot 34s linear infinite; }
+.fate-disc { filter: drop-shadow(0 0 12px rgba(167,139,250,0.24)); }
+.fate-disc--left { animation: fa-left-disc 4.8s ease-in-out infinite, fa-rot 88s linear infinite; }
+.fate-disc--right { animation: fa-right-disc 4.8s ease-in-out infinite, fa-rot-rev 60s linear infinite; }
+
+@keyframes fa-left-disc {
+  0%, 100% { translate: -72px 0; opacity: 0.78; }
+  50% { translate: -42px 0; opacity: 1; }
+}
+
+@keyframes fa-right-disc {
+  0%, 100% { translate: 72px 0; opacity: 0.78; }
+  50% { translate: 42px 0; opacity: 1; }
+}
+
+.fate-impact-wave {
+  transform-origin: 0 0;
+  animation: fa-impact-wave 2.8s ease-in-out infinite;
+}
+
+@keyframes fa-impact-wave {
+  0%, 100% { opacity: 0.16; transform: scale(0.82); }
+  52% { opacity: 0.82; transform: scale(1.2); }
+  74% { opacity: 0.18; transform: scale(1.38); }
+}
 
 /* 双引擎能量弧 */
 .fate-arc { transform-origin: 0 0; }
-.fate-arc--gold { animation: fa-rot 6s linear infinite; }
+.fate-arc--silver { animation: fa-rot 6s linear infinite; }
 .fate-arc--violet { animation: fa-rot-rev 6s linear infinite; }
 
 /* 太极核 */
@@ -244,8 +320,8 @@ function sparkStyle(n: number) {
 @keyframes fa-rot-rev { from { transform: rotate(0deg); } to { transform: rotate(-360deg); } }
 
 @keyframes fa-core-pulse {
-  0%, 100% { filter: drop-shadow(0 0 6px rgba(212, 175, 55, 0.35)) drop-shadow(0 0 14px rgba(138, 43, 226, 0.3)); }
-  50% { filter: drop-shadow(0 0 12px rgba(212, 175, 55, 0.6)) drop-shadow(0 0 26px rgba(138, 43, 226, 0.55)); }
+  0%, 100% { filter: drop-shadow(0 0 7px rgba(232, 231, 255, 0.42)) drop-shadow(0 0 18px rgba(139, 92, 246, 0.36)); }
+  50% { filter: drop-shadow(0 0 15px rgba(232, 231, 255, 0.72)) drop-shadow(0 0 34px rgba(139, 92, 246, 0.64)); }
 }
 @keyframes fa-ring-breathe {
   0%, 100% { opacity: 0.6; transform: scale(1); }
@@ -256,7 +332,7 @@ function sparkStyle(n: number) {
   pointer-events: none;
   position: absolute;
   inset: 0;
-  border-radius: 14px;
+  border-radius: 50%;
   overflow: hidden;
 }
 
@@ -265,8 +341,8 @@ function sparkStyle(n: number) {
   width: 2px;
   height: 2px;
   border-radius: 50%;
-  background: rgba(216, 180, 254, 0.85);
-  box-shadow: 0 0 6px rgba(167, 139, 250, 0.9);
+  background: rgba(232, 231, 255, 0.92);
+  box-shadow: 0 0 7px rgba(167, 139, 250, 0.95);
   animation: fa-spark-twinkle ease-in-out infinite;
 }
 
@@ -289,7 +365,7 @@ function sparkStyle(n: number) {
 .fate-phase-text {
   font-size: 0.85rem;
   letter-spacing: 0.08em;
-  color: rgba(196, 168, 255, 0.82);
+  color: rgba(221, 214, 254, 0.84);
   text-align: center;
 }
 .fate-phase-fade-enter-active,
@@ -304,7 +380,7 @@ function sparkStyle(n: number) {
   transition: all 0.4s ease;
 }
 .fate-phase-dot--on {
-  background: linear-gradient(135deg, #d4af37, #a78bfa);
+  background: linear-gradient(135deg, #f5f3ff, #8b5cf6);
   box-shadow: 0 0 10px rgba(167, 139, 250, 0.6);
   transform: scale(1.3);
 }
@@ -313,8 +389,12 @@ function sparkStyle(n: number) {
   .fate-spin--outer,
   .fate-spin--mid,
   .fate-spin--inner,
-  .fate-arc--gold,
+  .fate-arc--silver,
   .fate-arc--violet,
+  .fate-disc--left,
+  .fate-disc--right,
+  .fate-impact-wave,
+  .fate-beam,
   .fate-taiji,
   .fate-core-grp,
   .fate-core-ring,

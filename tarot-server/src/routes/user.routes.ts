@@ -1,32 +1,17 @@
 import { Router } from 'express';
 import multer from 'multer';
-import path from 'path';
 import * as UserController from '../controllers/user.controller.js';
-import { getUploadsRoot } from '../config/uploadsRoot.js';
 import { auth } from '../middleware/auth.js';
 import { validate } from '../middleware/validate.js';
+import { imageMimeFilter } from '../utils/imageUpload.js';
 import { z } from 'zod';
 
 const router = Router();
 
-// Avatar upload config
-const avatarStorage = multer.diskStorage({
-  destination: path.join(getUploadsRoot(), 'avatars'),
-  filename: (_req, file, cb) => {
-    const ext = path.extname(file.originalname) || '.png';
-    cb(null, `${Date.now()}-${Math.random().toString(36).slice(2, 8)}${ext}`);
-  },
-});
 const avatarUpload = multer({
-  storage: avatarStorage,
+  storage: multer.memoryStorage(),
   limits: { fileSize: 2 * 1024 * 1024 }, // 2MB
-  fileFilter: (_req, file, cb) => {
-    if (/^image\/(jpeg|png|gif|webp)$/.test(file.mimetype)) {
-      cb(null, true);
-    } else {
-      cb(new Error('仅支持 JPG/PNG/GIF/WebP 格式'));
-    }
-  },
+  fileFilter: imageMimeFilter,
 });
 
 const updateProfileSchema = z.object({

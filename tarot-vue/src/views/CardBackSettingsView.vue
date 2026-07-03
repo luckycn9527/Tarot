@@ -7,9 +7,10 @@ import { useToast } from '../composables/useToast'
 import api from '../services/api'
 import { useUserResourcesStore } from '../stores/userResources'
 import { loadReferenceBundle, cardBacksList } from '../services/referenceBootstrap'
-import defaultCardBack from '../assets/back/pocket.png'
-import { publicAssetUrl } from '../utils/publicAssetUrl'
+import { ossAssetUrl, publicAssetUrl } from '../utils/publicAssetUrl'
 import AppSpinner from '../components/ui/AppSpinner.vue'
+
+const defaultCardBack = ossAssetUrl('/frontend-assets/back/pocket.webp')
 
 const route = useRoute()
 const router = useRouter()

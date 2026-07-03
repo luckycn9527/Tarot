@@ -41,7 +41,20 @@ ensureDefaultUploadAssets(uploadsRoot);
 
 // Global middleware
 app.use(helmet({
-  contentSecurityPolicy: false,
+  contentSecurityPolicy: {
+    useDefaults: true,
+    directives: {
+      "default-src": ["'self'"],
+      "script-src": ["'self'", "https://accounts.google.com"],
+      "style-src": ["'self'", "'unsafe-inline'"],
+      "img-src": ["'self'", "data:", "blob:", "https:"],
+      "connect-src": ["'self'", "https://accounts.google.com"],
+      "frame-src": ["'self'", "https://accounts.google.com"],
+      "base-uri": ["'self'"],
+      "object-src": ["'none'"],
+      "frame-ancestors": ["'self'"],
+    },
+  },
   // http://IP:port 非「可信源」时浏览器会忽略 COOP 并刷屏告警；同源静态+API 场景可关闭
   crossOriginOpenerPolicy: false,
   originAgentCluster: false,

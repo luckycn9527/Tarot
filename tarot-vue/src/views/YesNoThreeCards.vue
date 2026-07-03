@@ -5,10 +5,12 @@ import { useI18n } from 'vue-i18n'
 import QuestionForm from '../components/QuestionForm.vue'
 import { sanitizeInput } from '../utils/sanitize'
 import { StorageKeys, storageRemoveRawAndLegacy, storageSet } from '@/utils/storage'
+import { ossAssetUrl } from '@/utils/publicAssetUrl'
 
 const router = useRouter()
 const { t, tm } = useI18n()
 
+const threeCardsImageUrl = ossAssetUrl('/images/yes-no/three-cards.webp')
 const examples = computed(() => tm('pages.yesNoThree.examples') as { category: string; items: string[] }[])
 const positions = computed(() => tm('pages.yesNoThree.positions') as { name: string; color: string; desc: string }[])
 
@@ -44,8 +46,8 @@ function handleSubmit(question: string) {
       <QuestionForm
         :title="t('pages.yesNoThree.formTitle')"
         :placeholder="t('pages.yesNoThree.placeholder')"
-        image-url="https://cdn.tarotqa.com/images-optimized/landing/Yes-No-Three-Card-Spread.webp"
-        image-alt="Three Card Reading"
+        :image-url="threeCardsImageUrl"
+        image-alt="三卡是否塔罗占卜"
         :examples="examples"
         @submit="handleSubmit"
       />

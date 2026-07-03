@@ -5,10 +5,12 @@ import { useI18n } from 'vue-i18n'
 import QuestionForm from '../components/QuestionForm.vue'
 import { sanitizeInput } from '../utils/sanitize'
 import { StorageKeys, storageRemoveRawAndLegacy, storageSet } from '@/utils/storage'
+import { ossAssetUrl } from '@/utils/publicAssetUrl'
 
 const router = useRouter()
 const { t, tm } = useI18n()
 
+const singleCardImageUrl = ossAssetUrl('/images/yes-no/single-card.webp')
 const examples = computed(() => tm('pages.yesNoSingle.examples') as { category: string; items: string[] }[])
 
 function handleSubmit(question: string) {
@@ -43,8 +45,8 @@ function handleSubmit(question: string) {
       <QuestionForm
         :title="t('pages.yesNoSingle.formTitle')"
         :placeholder="t('pages.yesNoSingle.placeholder')"
-        image-url="https://cdn.tarotqa.com/images-optimized/landing/Yes-No-Single-Card.webp"
-        image-alt="Single Card Reading"
+        :image-url="singleCardImageUrl"
+        image-alt="单卡是否塔罗占卜"
         :examples="examples"
         @submit="handleSubmit"
       />

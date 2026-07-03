@@ -1,7 +1,8 @@
 import type { RouteLocationNormalized } from 'vue-router'
 import { i18n } from '@/i18n'
+import { ossAssetUrl } from '@/utils/publicAssetUrl'
 
-const DEFAULT_OG = 'https://cdn.tarotqa.com/images-optimized/landing/Yes-No-Single-Card.webp'
+const DEFAULT_OG_IMAGE = ossAssetUrl('/images/yes-no/single-card.webp')
 
 function setMetaAttr(name: string, content: string) {
   let el = document.querySelector(`meta[name="${name}"]`) as HTMLMetaElement | null
@@ -41,6 +42,10 @@ function siteOrigin(): string {
   }
   if (typeof window !== 'undefined') return window.location.origin
   return ''
+}
+
+function defaultOgImage(): string {
+  return DEFAULT_OG_IMAGE
 }
 
 function resolveCanonicalUrl(to: RouteLocationNormalized): string | null {
@@ -85,7 +90,8 @@ export function applyRouteDocumentMeta(to: RouteLocationNormalized) {
   setMetaProperty('og:title', title)
   setMetaProperty('og:description', desc)
   setMetaProperty('og:type', 'website')
-  setMetaProperty('og:image', DEFAULT_OG)
+  const ogImage = defaultOgImage()
+  setMetaProperty('og:image', ogImage)
 
   const canonical = resolveCanonicalUrl(to)
   if (canonical) {
@@ -96,5 +102,5 @@ export function applyRouteDocumentMeta(to: RouteLocationNormalized) {
   setMetaAttr('twitter:card', 'summary_large_image')
   setMetaAttr('twitter:title', title)
   setMetaAttr('twitter:description', desc)
-  setMetaAttr('twitter:image', DEFAULT_OG)
+  setMetaAttr('twitter:image', ogImage)
 }

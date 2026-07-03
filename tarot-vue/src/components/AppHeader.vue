@@ -15,7 +15,7 @@ import MessageSquare from '@icons/message-square.vue'
 import LogOut from '@icons/log-out.vue'
 import Crown from '@icons/crown.vue'
 import { useAuth } from '../composables/useAuth'
-import { publicAssetUrl } from '../utils/publicAssetUrl'
+import { ossAssetUrl, publicAssetUrl } from '../utils/publicAssetUrl'
 import { applyLocaleToDocument, setStoredLocale, type AppLocale } from '@/utils/localeStorage'
 import { applyRouteDocumentMeta } from '@/seo/documentMeta'
 
@@ -24,6 +24,7 @@ const route = useRoute()
 const router = useRouter()
 const { user, isLoggedIn, logout } = useAuth()
 
+const logoUrl = ossAssetUrl('/frontend-assets/logo/logo.webp')
 const isVip = computed(() => user.value?.membership === 'vip')
 
 const isImageAvatar = computed(() => {
@@ -153,7 +154,7 @@ function toggleLocale() {
             <Menu :size="24" aria-hidden="true" />
           </button>
           <RouterLink to="/" class="flex items-center gap-2 no-underline group">
-            <img src="../assets/logo/logo.png" alt="E-Tomd" class="w-7 h-7" />
+            <img :src="logoUrl" alt="E-Tomd" class="w-7 h-7" />
             <span class="text-lg font-bold text-gold-300 tracking-wider font-serif transition-colors group-hover:text-gold-200">E-Tomd</span>
           </RouterLink>
         </div>

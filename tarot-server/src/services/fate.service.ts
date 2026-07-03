@@ -154,6 +154,36 @@ interface ConflictBranchesJson {
   adventureScores?: PathScores;
 }
 
+interface ChoiceGuidanceJson {
+  title?: string;
+  verdict?: string;
+  whyThisPath?: string[];
+  actionPlan?: {
+    now?: string[];
+    sevenDays?: string[];
+    thirtyDays?: string[];
+  };
+  risks?: string[];
+  stopSignals?: string[];
+  shadowPath?: string;
+  mantra?: string;
+}
+
+interface ChoiceGuidance {
+  title: string;
+  verdict: string;
+  whyThisPath: string[];
+  actionPlan: {
+    now: string[];
+    sevenDays: string[];
+    thirtyDays: string[];
+  };
+  risks: string[];
+  stopSignals: string[];
+  shadowPath: string;
+  mantra: string;
+}
+
 export async function analyzeFateDual(
   userId: number,  input: {
     birthDate: string;
@@ -478,6 +508,173 @@ ${tarotAnalysis}`;
   };
 }
 
+function cleanGuidanceText(value: unknown, fallback: string, max = 120): string {
+  const text = String(value ?? '').replace(/\s+/g, ' ').trim();
+  const safe = text || fallback;
+  return safe.length > max ? `${safe.slice(0, max - 1)}…` : safe;
+}
+
+function cleanGuidanceList(value: unknown, fallback: string[], maxItems = 3, maxChars = 90): string[] {
+  const arr = Array.isArray(value) ? value : [];
+  const cleaned = arr
+    .map((item) => cleanGuidanceText(item, '', maxChars))
+    .filter(Boolean)
+    .slice(0, maxItems);
+  return cleaned.length ? cleaned : fallback.slice(0, maxItems);
+}
+
+function buildChoiceGuidanceFallback(
+  row: Record<string, unknown>,
+  resultText: string,
+  choice: 'stable' | 'adventure',
+): ChoiceGuidance {
+  const isStable = choice === 'stable';
+  const selectedLabel = isStable ? '守住现在' : '主动破局';
+  const oppositeLabel = isStable ? '主动破局' : '守住现在';
+  const summary = cleanGuidanceText(row.summary_text, '这次选择的重点，是把内心冲动与现实节奏重新对齐。', 90);
+  const selectedPath = cleanGuidanceText(
+    isStable ? row.path_stable_text : row.path_adventure_text,
+    resultText,
+    140,
+  );
+  const oppositePath = cleanGuidanceText(
+    isStable ? row.path_adventure_text : row.path_stable_text,
+    '',
+    120,
+  );
+
+  if (isStable) {
+    return {
+      title: '稳线指引',
+      verdict: `${summary} 你选择先守住基本盘，适合用更小的试探确认下一步，而不是立刻把筹码推满。`,
+      whyThisPath: [
+        '它能先降低外部变量，让你看清真正需要坚持的部分。',
+        '它保留资源和退路，避免在情绪高点做过度承诺。',
+        selectedPath,
+      ],
+      actionPlan: {
+        now: ['写下必须守住的三项底线', '把最担心的风险拆成可验证的小问题'],
+        sevenDays: ['做一次低成本试探，不急着公开承诺', '复盘哪些压力来自现实，哪些来自想象'],
+        thirtyDays: ['设定一个清晰观察节点', '只在证据变多时扩大投入'],
+      },
+      risks: ['稳定可能变成拖延', '过度顾全会压住真实渴望', '太晚行动会错过窗口'],
+      stopSignals: ['同一个问题反复消耗你', '机会开始明显流失', '你只是因为害怕而维持原状'],
+      shadowPath: oppositePath
+        ? `${oppositeLabel}仍在提醒你：${oppositePath}`
+        : '未选路线提醒你，内心的冲动不是噪音，它可能是下一轮行动的火种。',
+      mantra: '先稳住，再精准出手',
+    };
+  }
+
+  return {
+    title: '破局指引',
+    verdict: `${summary} 你选择让行动先点亮局面，适合把变化控制在可承受范围内，边走边校准。`,
+    whyThisPath: [
+      '它回应了内心已经累积很久的推动力。',
+      '它能用真实反馈替代反复猜测，让局势更快显形。',
+      selectedPath,
+    ],
+    actionPlan: {
+      now: ['确定一个最小可行动作', '写清楚这次冒险可承受的代价'],
+      sevenDays: ['完成一次真实推进，不只停留在计划里', '找一个可信的人复盘风险边界'],
+      thirtyDays: ['用结果校准方向，而不是用情绪评判成败', '保留一条可退可转的备用路线'],
+    },
+    risks: ['冲动可能放大成本', '高期待会遮住细节风险', '关系或资源可能短期承压'],
+    stopSignals: ['连续投入却没有任何反馈', '你需要隐瞒关键代价才能继续', '身体和情绪持续发出过载信号'],
+    shadowPath: oppositePath
+      ? `${oppositeLabel}仍在提醒你：${oppositePath}`
+      : '未选路线提醒你，稳定不是退缩，而是为下一次跃迁保存力量。',
+    mantra: '带着边界去破局',
+  };
+}
+
+function normalizeChoiceGuidance(
+  raw: ChoiceGuidanceJson | null,
+  fallback: ChoiceGuidance,
+): ChoiceGuidance {
+  const actionRaw = raw?.actionPlan ?? {};
+  return {
+    title: cleanGuidanceText(raw?.title, fallback.title, 20),
+    verdict: cleanGuidanceText(raw?.verdict, fallback.verdict, 120),
+    whyThisPath: cleanGuidanceList(raw?.whyThisPath, fallback.whyThisPath, 3, 96),
+    actionPlan: {
+      now: cleanGuidanceList(actionRaw.now, fallback.actionPlan.now, 3, 80),
+      sevenDays: cleanGuidanceList(actionRaw.sevenDays, fallback.actionPlan.sevenDays, 3, 80),
+      thirtyDays: cleanGuidanceList(actionRaw.thirtyDays, fallback.actionPlan.thirtyDays, 3, 80),
+    },
+    risks: cleanGuidanceList(raw?.risks, fallback.risks, 3, 72),
+    stopSignals: cleanGuidanceList(raw?.stopSignals, fallback.stopSignals, 3, 72),
+    shadowPath: cleanGuidanceText(raw?.shadowPath, fallback.shadowPath, 140),
+    mantra: cleanGuidanceText(raw?.mantra, fallback.mantra, 28),
+  };
+}
+
+async function buildChoiceGuidance(
+  row: Record<string, unknown>,
+  resultText: string,
+  choice: 'stable' | 'adventure',
+): Promise<ChoiceGuidance> {
+  const fallback = buildChoiceGuidanceFallback(row, resultText, choice);
+  const isStable = choice === 'stable';
+  const selectedLabel = isStable ? '守住现在' : '主动破局';
+  const unselectedLabel = isStable ? '主动破局' : '守住现在';
+  const selectedPath = isStable ? row.path_stable_text : row.path_adventure_text;
+  const unselectedPath = isStable ? row.path_adventure_text : row.path_stable_text;
+
+  const guidanceSystem = `你是一位「命运双盘」路线导师。用户已在两条命运路线中做出选择。请基于本次命盘、塔罗、冲突摘要、已选路线和未选路线，给出温暖、克制、可执行的解析与指引。
+
+要求：
+1. 只输出 JSON 对象，不要 markdown，不要额外文字。
+2. 不要恐吓、不要绝对化，不提供医疗、法律、投资保证。
+3. 文风神秘但清醒，像占卜后的路线手札，必须有具体行动建议。
+4. whyThisPath 正好 3 条。
+5. actionPlan.now、actionPlan.sevenDays、actionPlan.thirtyDays 各 2-3 条。
+6. risks 正好 3 条，stopSignals 正好 3 条。
+
+JSON 格式：
+{
+  "title":"8-14字标题",
+  "verdict":"45-80字总判断",
+  "whyThisPath":["选择理由1","选择理由2","选择理由3"],
+  "actionPlan":{"now":["立刻做的事"],"sevenDays":["7天内做的事"],"thirtyDays":["30天内做的事"]},
+  "risks":["风险1","风险2","风险3"],
+  "stopSignals":["停止或转向信号1","停止或转向信号2","停止或转向信号3"],
+  "shadowPath":"60-100字说明未选路线仍然提醒了什么",
+  "mantra":"12-24字行动箴言"
+}`;
+
+  const guidanceUser = `用户问题：${cleanGuidanceText(row.question, '未记录具体问题', 180)}
+领域：${categoryLabel(String(row.category ?? ''))}
+冲突类型：${cleanGuidanceText(row.conflict_type, '未定', 20)}
+冲突层级：${cleanGuidanceText(row.conflict_level, '未定', 20)}
+核心摘要：${cleanGuidanceText(row.summary_text, '', 140)}
+命理关键词：${cleanGuidanceText(row.bazi_keywords, '', 120)}
+命理趋势：${cleanGuidanceText(row.bazi_luck_trend, '', 80)}
+命理侧写：${cleanGuidanceText(row.bazi_analysis_text, '', 420)}
+塔罗牌面：${[row.card_1, row.card_2, row.card_3].map((x) => cleanGuidanceText(x, '', 24)).filter(Boolean).join('、')}
+塔罗解读：${cleanGuidanceText(row.tarot_meaning_text, '', 420)}
+已选路线：${selectedLabel}
+已选路线原文：${cleanGuidanceText(selectedPath, '', 360)}
+已选路线收束语：${cleanGuidanceText(resultText, '', 180)}
+未选路线：${unselectedLabel}
+未选路线原文：${cleanGuidanceText(unselectedPath, '', 300)}`;
+
+  const raw = await deepSeekOr(
+    () => callDeepSeek(
+      [
+        { role: 'system', content: guidanceSystem },
+        { role: 'user', content: guidanceUser },
+      ],
+      45000,
+      1200,
+    ),
+    JSON.stringify(fallback),
+    '选择后指引',
+  );
+
+  return normalizeChoiceGuidance(extractJsonBlock<ChoiceGuidanceJson>(raw), fallback);
+}
+
 export async function chooseFatePath(
   userId: number,
   conflictId: number,
@@ -490,10 +687,13 @@ export async function chooseFatePath(
 
   const existing = await FateModel.getChoiceByConflictId(conflictId);
   if (existing) {
+    const existingChoice = existing.choice_type === 'adventure' ? 'adventure' : 'stable';
+    const resultText = String(existing.result_path_text);
     return {
-      result: String(existing.result_path_text),
+      result: resultText,
+      guidance: await buildChoiceGuidance(row, resultText, existingChoice),
       alreadyChosen: true as const,
-      choiceType: String(existing.choice_type),
+      choiceType: existingChoice,
     };
   }
 
@@ -531,7 +731,12 @@ export async function chooseFatePath(
     resultPathText: resultText,
   });
 
-  return { result: resultText, alreadyChosen: false as const, choiceType: choice };
+  return {
+    result: resultText,
+    guidance: await buildChoiceGuidance(row, resultText, choice),
+    alreadyChosen: false as const,
+    choiceType: choice,
+  };
 }
 
 function sqlDateToIso(v: unknown): string {

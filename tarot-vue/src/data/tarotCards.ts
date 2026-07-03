@@ -1,4 +1,6 @@
 /** 牌面列表由启动时 GET /api/reference/bundle 注入，不在前端写死全量数据 */
+import { PUBLIC_OSS_ASSET_ORIGIN, ossAssetUrl as toOssAssetUrl } from '@/utils/publicAssetUrl'
+
 export interface TarotCard {
   id: number
   name: string
@@ -9,15 +11,23 @@ export interface TarotCard {
   imageUrl?: string | null
 }
 
-export let CDN_BASE = '/uploads/cards'
+function ossAssetUrl(value: string | null | undefined): string {
+  if (value == null || value === '') return ''
+  const s = String(value).trim()
+  if (/^https?:\/\//i.test(s)) return s
+  if (s.startsWith('/uploads/')) return toOssAssetUrl(s)
+  return s
+}
+
+export let CDN_BASE = `${PUBLIC_OSS_ASSET_ORIGIN}/uploads/cards`
 
 /**
  * 获取卡面图片 URL：如果管理后台上传了自定义图片则优先使用，否则走本地 uploads 默认路径
  */
 export function getCardImageUrl(nameEn: string, card?: TarotCard): string {
-  if (card?.imageUrl) return card.imageUrl
+  if (card?.imageUrl) return ossAssetUrl(card.imageUrl)
   const found = tarotCards.find(c => c.nameEn === nameEn)
-  if (found?.imageUrl) return found.imageUrl
+  if (found?.imageUrl) return ossAssetUrl(found.imageUrl)
   return `${CDN_BASE}/${nameEn.replace(/ /g, '_')}.jpg`
 }
 
@@ -32,6 +42,6 @@ export function findCardBySlug(slug: string): TarotCard | undefined {
 }
 
 export function applyTarotCardsFromApi(cards: TarotCard[], cdnBase?: string) {
-  if (cdnBase) CDN_BASE = cdnBase
+  if (cdnBase) CDN_BASE = ossAssetUrl(cdnBase)
   tarotCards.splice(0, tarotCards.length, ...cards)
 }

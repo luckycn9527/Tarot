@@ -18,13 +18,22 @@ export default defineConfig(({ mode }) => {
           manualChunks(id) {
             if (id.includes('node_modules')) {
               if (id.includes('lunar-javascript')) return 'lunar'
+              if (id.includes('iztro')) return 'iztro'
+              if (id.includes('@vue/compiler')) return 'vue-compiler'
+              if (id.includes('@vueuse/motion') || id.includes('popmotion') || id.includes('framesync') || id.includes('style-value-types')) return 'vue-motion'
               if (id.includes('vue-i18n')) return 'vue-i18n'
               if (id.includes('vue-router')) return 'vue-router'
               if (id.includes('pinia')) return 'pinia'
               if (id.includes('zod')) return 'zod'
               if (id.includes('@vueuse')) return 'vueuse'
               if (id.includes('axios')) return 'axios'
-              if (id.includes('vue')) return 'vue-vendor'
+              if (
+                id.includes('/vue/') ||
+                id.includes('\\vue\\') ||
+                id.includes('@vue/runtime') ||
+                id.includes('@vue/reactivity') ||
+                id.includes('@vue/shared')
+              ) return 'vue-runtime'
             }
             return undefined
           },

@@ -1,5 +1,3 @@
-import { astro } from 'iztro'
-
 /** 单颗星曜的精简表示 */
 export interface ZiweiStar {
   name: string
@@ -75,13 +73,14 @@ function mapStars(list: RawStar[] | undefined): ZiweiStar[] {
  * @param hour 出生小时（0-23）
  * @param gender 'male' | 'female'
  */
-export function computeZiwei(
+export async function computeZiwei(
   solarDate: string,
   hour: number | null | undefined,
   gender: 'male' | 'female',
-): ZiweiChart | null {
+): Promise<ZiweiChart | null> {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(solarDate)) return null
   try {
+    const { astro } = await import('iztro')
     const timeIndex = hourToTimeIndex(hour)
     const g = gender === 'female' ? '女' : '男'
     const a = astro.bySolar(solarDate, timeIndex, g, true, 'zh-CN')

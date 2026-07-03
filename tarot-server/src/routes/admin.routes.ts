@@ -1,14 +1,13 @@
 import { Router } from 'express';
 import { z } from 'zod';
 import multer from 'multer';
-import path from 'path';
 import * as AdminController from '../controllers/admin.controller.js';
-import { getUploadsRoot } from '../config/uploadsRoot.js';
 import { adminAuditLog } from '../middleware/adminAuditLog.js';
 import { adminAuth } from '../middleware/adminAuth.js';
 import { validate, validateQuery } from '../middleware/validate.js';
 import { adminListFeedbackQuerySchema, adminListUsersQuerySchema } from '../validation/adminQuery.js';
 import { adminWriteLimiter, authLimiter } from '../middleware/rateLimiter.js';
+import { imageMimeFilter } from '../utils/imageUpload.js';
 
 const router = Router();
 
@@ -159,21 +158,10 @@ router.patch(
   AdminController.replyFeedback,
 );
 
-const adminUploadStorage = multer.diskStorage({
-  destination: path.join(getUploadsRoot(), 'admin'),
-  filename: (_req, file, cb) => {
-    const ext = path.extname(file.originalname) || '.png';
-    const type = (_req as any).query?.type || 'file';
-    cb(null, `${type}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}${ext}`);
-  },
-});
 const adminUpload = multer({
-  storage: adminUploadStorage,
+  storage: multer.memoryStorage(),
   limits: { fileSize: 5 * 1024 * 1024 },
-  fileFilter: (_req, file, cb) => {
-    if (/^image\/(jpeg|png|gif|webp)$/.test(file.mimetype)) cb(null, true);
-    else cb(new Error('仅支持 JPG/PNG/GIF/WebP 图片格式'));
-  },
+  fileFilter: imageMimeFilter,
 });
 
 router.post(

@@ -1,6 +1,5 @@
 import { createApp } from 'vue'
 import { createPinia, setActivePinia } from 'pinia'
-import { MotionPlugin } from '@vueuse/motion'
 import App from './App.vue'
 import router from './router'
 import './assets/styles.css'
@@ -61,22 +60,6 @@ async function bootstrap() {
   app.use(i18n)
   applyLocaleToDocument(String(i18n.global.locale.value))
   app.use(router)
-  app.use(MotionPlugin, {
-    directives: {
-      'fade-oracle': {
-        initial: { opacity: 0, y: 20 },
-        visibleOnce: { opacity: 1, y: 0, transition: { duration: 600, ease: 'easeOut' } },
-      },
-      'slide-mystic': {
-        initial: { opacity: 0, x: -30 },
-        visibleOnce: { opacity: 1, x: 0, transition: { duration: 500, ease: 'easeOut' } },
-      },
-      'scale-reveal': {
-        initial: { opacity: 0, scale: 0.9 },
-        visibleOnce: { opacity: 1, scale: 1, transition: { duration: 500, type: 'spring', damping: 15 } },
-      },
-    },
-  })
 
   const toast = useToast()
   app.config.errorHandler = (err, instance, info) => {

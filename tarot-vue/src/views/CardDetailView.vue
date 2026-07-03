@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, watch, markRaw, type Component } from 'vue'
+import { computed, ref, watch, markRaw, type Component } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { useScrollReveal } from '../composables/useScrollReveal'
@@ -7,6 +7,7 @@ import { useDynamicSeoTitle } from '../composables/useDynamicSeoTitle'
 import { tarotCards, getCardImageUrl } from '../data/tarotCards'
 import { getCardSlug, findCardBySlug } from '../data/tarotCards'
 import { tarotCardDetails } from '../data/tarotCardDetails'
+import { loadTarotCardDetails } from '../services/referenceBootstrap'
 import BookOpenIcon from '@icons/book-open.vue'
 import ArrowUpIcon from '@icons/arrow-up.vue'
 import ArrowDownIcon from '@icons/arrow-down.vue'
@@ -22,12 +23,33 @@ const { t } = useI18n()
 
 const slug = computed(() => route.params.slug as string)
 const card = computed(() => findCardBySlug(slug.value))
-const detail = computed(() => card.value ? tarotCardDetails[card.value.id] : undefined)
+const detailLoadTick = ref(0)
+const detailLoading = ref(false)
+const detailLoadError = ref(false)
+const detail = computed(() => {
+  detailLoadTick.value
+  return card.value ? tarotCardDetails[card.value.id] : undefined
+})
+
+async function ensureDetailsLoaded() {
+  if (detail.value || detailLoading.value) return
+  detailLoading.value = true
+  detailLoadError.value = false
+  try {
+    await loadTarotCardDetails()
+    detailLoadTick.value += 1
+  } catch {
+    detailLoadError.value = true
+  } finally {
+    detailLoading.value = false
+  }
+}
 
 watch(
   card,
   (c) => {
     if (!c) void router.replace('/gallery')
+    else void ensureDetailsLoaded()
   },
   { immediate: true },
 )
@@ -188,5 +210,13 @@ const sections = computed(() => {
         {{ t('pages.cardDetail.back') }}
       </RouterLink>
     </section>
+  </div>
+  <div v-else-if="card" class="relative z-10 min-h-[50vh] flex items-center justify-center px-4">
+    <div class="card-glass w-full max-w-md p-8 text-center">
+      <p class="text-gold-200 font-serif text-lg">
+        {{ detailLoadError ? t('errors.generic') : t('common.loading') }}
+      </p>
+      <p class="mt-2 text-sm text-gray-500">{{ card.name }} · {{ card.nameEn }}</p>
+    </div>
   </div>
 </template>

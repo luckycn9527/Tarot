@@ -1,0 +1,59 @@
+{
+  "provider": "aliyun-oss",
+  "dryRun": true,
+  "bucket": "your-bucket-name",
+  "endpoint": "oss-cn-hangzhou.aliyuncs.com",
+  "publicBaseUrl": "https://cdn.example.com",
+  "accessKeyId": "LTAIxxxxxxxxxxxxxxxx",
+  "accessKeySecret": "your-access-key-secret",
+  "securityToken": "",
+  "prefix": "",
+  "overwrite": true,
+  "acl": "",
+  "cacheControl": "public, max-age=31536000, immutable",
+  "concurrency": 4,
+  "manifest": "oss-upload-manifest.json",
+  "extensions": [".png", ".jpg", ".jpeg", ".webp", ".gif", ".svg"],
+  "upload": [
+    {
+      "from": "tarot-vue/public/images",
+      "to": "images"
+    },
+    {
+      "from": "tarot-vue/src/assets",
+      "to": "frontend-assets"
+    },
+    {
+      "from": "tarot-server/uploads",
+      "to": "uploads"
+    },
+    {
+      "from": "tarot-server/assets",
+      "to": "server-assets"
+    },
+    {
+      "from": "featured-readers-hd.png",
+      "to": "images/featured-readers-hd.png"
+    },
+    {
+      "from": "featured-readers-v2.png",
+      "to": "images/featured-readers-v2.png"
+    },
+    {
+      "from": "featured-readers-v2-wide.png",
+      "to": "images/featured-readers-v2-wide.png"
+    },
+    {
+      "from": "featured-readers-v3.png",
+      "to": "images/featured-readers-v3.png"
+    },
+    {
+      "from": "featured-readers-v4.png",
+      "to": "images/featured-readers-v4.png"
+    },
+    {
+      "from": "featured-readers-v5.png",
+      "to": "images/featured-readers-v5.png"
+    }
+  ]
+}

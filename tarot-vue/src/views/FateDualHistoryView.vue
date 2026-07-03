@@ -163,18 +163,8 @@ function splitKeywords(raw: string) {
         <li
           v-for="(row, index) in list"
           :key="row.conflictId"
-          v-motion
-          :initial="{ opacity: 0, y: 36 }"
-          :enter="{
-            opacity: 1,
-            y: 0,
-            transition: {
-              type: 'spring',
-              stiffness: 220,
-              damping: 26,
-              delay: index * 0.06,
-            },
-          }"
+          class="fate-history-item"
+          :style="{ '--enter-delay': `${Math.min(index, 12) * 60}ms` }"
         >
           <article
             class="fate-scroll-card group relative rounded-2xl overflow-hidden cursor-pointer select-none"
@@ -449,6 +439,20 @@ function splitKeywords(raw: string) {
   margin-left: 4px;
 }
 
+.fate-history-item {
+  opacity: 0;
+  transform: translateY(36px);
+  animation: fateHistoryEnter 0.62s cubic-bezier(0.22, 1, 0.36, 1) forwards;
+  animation-delay: var(--enter-delay, 0ms);
+}
+
+@keyframes fateHistoryEnter {
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
 .fate-type-pill[data-type='align'] {
   border-color: rgba(34, 211, 238, 0.25);
   color: rgba(165, 243, 252, 0.85);
@@ -539,8 +543,13 @@ function splitKeywords(raw: string) {
   .fate-loader-ring,
   .fate-loader-core,
   .fate-empty-icon,
-  .fate-choice-dot {
+  .fate-choice-dot,
+  .fate-history-item {
     animation: none !important;
+  }
+  .fate-history-item {
+    opacity: 1;
+    transform: none;
   }
   .fate-scroll-card:hover {
     transform: none;

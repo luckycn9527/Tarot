@@ -3,6 +3,7 @@ import * as AdminService from '../services/admin.service.js';
 import type { AdminListFeedbackQuery, AdminListUsersQuery } from '../validation/adminQuery.js';
 import { adminSafeServerMessage } from '../utils/adminHttp.js';
 import { ApiError } from '../utils/apiError.js';
+import { storeUploadedImage } from '../utils/imageUpload.js';
 import { writeReaderAvatarThumbFile } from '../utils/readerAvatarThumb.js';
 import { success } from '../utils/response.js';
 
@@ -167,14 +168,19 @@ export async function uploadFile(req: Request, res: Response, next: NextFunction
       next(new ApiError(400, '请选择文件'));
       return;
     }
-    const url = `/uploads/admin/${req.file.filename}`;
     const type = typeof req.query.type === 'string' ? req.query.type : '';
+    const image = await storeUploadedImage(req.file, {
+      folder: 'admin',
+      prefix: type || 'file',
+      maxDimension: type === 'reader-avatar' ? 1024 : 1600,
+      quality: 86,
+    });
     let thumbUrl: string | undefined;
-    if (type === 'reader-avatar' && req.file.path) {
-      const t = await writeReaderAvatarThumbFile(req.file.path, req.file.filename);
+    if (type === 'reader-avatar') {
+      const t = await writeReaderAvatarThumbFile(image.absPath, image.filename);
       if (t) thumbUrl = t;
     }
-    res.json(success(thumbUrl ? { url, thumbUrl } : { url }, '上传成功'));
+    res.json(success(thumbUrl ? { url: image.publicUrl, thumbUrl } : { url: image.publicUrl }, '上传成功'));
   } catch (e) {
     next(new ApiError(400, e instanceof Error ? e.message : '上传失败'));
   }

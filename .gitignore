@@ -43,3 +43,16 @@ desktop.ini
 .cache/
 .parcel-cache/
 .eslintcache
+__pycache__/
+*.pyc
+
+# Generated/runtime media
+featured-readers*.png
+tarot-server/uploads/admin/reader-avatar-*
+tarot-server/uploads/avatars/*
+
+# Local OSS upload credentials / generated upload manifests
+oss-upload.config.local.json
+oss-upload-manifest*.json
+image-optimization-manifest*.json
+image-derivatives-manifest*.json

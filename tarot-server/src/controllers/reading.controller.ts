@@ -1,10 +1,27 @@
 import type { Request, Response } from 'express';
 import * as ReadingService from '../services/reading.service.js';
 import * as HoroscopeService from '../services/horoscope.service.js';
+import { isAiServiceError } from '../services/deepseek.service.js';
 import { success, fail } from '../utils/response.js';
 
 function getErrMsg(err: unknown, fallback: string): string {
   return err instanceof Error ? err.message : fallback;
+}
+
+function sendReadingError(res: Response, err: unknown, fallback: string) {
+  if (isAiServiceError(err)) {
+    console.error(
+      JSON.stringify({
+        ts: new Date().toISOString(),
+        level: 'warn',
+        event: 'ai_service_error',
+        message: err.message,
+      }),
+    );
+    res.status(502).json(fail(err.safeMessage));
+    return;
+  }
+  res.status(500).json(fail(getErrMsg(err, fallback)));
 }
 
 export async function singleCard(req: Request, res: Response) {
@@ -17,7 +34,7 @@ export async function singleCard(req: Request, res: Response) {
     const result = await ReadingService.singleCardReading(req.userId!, question, cardId, orientation);
     res.json(success(result));
   } catch (err: unknown) {
-    res.status(500).json(fail(getErrMsg(err, '占卜失败')));
+    sendReadingError(res, err, '占卜失败');
   }
 }
 
@@ -31,7 +48,7 @@ export async function threeCard(req: Request, res: Response) {
     const result = await ReadingService.threeCardReading(req.userId!, question, cardIds, orientations);
     res.json(success(result));
   } catch (err: unknown) {
-    res.status(500).json(fail(getErrMsg(err, '占卜失败')));
+    sendReadingError(res, err, '占卜失败');
   }
 }
 
@@ -46,7 +63,7 @@ export async function dailyFortune(req: Request, res: Response) {
     );
     res.json(success(result));
   } catch (err: unknown) {
-    res.status(500).json(fail(getErrMsg(err, '每日运势获取失败')));
+    sendReadingError(res, err, '每日运势获取失败');
   }
 }
 
@@ -135,7 +152,7 @@ export async function getInsights(req: Request, res: Response) {
     const data = await ReadingService.getInsights(req.userId!, 6);
     res.json(success(data));
   } catch (err: unknown) {
-    res.status(500).json(fail(getErrMsg(err, '分析失败')));
+    sendReadingError(res, err, '分析失败');
   }
 }
 
@@ -170,7 +187,7 @@ export async function readerReading(req: Request, res: Response) {
       res.status(403).json(fail(msg));
       return;
     }
-    res.status(500).json(fail(msg));
+    sendReadingError(res, err, '占卜失败');
   }
 }
 
@@ -215,6 +232,6 @@ export async function readerFollowup(req: Request, res: Response) {
       res.status(404).json(fail(msg));
       return;
     }
-    res.status(500).json(fail(msg));
+    sendReadingError(res, err, '追问失败');
   }
 }

@@ -125,8 +125,26 @@ export async function findConflictForUser(
   userId: number,
 ): Promise<RowDataPacket | null> {
   const [rows] = await pool.execute<RowDataPacket[]>(
-    `SELECT id, path_stable_text, path_adventure_text, summary_text, conflict_type
-     FROM fate_conflicts WHERE id = ? AND user_id = ?`,
+    `SELECT
+       fc.id,
+       fc.path_stable_text,
+       fc.path_adventure_text,
+       fc.summary_text,
+       fc.conflict_type,
+       fc.conflict_level,
+       b.question,
+       b.category,
+       b.keywords AS bazi_keywords,
+       b.luck_trend AS bazi_luck_trend,
+       b.analysis_text AS bazi_analysis_text,
+       t.meaning_text AS tarot_meaning_text,
+       t.card_1,
+       t.card_2,
+       t.card_3
+     FROM fate_conflicts fc
+     LEFT JOIN bazi_results b ON b.id = fc.bazi_id
+     LEFT JOIN tarot_results t ON t.id = fc.tarot_id
+     WHERE fc.id = ? AND fc.user_id = ?`,
     [conflictId, userId],
   );
   return rows[0] ?? null;

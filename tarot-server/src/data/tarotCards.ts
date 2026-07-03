@@ -7,8 +7,10 @@ export interface TarotCard {
   yesNoTendency: 'yes' | 'no' | 'neutral'
 }
 
-/** 牌面默认走本地 uploads 静态目录（公有领域 RWS 牌面，随仓库分发） */
-export const CDN_BASE = '/uploads/cards'
+const PUBLIC_ASSET_ORIGIN = (process.env.PUBLIC_ASSET_ORIGIN || 'https://tarot-1.oss-cn-hangzhou.aliyuncs.com').replace(/\/$/, '')
+
+/** 牌面默认走 OSS/CDN；本地 uploads 仅作为后端开发兜底资源 */
+export const CDN_BASE = `${PUBLIC_ASSET_ORIGIN}/uploads/cards`
 
 export function getCardImageUrl(nameEn: string): string {
   return `${CDN_BASE}/${nameEn.replace(/ /g, '_')}.jpg`

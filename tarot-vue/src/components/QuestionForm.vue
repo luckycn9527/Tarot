@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref } from 'vue'
+import { ref, watch } from 'vue'
 import LoaderCircle from '@icons/loader-circle.vue'
 import { useFormValidation, useCharCount } from '../composables/useFormValidation'
 import { sanitizeInput } from '../utils/sanitize'
@@ -23,8 +23,13 @@ const emit = defineEmits<{
 
 const question = ref('')
 const isSubmitting = ref(false)
+const imageFailed = ref(false)
 const { errorMsg, validate, clearError } = useFormValidation({ maxLength: props.maxLength })
 const { charCount, isValid } = useCharCount(() => question.value, props.maxLength)
+
+watch(() => props.imageUrl, () => {
+  imageFailed.value = false
+})
 
 function handleSubmit() {
   if (!validate(question.value) || isSubmitting.value) return
@@ -37,13 +42,32 @@ function useExample(text: string) {
   question.value = text
   clearError()
 }
+
+function handleImageError() {
+  imageFailed.value = true
+}
 </script>
 
 <template>
   <div class="card-glass p-6 sm:p-8">
     <!-- Optional header image -->
     <div v-if="imageUrl" class="mb-6 overflow-hidden rounded-2xl">
-      <img :src="imageUrl" :alt="imageAlt || title" class="w-full h-48 sm:h-64 object-cover" loading="lazy" />
+      <img
+        v-if="!imageFailed"
+        :src="imageUrl"
+        :alt="imageAlt || title"
+        class="w-full h-48 sm:h-64 object-cover"
+        loading="lazy"
+        decoding="async"
+        @error="handleImageError"
+      />
+      <div v-else class="relative grid h-48 sm:h-64 place-items-center overflow-hidden bg-gradient-to-br from-violet-950 via-obsidian to-black">
+        <div class="absolute inset-0 opacity-60 bg-[radial-gradient(circle_at_50%_35%,rgba(212,168,83,.22),transparent_28%),radial-gradient(circle_at_70%_70%,rgba(124,58,237,.32),transparent_34%)]"></div>
+        <div class="relative text-center">
+          <div class="mx-auto mb-3 grid h-16 w-16 place-items-center rounded-full border border-gold-400/25 bg-white/5 text-2xl text-gold-200">✦</div>
+          <p class="text-sm text-gold-100/80">{{ imageAlt || title }}</p>
+        </div>
+      </div>
     </div>
 
     <form @submit.prevent="handleSubmit" class="space-y-4">

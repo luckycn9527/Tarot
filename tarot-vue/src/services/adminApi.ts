@@ -6,12 +6,16 @@ const adminApi = axios.create({
   timeout: 30000,
 })
 
-let adminToken: string | null = localStorage.getItem('admin_access_token')
+const ADMIN_TOKEN_KEY = 'admin_access_token'
+
+localStorage.removeItem(ADMIN_TOKEN_KEY)
+
+let adminToken: string | null = sessionStorage.getItem(ADMIN_TOKEN_KEY)
 
 export function setAdminToken(token: string | null) {
   adminToken = token
-  if (token) localStorage.setItem('admin_access_token', token)
-  else localStorage.removeItem('admin_access_token')
+  if (token) sessionStorage.setItem(ADMIN_TOKEN_KEY, token)
+  else sessionStorage.removeItem(ADMIN_TOKEN_KEY)
 }
 
 export function getAdminToken() {

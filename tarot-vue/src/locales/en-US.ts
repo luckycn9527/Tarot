@@ -70,6 +70,7 @@ export default {
     contactEmail: 'Contact',
   },
   common: {
+    loading: 'Loading...',
     retry: 'Retry',
     reload: 'Reload',
     backHome: 'Back to home',

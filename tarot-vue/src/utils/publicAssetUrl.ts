@@ -7,10 +7,24 @@
  *
  * 生产：若静态站与 API 不同源，可设 VITE_PUBLIC_API_ORIGIN；同源部署则保持相对路径即可。
  */
+const DEFAULT_OSS_ASSET_ORIGIN = 'https://tarot-1.oss-cn-hangzhou.aliyuncs.com'
+
+export const PUBLIC_OSS_ASSET_ORIGIN = (
+  (import.meta.env.VITE_PUBLIC_OSS_ORIGIN as string | undefined) || DEFAULT_OSS_ASSET_ORIGIN
+).replace(/\/$/, '')
+
+export function ossAssetUrl(path: string): string {
+  const s = String(path).trim()
+  if (!s) return ''
+  if (/^https?:\/\//i.test(s)) return s
+  return `${PUBLIC_OSS_ASSET_ORIGIN}/${s.replace(/^\/+/, '')}`
+}
+
 export function publicAssetUrl(relative: string | null | undefined): string {
   if (relative == null || relative === '') return ''
   const s = String(relative).trim()
   if (/^https?:\/\//i.test(s)) return s
+  if (s.startsWith('/uploads/')) return ossAssetUrl(s)
   if (import.meta.env.DEV && s.startsWith('/')) return s
   const origin = (import.meta.env.VITE_PUBLIC_API_ORIGIN as string | undefined)?.replace(/\/$/, '')
   if (origin && s.startsWith('/')) return `${origin}${s}`

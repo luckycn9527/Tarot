@@ -170,6 +170,18 @@ export async function consumeQuota(id: number): Promise<'vip' | 'ok' | 'exhauste
   }
 }
 
+export async function refundQuota(id: number): Promise<void> {
+  const today = new Date().toISOString().slice(0, 10);
+  await pool.execute(
+    `UPDATE users
+     SET remaining_free_quota = LEAST(remaining_free_quota + 1, 3)
+     WHERE id = ?
+       AND membership = 'free'
+       AND quota_reset_date = ?`,
+    [id, today],
+  );
+}
+
 /**
  * 若用户每日配额已过期，则原子重置为 3 次。
  * 用于 getProfile / getQuota 等只读接口，确保前端看到最新剩余次数。
@@ -192,4 +204,3 @@ export async function revokeAccessTokens(id: number): Promise<void> {
     [id]
   );
 }
-
