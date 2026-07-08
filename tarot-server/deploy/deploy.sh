@@ -9,7 +9,7 @@
 #   ./deploy.sh nginx        安装站点配置 + 首次自动签发证书 + 校验重载
 #   ./deploy.sh              全流程：check → backend → 发布前端 dist → nginx → health
 #
-# 可用环境变量覆盖：DOMAIN BACKEND_PORT PM2_NAME DIST_TARGET WEB_DIR
+# 可用环境变量覆盖：DOMAIN BACKEND_PORT PM2_NAME PM2_LEGACY_NAMES STOP_BACKEND_PORT_HOLDERS DIST_TARGET WEB_DIR
 #                    NGINX_CONF_DST CERTBOT_EMAIL SMTP_USER BUILD_FRONTEND_ON_SERVER
 set -euo pipefail
 
@@ -17,6 +17,8 @@ set -euo pipefail
 DOMAIN="${DOMAIN:-tarot.zaopic.cn}"
 BACKEND_PORT="${BACKEND_PORT:-5174}"
 PM2_NAME="${PM2_NAME:-tarot-api}"
+PM2_LEGACY_NAMES="${PM2_LEGACY_NAMES:-tarot-server tarot-backend tarot-app tarot-api-prod tarot-server-prod tarot-clone}"
+STOP_BACKEND_PORT_HOLDERS="${STOP_BACKEND_PORT_HOLDERS:-true}"
 DIST_TARGET="${DIST_TARGET:-/var/www/${DOMAIN}/dist}"
 CERTBOT_EMAIL="${CERTBOT_EMAIL:-you@qq.com}"
 SMTP_USER_DEFAULT="${SMTP_USER:-you@qq.com}"
@@ -142,12 +144,83 @@ check_envfile(){
   ok ".env 关键项齐全"
 }
 
+# ---------------- PM2 旧后端清理 ----------------
+pm2_delete_if_exists(){
+  local name="$1"
+  [ "$name" = "$PM2_NAME" ] && return 0
+  if pm2 describe "$name" >/dev/null 2>&1; then
+    warn "发现旧 PM2 后端进程：$name，删除后统一使用 $PM2_NAME"
+    pm2 delete "$name" >/dev/null 2>&1 || warn "删除旧进程失败：$name"
+  fi
+}
+
+cleanup_legacy_backend_pm2(){
+  info "清理旧后端 PM2 进程"
+  local name
+  for name in $PM2_LEGACY_NAMES; do
+    pm2_delete_if_exists "$name"
+  done
+
+  if [ "${STOP_BACKEND_PORT_HOLDERS}" != "true" ]; then
+    warn "STOP_BACKEND_PORT_HOLDERS=false，跳过同端口/同项目 PM2 清理"
+    return 0
+  fi
+
+  local ids
+  ids="$(
+    PM2_NAME="$PM2_NAME" BACKEND_PORT="$BACKEND_PORT" SERVER_DIR="$SERVER_DIR" node - <<'NODE' 2>/dev/null || true
+const { execSync } = require('node:child_process');
+const path = require('node:path');
+
+const targetName = process.env.PM2_NAME;
+const targetPort = String(process.env.BACKEND_PORT || '');
+const serverDir = path.resolve(process.env.SERVER_DIR || '');
+
+let list = [];
+try {
+  list = JSON.parse(execSync('pm2 jlist', { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }));
+} catch {
+  process.exit(0);
+}
+
+for (const proc of list) {
+  const env = proc.pm2_env || {};
+  const name = env.name || proc.name;
+  if (!name || name === targetName) continue;
+
+  const pmId = env.pm_id ?? proc.pm_id;
+  const cwd = env.pm_cwd ? path.resolve(env.pm_cwd) : '';
+  const execPath = env.pm_exec_path ? path.resolve(env.pm_exec_path) : '';
+  const port = String(env.env?.PORT || env.PORT || '');
+
+  const sameProject = cwd === serverDir || execPath === path.join(serverDir, 'dist', 'index.js');
+  const samePort = targetPort && port === targetPort;
+  if ((sameProject || samePort) && pmId !== undefined) {
+    console.log(pmId);
+  }
+}
+NODE
+  )"
+
+  if [ -z "$ids" ]; then
+    ok "未发现需要清理的旧 PM2 后端进程"
+    return 0
+  fi
+
+  local id
+  for id in $ids; do
+    warn "删除重复 PM2 后端进程 id=$id，避免部署后启动多个 server"
+    pm2 delete "$id" >/dev/null 2>&1 || warn "删除重复进程失败：id=$id"
+  done
+}
+
 # ---------------- 部署后端 ----------------
 deploy_backend(){
   info "部署后端（build + pm2）"
   cd "$SERVER_DIR"
   npm ci
   npm run build
+  cleanup_legacy_backend_pm2
   if pm2 describe "$PM2_NAME" >/dev/null 2>&1; then
     pm2 reload "$PM2_NAME" --update-env
   else

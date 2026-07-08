@@ -19,6 +19,29 @@ export const PUBLIC_OSS_ASSET_ORIGIN = (
 const PUBLIC_UPLOADS_ORIGIN = (import.meta.env.VITE_PUBLIC_UPLOADS_ORIGIN as string | undefined)?.replace(/\/$/, '')
 let uploadFallbackInstalled = false
 
+function uploadedAssetPath(value: string): string | null {
+  if (value.startsWith('/uploads/')) return value
+  if (!/^https?:\/\//i.test(value)) return null
+
+  try {
+    const url = new URL(value)
+    if (!url.pathname.startsWith('/uploads/')) return null
+    if (PUBLIC_UPLOADS_ORIGIN && url.origin === PUBLIC_UPLOADS_ORIGIN) return null
+
+    const sameSiteOrigins = [
+      typeof window !== 'undefined' ? window.location.origin : '',
+      import.meta.env.VITE_PUBLIC_APP_ORIGIN as string | undefined,
+      import.meta.env.VITE_PUBLIC_API_ORIGIN as string | undefined,
+    ]
+      .filter(Boolean)
+      .map((origin) => String(origin).replace(/\/$/, ''))
+
+    return sameSiteOrigins.includes(url.origin) ? `${url.pathname}${url.search}${url.hash}` : null
+  } catch {
+    return null
+  }
+}
+
 export function ossAssetUrl(path: string): string {
   const s = String(path).trim()
   if (!s) return ''
@@ -29,8 +52,9 @@ export function ossAssetUrl(path: string): string {
 export function publicAssetUrl(relative: string | null | undefined): string {
   if (relative == null || relative === '') return ''
   const s = String(relative).trim()
+  const uploadPath = uploadedAssetPath(s)
+  if (uploadPath) return PUBLIC_UPLOADS_ORIGIN ? `${PUBLIC_UPLOADS_ORIGIN}${uploadPath}` : uploadPath
   if (/^https?:\/\//i.test(s)) return s
-  if (s.startsWith('/uploads/')) return PUBLIC_UPLOADS_ORIGIN ? `${PUBLIC_UPLOADS_ORIGIN}${s}` : s
   if (import.meta.env.DEV && s.startsWith('/')) return s
   const origin = (import.meta.env.VITE_PUBLIC_API_ORIGIN as string | undefined)?.replace(/\/$/, '')
   if (origin && s.startsWith('/')) return `${origin}${s}`
