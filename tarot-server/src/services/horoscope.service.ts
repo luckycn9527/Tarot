@@ -19,14 +19,18 @@ const SIGN_NAMES: Record<string, string> = {
 };
 
 export const ZODIAC_SIGNS = Object.keys(SIGN_NAMES);
+export type HoroscopePeriod = 'today' | 'tomorrow' | 'week';
 
 export interface HoroscopeResult {
   sign: string;
   date: string;
+  period: HoroscopePeriod;
   summary: string;
   overallScore: number;
   sections: { overall: string; love: string; career: string; wealth: string; health: string };
   ratings: { overall: number; love: number; career: number; wealth: number; health: number };
+  energy: { mood: number; action: number; social: number; intuition: number };
+  advice: { do: string; avoid: string; mantra: string; keyword: string };
   luckyColor: string;
   luckyNumber: number;
   /** 数据来源：source = 基于外部实时原文翻译扩展；ai = 纯 AI 生成兜底 */
@@ -38,14 +42,42 @@ const memoryCache = new Map<string, HoroscopeResult>();
 
 const HOROSCOPE_SOURCE_BASE = 'https://horoscope-app-api.vercel.app/api/v1/get-horoscope/daily';
 
-function todayStr(): string {
-  return new Date().toISOString().slice(0, 10);
+const PERIOD_LABELS: Record<HoroscopePeriod, string> = {
+  today: '今日',
+  tomorrow: '明日',
+  week: '本周',
+};
+
+function formatDate(date: Date): string {
+  return date.toISOString().slice(0, 10);
+}
+
+function dateLabel(period: HoroscopePeriod): string {
+  const start = new Date();
+  if (period === 'tomorrow') {
+    start.setDate(start.getDate() + 1);
+    return formatDate(start);
+  }
+  if (period === 'week') {
+    const end = new Date(start);
+    end.setDate(end.getDate() + 6);
+    return `${formatDate(start)} 至 ${formatDate(end)}`;
+  }
+  return formatDate(start);
+}
+
+function normalizePeriod(value: unknown): HoroscopePeriod {
+  const raw = String(value || '').trim().toLowerCase();
+  if (raw === 'tomorrow' || raw === 'week') return raw;
+  return 'today';
 }
 
 /** 拉取外部英文原文（失败返回 null，不阻断主流程，由 AI 兜底） */
-async function fetchSourceHoroscope(sign: string, timeoutMs = 12000): Promise<string | null> {
+async function fetchSourceHoroscope(sign: string, period: HoroscopePeriod, timeoutMs = 12000): Promise<string | null> {
+  if (period === 'week') return null;
   const signCapitalized = sign.charAt(0).toUpperCase() + sign.slice(1);
-  const url = `${HOROSCOPE_SOURCE_BASE}?sign=${encodeURIComponent(signCapitalized)}&day=TODAY`;
+  const day = period === 'tomorrow' ? 'TOMORROW' : 'TODAY';
+  const url = `${HOROSCOPE_SOURCE_BASE}?sign=${encodeURIComponent(signCapitalized)}&day=${day}`;
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
   try {
@@ -68,6 +100,12 @@ function clampRating(v: unknown): number {
   return Math.max(1, Math.min(5, n));
 }
 
+function clampPercent(v: unknown, fallback: number): number {
+  const n = Math.round(Number(v));
+  if (!Number.isFinite(n)) return fallback;
+  return Math.max(0, Math.min(100, n));
+}
+
 function parseJsonObject(text: string): Record<string, unknown> {
   let cleaned = text.trim();
   if (cleaned.startsWith('```json')) cleaned = cleaned.slice(7).trim();
@@ -86,17 +124,18 @@ function str(v: unknown, fallback = ''): string {
 }
 
 /**
- * 获取某星座的今日运势。
- * 内容与用户无关、按 (星座, 日期) 缓存：每天每个星座至多生成一次，
- * 因此即便接口公开，对 AI 的调用上限也被限制为「12 次/天」。
+ * 获取某星座的周期运势。
+ * 内容与用户无关、按 (星座, 周期, 日期) 缓存，避免重复调用 AI。
  */
-export async function getHoroscope(signRaw: string): Promise<HoroscopeResult> {
+export async function getHoroscope(signRaw: string, periodRaw: unknown = 'today'): Promise<HoroscopeResult> {
   const sign = String(signRaw || '').trim().toLowerCase();
   const signName = SIGN_NAMES[sign];
   if (!signName) throw new Error('无效的星座');
 
-  const date = todayStr();
-  const cacheKey = `horoscope:v2:${sign}:${date}`;
+  const period = normalizePeriod(periodRaw);
+  const date = dateLabel(period);
+  const periodLabel = PERIOD_LABELS[period];
+  const cacheKey = `horoscope:v3:${sign}:${period}:${date}`;
 
   const mem = memoryCache.get(cacheKey);
   if (mem) return mem;
@@ -108,13 +147,13 @@ export async function getHoroscope(signRaw: string): Promise<HoroscopeResult> {
   }
 
   // 1) 拉取外部实时英文原文（失败则为 null，由 AI 纯生成兜底）
-  const sourceText = await fetchSourceHoroscope(sign);
+  const sourceText = await fetchSourceHoroscope(sign, period);
 
   // 2) DeepSeek 翻译 + 扩展为结构化中文
   const responseText = await callDeepSeek(
     [
       { role: 'system', content: SYSTEM_PROMPT },
-      { role: 'user', content: buildHoroscopePrompt(signName, date, sourceText ?? undefined) },
+      { role: 'user', content: buildHoroscopePrompt(signName, date, sourceText ?? undefined, periodLabel) },
     ],
     45000,
     1200,
@@ -123,6 +162,8 @@ export async function getHoroscope(signRaw: string): Promise<HoroscopeResult> {
   const data = parseJsonObject(responseText);
   const sectionsRaw = (data.sections ?? {}) as Record<string, unknown>;
   const ratingsRaw = (data.ratings ?? {}) as Record<string, unknown>;
+  const energyRaw = (data.energy ?? {}) as Record<string, unknown>;
+  const adviceRaw = (data.advice ?? {}) as Record<string, unknown>;
 
   const ratings = {
     overall: clampRating(ratingsRaw.overall),
@@ -144,7 +185,8 @@ export async function getHoroscope(signRaw: string): Promise<HoroscopeResult> {
   const result: HoroscopeResult = {
     sign,
     date,
-    summary: str(data.summary, '今日能量平稳，宜顺势而为。'),
+    period,
+    summary: str(data.summary, `${periodLabel}能量平稳，宜顺势而为。`),
     overallScore,
     sections: {
       overall: str(sectionsRaw.overall, '整体平稳，适合按部就班地推进既定计划。'),
@@ -154,6 +196,18 @@ export async function getHoroscope(signRaw: string): Promise<HoroscopeResult> {
       health: str(sectionsRaw.health, '注意作息与休息，给身心留出余地。'),
     },
     ratings,
+    energy: {
+      mood: clampPercent(energyRaw.mood, ratings.love * 18),
+      action: clampPercent(energyRaw.action, ratings.career * 18),
+      social: clampPercent(energyRaw.social, ratings.overall * 18),
+      intuition: clampPercent(energyRaw.intuition, ratings.health * 18),
+    },
+    advice: {
+      do: str(adviceRaw.do, '先处理最确定的一件事'),
+      avoid: str(adviceRaw.avoid, '避免被临时情绪带节奏'),
+      mantra: str(adviceRaw.mantra, '慢一点，判断会更清楚'),
+      keyword: str(adviceRaw.keyword, '稳住'),
+    },
     luckyColor: str(data.luckyColor, '靛蓝'),
     luckyNumber: (() => {
       const n = Math.round(Number(data.luckyNumber));
@@ -163,8 +217,8 @@ export async function getHoroscope(signRaw: string): Promise<HoroscopeResult> {
   };
 
   memoryCache.set(cacheKey, result);
-  // Redis 缓存 26 小时，跨越当日；内存缓存随进程生命周期
-  await cacheSet(cacheKey, result, 26 * 3600);
+  // Redis 缓存：日运跨越当日，周运缓存更久；内存缓存随进程生命周期
+  await cacheSet(cacheKey, result, period === 'week' ? 7 * 24 * 3600 : 26 * 3600);
 
   return result;
 }

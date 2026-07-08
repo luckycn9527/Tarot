@@ -15,6 +15,10 @@ import TrendingUp from '@icons/trending-up.vue'
 import Trash2 from '@icons/trash-2.vue'
 import ChevronDown from '@icons/chevron-down.vue'
 import LogOut from '@icons/log-out.vue'
+import RefreshCw from '@icons/refresh-cw.vue'
+import SaveIcon from '@icons/save.vue'
+import PlusIcon from '@icons/plus.vue'
+import SearchIcon from '@icons/search.vue'
 import adminApi, { setAdminToken } from '../../services/adminApi'
 import { publicAssetUrl } from '../../utils/publicAssetUrl'
 import { formatAdminApiError } from '../../utils/adminApiError'
@@ -83,6 +87,81 @@ const userPageSize = 15
 const userKeyword = ref('')
 const editUser = ref<Record<string, unknown> | null>(null)
 const userForm = ref({ nickname: '', membership: 'free', remaining_free_quota: 0, membership_expires_at: '' })
+const userFormIsVip = computed(() => userForm.value.membership === 'vip')
+const MS_PER_DAY = 24 * 60 * 60 * 1000
+
+function toLocalDateInput(date: Date): string {
+  const y = date.getFullYear()
+  const m = String(date.getMonth() + 1).padStart(2, '0')
+  const d = String(date.getDate()).padStart(2, '0')
+  return `${y}-${m}-${d}`
+}
+
+function parseAdminDate(value: unknown): Date | null {
+  if (!value) return null
+  const raw = String(value)
+  const date = new Date(/^\d{4}-\d{2}-\d{2}$/.test(raw) ? `${raw}T23:59:59.999` : raw)
+  return Number.isNaN(date.getTime()) ? null : date
+}
+
+function formatAdminDate(value: unknown): string {
+  const raw = value ? String(value) : ''
+  return raw.includes('T') ? raw.slice(0, 10) : raw.slice(0, 10)
+}
+
+function isActiveVipUser(u: Record<string, unknown> | null | undefined): boolean {
+  if (!u || u.membership !== 'vip') return false
+  const expiresAt = parseAdminDate(u.membership_expires_at)
+  return Boolean(expiresAt && expiresAt.getTime() > Date.now())
+}
+
+function adminMembershipLabel(u: Record<string, unknown> | null | undefined): string {
+  if (isActiveVipUser(u)) return t('pages.admin.membershipVipActive')
+  if (u?.membership === 'vip') return t('pages.admin.membershipVipInactive')
+  return t('pages.admin.membershipFree')
+}
+
+function adminMembershipClass(u: Record<string, unknown> | null | undefined): string {
+  if (isActiveVipUser(u)) return 'bg-amber-500/15 text-amber-300 border-amber-500/25'
+  if (u?.membership === 'vip') return 'bg-rose-500/10 text-rose-300 border-rose-500/20'
+  return 'bg-gray-500/10 text-gray-500 border-gray-500/15'
+}
+
+function adminQuotaText(u: Record<string, unknown>): string {
+  if (isActiveVipUser(u)) return t('pages.admin.quotaUnlimited')
+  return String(u.remaining_free_quota ?? 0)
+}
+
+function adminQuotaClass(u: Record<string, unknown>): string {
+  return isActiveVipUser(u)
+    ? 'bg-violet-500/12 text-violet-200 border-violet-400/20'
+    : 'bg-white/5 text-gray-400 border-white/8'
+}
+
+function clearUserSearch() {
+  userKeyword.value = ''
+  userPage.value = 1
+  void fetchUsers()
+}
+
+function setVipExpiryDays(days: number) {
+  const target = new Date(Date.now() + days * MS_PER_DAY)
+  userForm.value.membership_expires_at = toLocalDateInput(target)
+}
+
+function clearVipExpiry() {
+  userForm.value.membership_expires_at = ''
+}
+
+const vipExpiryStatus = computed(() => {
+  if (!userForm.value.membership_expires_at) return t('pages.admin.vipNoExpiry')
+  const expiresAt = parseAdminDate(userForm.value.membership_expires_at)
+  if (!expiresAt) return t('pages.admin.vipNoExpiry')
+  if (expiresAt.getTime() <= Date.now()) {
+    return t('pages.admin.vipExpiredOn', { date: formatAdminDate(userForm.value.membership_expires_at) })
+  }
+  return t('pages.admin.vipExpiresOn', { date: formatAdminDate(userForm.value.membership_expires_at) })
+})
 
 async function fetchUsers() {
   const token = fetchEpoch.begin('users')
@@ -187,7 +266,7 @@ async function saveUser() {
   try {
     await adminApi.patch(`/users/${editUser.value.id}`, {
       ...userForm.value,
-      membership_expires_at: userForm.value.membership_expires_at ? `${userForm.value.membership_expires_at}T00:00:00.000Z` : null,
+      membership_expires_at: userForm.value.membership_expires_at ? `${userForm.value.membership_expires_at}T23:59:59.999Z` : null,
     })
     showToast(t('pages.admin.toastUserUpdated'))
     editUser.value = null
@@ -301,6 +380,9 @@ const filteredCards = computed(() => {
   const kw = cardSearch.value.toLowerCase()
   return cards.value.filter((c) => String(c.name ?? '').toLowerCase().includes(kw) || String(c.name_en ?? '').toLowerCase().includes(kw) || String(c.id) === kw)
 })
+function clearCardSearch() {
+  cardSearch.value = ''
+}
 async function saveCards() {
   setTabLoading('cards', true)
   try {
@@ -335,6 +417,8 @@ interface ReaderPromptRow {
 }
 
 const prompts = ref<ReaderPromptRow[]>([])
+const promptSearch = ref('')
+const promptAccessFilter = ref<'all' | 'featured' | 'vip' | 'free' | 'default' | 'needsAvatar'>('all')
 
 interface FeaturedReaderRow {
   readerCode: string
@@ -365,6 +449,15 @@ function readerLocalizedName(code: string): string {
 }
 const expandedPrompt = ref<string | null>(null)
 
+const promptFilterOptions = computed(() => [
+  { value: 'all', label: t('pages.admin.promptFilterAll') },
+  { value: 'featured', label: t('pages.admin.promptFilterFeatured') },
+  { value: 'vip', label: t('pages.admin.promptFilterVip') },
+  { value: 'free', label: t('pages.admin.promptFilterFree') },
+  { value: 'default', label: t('pages.admin.promptFilterDefault') },
+  { value: 'needsAvatar', label: t('pages.admin.promptFilterNeedsAvatar') },
+] as const)
+
 function ensurePromptRow(code: string): ReaderPromptRow {
   let p = prompts.value.find((x) => x.readerCode === code)
   if (!p) {
@@ -390,9 +483,124 @@ function promptRow(code: string): ReaderPromptRow {
   return ensurePromptRow(code)
 }
 
+function promptDisplayName(code: string): string {
+  const row = promptRow(code)
+  return (row.displayName || '').trim() || row.defaultDisplayName || readerLocalizedName(code)
+}
+
+function promptAvatarUrl(code: string): string {
+  const row = promptRow(code)
+  return String(row.avatarThumbUrl || row.avatarUrl || '')
+}
+
+function promptAccessValue(code: string): 'default' | 'free' | 'vip' {
+  const access = String(promptRow(code).accessLevel || '')
+  if (access === 'free' || access === 'vip') return access
+  return 'default'
+}
+
+function promptAccessLabel(code: string): string {
+  const access = promptAccessValue(code)
+  if (access === 'vip') return t('pages.admin.accessVip')
+  if (access === 'free') return t('pages.admin.accessFree')
+  return t('pages.admin.accessFollowBuiltinShort')
+}
+
+function promptAccessClass(code: string): string {
+  const access = promptAccessValue(code)
+  if (access === 'vip') return 'bg-violet-500/12 text-violet-200 border-violet-400/20'
+  if (access === 'free') return 'bg-emerald-500/12 text-emerald-300 border-emerald-400/20'
+  return 'bg-white/5 text-gray-500 border-white/8'
+}
+
+function isFeaturedReader(code: string): boolean {
+  return featuredRow(code).isActive === true
+}
+
+function hasCustomPromptConfig(code: string): boolean {
+  const row = promptRow(code)
+  return Boolean(
+    row.displayName?.trim()
+    || row.avatarUrl?.trim()
+    || row.emoji?.trim()
+    || row.accessLevel?.trim()
+    || row.systemPrompt?.trim()
+    || row.greeting?.trim(),
+  )
+}
+
+const promptStats = computed(() => {
+  const codes = readerMeta.map((r) => r.code)
+  return {
+    total: codes.length,
+    featured: codes.filter((code) => isFeaturedReader(code)).length,
+    vip: codes.filter((code) => promptAccessValue(code) === 'vip').length,
+    avatar: codes.filter((code) => Boolean(promptAvatarUrl(code))).length,
+    custom: codes.filter((code) => hasCustomPromptConfig(code)).length,
+  }
+})
+
+const filteredReaderMeta = computed(() => {
+  const keyword = promptSearch.value.trim().toLowerCase()
+  return readerMeta.filter((reader) => {
+    const code = reader.code
+    const access = promptAccessValue(code)
+    const matchesKeyword = !keyword
+      || code.toLowerCase().includes(keyword)
+      || promptDisplayName(code).toLowerCase().includes(keyword)
+
+    const filter = promptAccessFilter.value
+    const matchesFilter = filter === 'all'
+      || (filter === 'featured' && isFeaturedReader(code))
+      || (filter === 'vip' && access === 'vip')
+      || (filter === 'free' && access === 'free')
+      || (filter === 'default' && access === 'default')
+      || (filter === 'needsAvatar' && !promptAvatarUrl(code))
+
+    return matchesKeyword && matchesFilter
+  })
+})
+
+const featuredReaderMeta = computed(() => (
+  readerMeta
+    .filter((reader) => isFeaturedReader(reader.code))
+    .slice()
+    .sort((a, b) => Number(featuredRow(a.code).sortOrder || 0) - Number(featuredRow(b.code).sortOrder || 0))
+))
+
+const selectedReaderCode = computed(() => expandedPrompt.value)
+
+function clearPromptFilters() {
+  promptSearch.value = ''
+  promptAccessFilter.value = 'all'
+}
+
+function selectPromptReader(code: string) {
+  expandedPrompt.value = code
+}
+
+function selectFirstFilteredReader() {
+  const first = filteredReaderMeta.value[0]
+  if (first) expandedPrompt.value = first.code
+}
+
+function collapsePromptReader() {
+  expandedPrompt.value = null
+}
+
 watch(expandedPrompt, (code) => {
   if (code) ensurePromptRow(code)
 })
+
+watch(filteredReaderMeta, (list) => {
+  if (!list.length) {
+    expandedPrompt.value = null
+    return
+  }
+  if (!expandedPrompt.value || !list.some((reader) => reader.code === expandedPrompt.value)) {
+    expandedPrompt.value = list[0].code
+  }
+}, { immediate: true })
 
 async function fetchPrompts(opts?: { skipLoading?: boolean }) {
   const token = fetchEpoch.begin('prompts')
@@ -632,6 +840,44 @@ const tabs = computed(() => [
   { key: 'feedback' as TabKey, label: t('pages.admin.tabFeedback') },
 ])
 
+const activeTabMeta = computed(() => (
+  tabs.value.find((tab) => tab.key === activeTab.value)
+  ?? { key: 'overview' as TabKey, label: t('pages.admin.tabOverview') }
+))
+const activeTabLoading = computed(() => tabLoading.value[activeTab.value])
+const activeTabDescription = computed(() => {
+  const descriptions: Record<TabKey, string> = {
+    overview: t('pages.admin.descOverview'),
+    users: t('pages.admin.descUsers'),
+    backs: t('pages.admin.descBacks'),
+    cards: t('pages.admin.descCards'),
+    prompts: t('pages.admin.descPrompts'),
+    feedback: t('pages.admin.descFeedback'),
+  }
+  return descriptions[activeTab.value]
+})
+
+function tabBadge(tab: TabKey): string {
+  if (tab === 'users' && userTotal.value > 0) return String(userTotal.value)
+  if (tab === 'backs' && cardBacks.value.length > 0) return String(cardBacks.value.length)
+  if (tab === 'cards' && cards.value.length > 0) return String(cards.value.length)
+  if (tab === 'feedback' && stats.value.pendingFeedback > 0) return String(stats.value.pendingFeedback)
+  return ''
+}
+
+async function refreshCurrentTab() {
+  if (activeTab.value === 'overview') return fetchStats()
+  if (activeTab.value === 'users') return fetchUsers()
+  if (activeTab.value === 'backs') return fetchCardBacks()
+  if (activeTab.value === 'cards') return fetchCards()
+  if (activeTab.value === 'prompts') {
+    await fetchPrompts()
+    await fetchFeatured()
+    return
+  }
+  return fetchFeedback()
+}
+
 const adminShortcuts = computed(() => [
   { tab: 'users' as TabKey, label: t('pages.admin.shortcutUsers'), desc: t('pages.admin.shortcutUsersDesc') },
   { tab: 'backs' as TabKey, label: t('pages.admin.shortcutBacks'), desc: t('pages.admin.shortcutBacksDesc') },
@@ -694,6 +940,9 @@ function cardBackRowKey(b: Record<string, unknown>, index: number): string {
             :class="activeTab === tab.key ? 'text-gold-300' : 'text-gray-500'"
           />
           <span>{{ tab.label }}</span>
+          <span v-if="tabBadge(tab.key)" class="ml-auto rounded-md border border-white/8 bg-white/5 px-1.5 py-0.5 text-[10px] text-gray-500">
+            {{ tabBadge(tab.key) }}
+          </span>
         </button>
       </nav>
       <div class="px-5 py-4 border-t border-gold-500/8 text-xs">
@@ -707,9 +956,40 @@ function cardBackRowKey(b: Record<string, unknown>, index: number): string {
 
     <!-- Main -->
     <div class="flex-1 flex flex-col min-w-0">
-      <header class="h-14 px-6 border-b border-gold-500/8 flex items-center justify-between flex-shrink-0 bg-[#0c0a16]/50">
-        <h2 class="text-base font-medium text-gold-200">{{ tabs.find((tab) => tab.key === activeTab)?.label }}</h2>
-        <span class="text-xs text-gray-600">{{ t('pages.admin.headerSubtitle') }}</span>
+      <header class="admin-topbar">
+        <div class="min-w-0">
+          <div class="flex items-center gap-2">
+            <component :is="tabIconComponents[activeTab]" :size="18" class="text-gold-300" />
+            <h2 class="truncate text-base font-medium text-gold-200">{{ activeTabMeta.label }}</h2>
+          </div>
+          <p class="mt-1 max-w-2xl truncate text-xs text-gray-600">{{ activeTabDescription }}</p>
+        </div>
+        <div class="flex flex-wrap items-center justify-end gap-2">
+          <button type="button" class="admin-btn-ghost inline-flex items-center gap-1.5" :disabled="activeTabLoading" @click="refreshCurrentTab">
+            <RefreshCw :size="14" :class="activeTabLoading ? 'motion-safe:animate-spin' : ''" />
+            {{ t('pages.admin.refresh') }}
+          </button>
+          <button v-if="activeTab === 'users'" type="button" class="admin-btn-primary inline-flex items-center gap-1.5" :disabled="tabLoading.users" @click="userPage = 1; fetchUsers()">
+            <SearchIcon :size="14" />
+            {{ t('pages.admin.search') }}
+          </button>
+          <button v-if="activeTab === 'backs'" type="button" class="admin-btn-ghost inline-flex items-center gap-1.5" :disabled="tabLoading.backs" @click="addCardBack">
+            <PlusIcon :size="14" />
+            {{ t('pages.admin.addBackShort') }}
+          </button>
+          <button v-if="activeTab === 'backs'" type="button" class="admin-btn-primary inline-flex items-center gap-1.5" :disabled="tabLoading.backs" @click="saveCardBacks">
+            <SaveIcon :size="14" />
+            {{ tabLoading.backs ? t('pages.admin.saving') : t('pages.admin.saveBacksShort') }}
+          </button>
+          <button v-if="activeTab === 'cards'" type="button" class="admin-btn-primary inline-flex items-center gap-1.5" :disabled="tabLoading.cards" @click="saveCards">
+            <SaveIcon :size="14" />
+            {{ tabLoading.cards ? t('pages.admin.saving') : t('pages.admin.saveCardsShort') }}
+          </button>
+          <button v-if="activeTab === 'prompts'" type="button" class="admin-btn-primary inline-flex items-center gap-1.5" :disabled="tabLoading.prompts" @click="saveFeatured">
+            <SaveIcon :size="14" />
+            {{ tabLoading.prompts ? t('pages.admin.saving') : t('pages.admin.saveFeaturedShort') }}
+          </button>
+        </div>
       </header>
 
       <!-- Toast -->
@@ -795,13 +1075,26 @@ function cardBackRowKey(b: Record<string, unknown>, index: number): string {
           :aria-label="t('pages.admin.tabUsers')"
         >
           <p v-if="tabLoading.users" class="sr-only">{{ t('pages.admin.tabSectionLoading') }}</p>
-          <div class="flex items-center gap-3 mb-4">
-            <input v-model="userKeyword" class="admin-input flex-1 max-w-xs" :placeholder="t('pages.admin.userSearchPh')" :disabled="tabLoading.users" @keyup.enter="userPage = 1; fetchUsers()" />
-            <button type="button" class="admin-btn-primary" :disabled="tabLoading.users" @click="userPage = 1; fetchUsers()">{{ t('pages.admin.search') }}</button>
+          <div class="admin-section-toolbar mb-4">
+            <div class="relative flex-1 max-w-sm">
+              <SearchIcon :size="14" class="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-gray-600" />
+              <input v-model="userKeyword" class="admin-input w-full pl-9 pr-20" :placeholder="t('pages.admin.userSearchPh')" :disabled="tabLoading.users" @keyup.enter="userPage = 1; fetchUsers()" />
+              <button v-if="userKeyword" type="button" class="absolute right-2 top-1/2 -translate-y-1/2 text-xs text-gray-500 hover:text-gray-300" @click="clearUserSearch">
+                {{ t('pages.admin.clearSearch') }}
+              </button>
+            </div>
+            <span class="text-xs text-gray-600">{{ t('pages.admin.totalRows', { n: userTotal }) }}</span>
           </div>
-          <div class="admin-table-wrap">
+          <div class="admin-config-panel admin-users-note mb-4">
+            <div>
+              <p class="text-sm font-medium text-gold-100">{{ t('pages.admin.userQuotaRuleTitle') }}</p>
+              <p class="mt-1 text-xs leading-relaxed text-gray-500">{{ t('pages.admin.userQuotaRuleBody') }}</p>
+            </div>
+            <span class="admin-badge bg-violet-500/12 text-violet-200 border-violet-400/20">{{ t('pages.admin.quotaUnlimited') }}</span>
+          </div>
+          <div class="admin-table-wrap max-h-[62vh]">
             <table class="w-full text-sm" :aria-label="t('pages.admin.tabUsers')">
-              <thead><tr class="text-left text-gray-500 border-b border-gold-500/8 text-xs">
+              <thead class="sticky top-0 bg-[#0c0a16] z-10"><tr class="text-left text-gray-500 border-b border-gold-500/8 text-xs">
                 <th class="px-4 py-3">{{ t('pages.admin.thId') }}</th><th>{{ t('pages.admin.thEmail') }}</th><th>{{ t('pages.admin.thNickname') }}</th><th>{{ t('pages.admin.thAvatar') }}</th><th>{{ t('pages.admin.thMembership') }}</th><th>{{ t('pages.admin.thQuota') }}</th><th>{{ t('pages.admin.thCreated') }}</th><th>{{ t('pages.admin.thAction') }}</th>
               </tr></thead>
               <tbody>
@@ -810,8 +1103,11 @@ function cardBackRowKey(b: Record<string, unknown>, index: number): string {
                   <td class="max-w-[180px] truncate">{{ u.email }}</td>
                   <td>{{ u.nickname }}</td>
                   <td class="text-lg">{{ u.avatar }}</td>
-                  <td><span class="admin-badge" :class="u.membership === 'vip' ? 'bg-amber-500/15 text-amber-400 border-amber-500/20' : 'bg-gray-500/10 text-gray-500 border-gray-500/15'">{{ u.membership }}</span></td>
-                  <td>{{ u.remaining_free_quota }}</td>
+                  <td>
+                    <span class="admin-badge border" :class="adminMembershipClass(u)">{{ adminMembershipLabel(u) }}</span>
+                    <p v-if="u.membership_expires_at" class="mt-1 text-[11px] text-gray-600">{{ formatAdminDate(u.membership_expires_at) }}</p>
+                  </td>
+                  <td><span class="admin-badge border" :class="adminQuotaClass(u)">{{ adminQuotaText(u) }}</span></td>
                   <td class="text-xs text-gray-600">{{ (u.created_at as string)?.slice(0, 10) }}</td>
                   <td><button type="button" class="admin-btn-sm" @click="openEditUser(u, $event)">{{ t('pages.admin.edit') }}</button></td>
                 </tr>
@@ -831,19 +1127,79 @@ function cardBackRowKey(b: Record<string, unknown>, index: number): string {
             <div v-if="editUser" class="admin-modal-overlay" @click.self="editUser = null">
               <div
                 ref="editUserModalEl"
-                class="admin-modal"
+                class="admin-modal admin-modal-wide"
                 role="dialog"
                 aria-modal="true"
                 aria-labelledby="admin-modal-edit-user-title"
                 tabindex="-1"
                 @keydown="onEditUserModalKeydown"
               >
-                <h3 id="admin-modal-edit-user-title" class="text-base font-medium text-gold-200 mb-4">{{ t('pages.admin.editUserTitle') }} #{{ editUser.id }} — {{ editUser.email }}</h3>
-                <div class="space-y-3 text-sm">
-                  <div><label class="admin-label" for="admin-edit-nickname">{{ t('pages.admin.labelNickname') }}</label><input id="admin-edit-nickname" v-model="userForm.nickname" class="admin-input w-full" /></div>
-                  <div><label class="admin-label" for="admin-edit-membership">{{ t('pages.admin.labelMembership') }}</label><select id="admin-edit-membership" v-model="userForm.membership" class="admin-input w-full"><option value="free">free</option><option value="vip">vip</option></select></div>
-                  <div><label class="admin-label" for="admin-edit-quota">{{ t('pages.admin.labelQuota') }}</label><input id="admin-edit-quota" v-model.number="userForm.remaining_free_quota" type="number" min="0" max="999" class="admin-input w-full" /></div>
-                  <div><label class="admin-label" for="admin-edit-expires">{{ t('pages.admin.labelExpires') }}</label><input id="admin-edit-expires" v-model="userForm.membership_expires_at" type="date" class="admin-input w-full" /></div>
+                <div class="mb-5 flex flex-wrap items-start justify-between gap-3">
+                  <div class="min-w-0">
+                    <h3 id="admin-modal-edit-user-title" class="text-base font-medium text-gold-200">{{ t('pages.admin.editUserTitle') }} #{{ editUser.id }}</h3>
+                    <p class="mt-1 truncate text-xs text-gray-500">{{ editUser.email }}</p>
+                  </div>
+                  <span class="admin-badge border" :class="adminMembershipClass(editUser)">{{ adminMembershipLabel(editUser) }}</span>
+                </div>
+                <div class="grid gap-4 text-sm md:grid-cols-2">
+                  <div>
+                    <label class="admin-label" for="admin-edit-nickname">{{ t('pages.admin.labelNickname') }}</label>
+                    <input id="admin-edit-nickname" v-model="userForm.nickname" class="admin-input w-full" />
+                  </div>
+                  <div>
+                    <label class="admin-label" for="admin-edit-membership">{{ t('pages.admin.labelMembership') }}</label>
+                    <div class="admin-segment">
+                      <button
+                        type="button"
+                        class="admin-segment-option"
+                        :class="!userFormIsVip ? 'admin-segment-option-active' : ''"
+                        @click="userForm.membership = 'free'"
+                      >
+                        {{ t('pages.admin.membershipOptionFree') }}
+                      </button>
+                      <button
+                        type="button"
+                        class="admin-segment-option"
+                        :class="userFormIsVip ? 'admin-segment-option-active' : ''"
+                        @click="userForm.membership = 'vip'"
+                      >
+                        {{ t('pages.admin.membershipOptionVip') }}
+                      </button>
+                    </div>
+                  </div>
+                  <div class="admin-config-panel md:col-span-2">
+                    <div class="flex flex-wrap items-center justify-between gap-2">
+                      <div>
+                        <label class="admin-label mb-1" for="admin-edit-expires">{{ t('pages.admin.labelExpires') }}</label>
+                        <p class="text-xs text-gray-500">{{ vipExpiryStatus }}</p>
+                      </div>
+                      <span class="admin-badge border" :class="userFormIsVip ? 'bg-amber-500/15 text-amber-300 border-amber-500/25' : 'bg-gray-500/10 text-gray-500 border-gray-500/15'">
+                        {{ userFormIsVip ? t('pages.admin.vipModeLabel') : t('pages.admin.freeModeLabel') }}
+                      </span>
+                    </div>
+                    <div class="mt-3 grid gap-2 md:grid-cols-[1fr_auto]">
+                      <input id="admin-edit-expires" v-model="userForm.membership_expires_at" type="date" class="admin-input w-full" />
+                      <div class="flex flex-wrap gap-2">
+                        <button type="button" class="admin-btn-ghost" @click="setVipExpiryDays(30)">{{ t('pages.admin.vipExpiryQuick30') }}</button>
+                        <button type="button" class="admin-btn-ghost" @click="setVipExpiryDays(365)">{{ t('pages.admin.vipExpiryQuick365') }}</button>
+                        <button type="button" class="admin-btn-ghost" @click="clearVipExpiry">{{ t('pages.admin.clearExpiry') }}</button>
+                      </div>
+                    </div>
+                    <p class="admin-help mt-3">{{ t('pages.admin.vipQuotaHint') }}</p>
+                  </div>
+                  <div class="admin-config-panel md:col-span-2" :class="userFormIsVip ? 'admin-config-panel-muted' : ''">
+                    <label class="admin-label" for="admin-edit-quota">{{ t('pages.admin.labelQuota') }}</label>
+                    <input
+                      id="admin-edit-quota"
+                      v-model.number="userForm.remaining_free_quota"
+                      type="number"
+                      min="0"
+                      max="999"
+                      class="admin-input w-full"
+                      :disabled="userFormIsVip"
+                    />
+                    <p class="admin-help mt-2">{{ t('pages.admin.quotaFreeOnlyHint') }}</p>
+                  </div>
                 </div>
                 <div class="mt-5 flex gap-2 justify-end">
                   <button type="button" class="admin-btn-ghost" @click="editUser = null">{{ t('pages.admin.cancel') }}</button>
@@ -861,9 +1217,9 @@ function cardBackRowKey(b: Record<string, unknown>, index: number): string {
           :aria-label="t('pages.admin.tabBacks')"
         >
           <p v-if="tabLoading.backs" class="sr-only">{{ t('pages.admin.tabSectionLoading') }}</p>
-          <div class="admin-table-wrap">
+          <div class="admin-table-wrap max-h-[66vh]">
             <table class="w-full text-sm" :aria-label="t('pages.admin.tabBacks')">
-              <thead><tr class="text-left text-gray-500 border-b border-gold-500/8 text-xs">
+              <thead class="sticky top-0 bg-[#0c0a16] z-10"><tr class="text-left text-gray-500 border-b border-gold-500/8 text-xs">
                 <th class="px-4 py-3 w-16">{{ t('pages.admin.thPreview') }}</th><th>{{ t('pages.admin.thCode') }}</th><th>{{ t('pages.admin.thName') }}</th><th>{{ t('pages.admin.thDesc') }}</th><th>{{ t('pages.admin.thImage') }}</th><th class="w-24">{{ t('pages.admin.thType') }}</th><th class="w-20">{{ t('pages.admin.thPrice') }}</th><th class="w-14">{{ t('pages.admin.thSort') }}</th><th class="w-12">{{ t('pages.admin.thActive') }}</th><th class="w-12"></th>
               </tr></thead>
               <tbody>
@@ -906,7 +1262,7 @@ function cardBackRowKey(b: Record<string, unknown>, index: number): string {
                       class="admin-inline-input w-16 text-center text-xs"
                       placeholder="¥"
                     />
-                    <span v-else class="text-gray-700 text-xs">—</span>
+                    <span v-else class="text-gray-700 text-xs">-</span>
                   </td>
                   <td class="w-14"><input v-model.number="(b as Record<string,unknown>).sort_order" type="number" class="admin-inline-input w-12 text-center" /></td>
                   <td class="w-12"><input type="checkbox" v-model="(b as Record<string,unknown>).is_active" class="accent-gold-500" /></td>
@@ -932,9 +1288,15 @@ function cardBackRowKey(b: Record<string, unknown>, index: number): string {
           :aria-label="t('pages.admin.tabCards')"
         >
           <p v-if="tabLoading.cards" class="sr-only">{{ t('pages.admin.tabSectionLoading') }}</p>
-          <div class="flex items-center gap-3 mb-4">
-            <input v-model="cardSearch" class="admin-input flex-1 max-w-xs" :placeholder="t('pages.admin.cardSearchPh')" />
-            <button type="button" :disabled="tabLoading.cards" class="admin-btn-primary" @click="saveCards">{{ tabLoading.cards ? t('pages.admin.saving') : t('pages.admin.saveCards') }}</button>
+          <div class="admin-section-toolbar mb-4">
+            <div class="relative flex-1 max-w-sm">
+              <SearchIcon :size="14" class="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-gray-600" />
+              <input v-model="cardSearch" class="admin-input w-full pl-9 pr-20" :placeholder="t('pages.admin.cardSearchPh')" />
+              <button v-if="cardSearch" type="button" class="absolute right-2 top-1/2 -translate-y-1/2 text-xs text-gray-500 hover:text-gray-300" @click="clearCardSearch">
+                {{ t('pages.admin.clearSearch') }}
+              </button>
+            </div>
+            <span class="text-xs text-gray-600">{{ t('pages.admin.cardFilterCount', { shown: filteredCards.length, total: cards.length }) }}</span>
           </div>
           <div class="admin-table-wrap max-h-[65vh]">
             <table class="w-full text-xs" :aria-label="t('pages.admin.tabCards')">
@@ -977,15 +1339,69 @@ function cardBackRowKey(b: Record<string, unknown>, index: number): string {
           :aria-label="t('pages.admin.tabPrompts')"
         >
           <p v-if="tabLoading.prompts" class="sr-only">{{ t('pages.admin.tabSectionLoading') }}</p>
-          <div class="mb-5 rounded-xl border border-gold-500/15 bg-gold-500/5 px-4 py-3 text-sm text-gold-100/90">
+          <div class="grid gap-3 md:grid-cols-4 mb-4">
+            <div class="admin-mini-stat">
+              <span>{{ t('pages.admin.promptStatReaders') }}</span>
+              <strong>{{ promptStats.total }}</strong>
+            </div>
+            <div class="admin-mini-stat">
+              <span>{{ t('pages.admin.promptStatFeatured') }}</span>
+              <strong>{{ promptStats.featured }}</strong>
+            </div>
+            <div class="admin-mini-stat">
+              <span>{{ t('pages.admin.promptStatVip') }}</span>
+              <strong>{{ promptStats.vip }}</strong>
+            </div>
+            <div class="admin-mini-stat">
+              <span>{{ t('pages.admin.promptStatAvatar') }}</span>
+              <strong>{{ promptStats.avatar }}</strong>
+            </div>
+          </div>
+
+          <div class="admin-section-toolbar mb-4">
+            <div class="relative flex-1 max-w-sm">
+              <SearchIcon :size="14" class="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-gray-600" />
+              <input v-model="promptSearch" class="admin-input w-full pl-9 pr-20" :placeholder="t('pages.admin.promptSearchPh')" />
+              <button v-if="promptSearch || promptAccessFilter !== 'all'" type="button" class="absolute right-2 top-1/2 -translate-y-1/2 text-xs text-gray-500 hover:text-gray-300" @click="clearPromptFilters">
+                {{ t('pages.admin.clearSearch') }}
+              </button>
+            </div>
+            <select v-model="promptAccessFilter" class="admin-input">
+              <option v-for="option in promptFilterOptions" :key="option.value" :value="option.value">{{ option.label }}</option>
+            </select>
+            <span class="text-xs text-gray-600">{{ t('pages.admin.promptFilterCount', { shown: filteredReaderMeta.length, total: promptStats.total }) }}</span>
+          </div>
+
+          <div class="mb-5 admin-config-panel">
             <p class="font-medium text-gold-200 mb-1">{{ t('pages.admin.promptsBoxTitle') }}</p>
-            <p class="text-gray-400 text-xs leading-relaxed">
-              {{ t('pages.admin.promptsBoxBody') }}
-            </p>
+            <p class="text-gray-500 text-xs leading-relaxed">{{ t('pages.admin.promptsBoxBody') }}</p>
+          </div>
+
+          <div class="admin-config-panel mb-5">
+            <div class="flex flex-wrap items-center justify-between gap-3">
+              <div>
+                <p class="font-medium text-gold-200 text-sm">{{ t('pages.admin.featuredTitle') }}</p>
+                <p class="text-gray-500 text-xs mt-0.5">{{ t('pages.admin.featuredHintCompact') }}</p>
+              </div>
+              <button type="button" :disabled="tabLoading.prompts" class="admin-btn-primary" @click="saveFeatured">
+                {{ tabLoading.prompts ? t('pages.admin.saving') : t('pages.admin.saveFeatured') }}
+              </button>
+            </div>
+            <div class="mt-3 flex flex-wrap gap-2">
+              <span
+                v-for="r in featuredReaderMeta"
+                :key="`featured-chip-${r.code}`"
+                class="admin-reader-chip"
+              >
+                {{ promptDisplayName(r.code) }}
+                <small>#{{ featuredRow(r.code).sortOrder || 0 }}</small>
+              </span>
+              <span v-if="!featuredReaderMeta.length" class="text-xs text-gray-600">{{ t('pages.admin.featuredEmpty') }}</span>
+            </div>
           </div>
 
           <!-- 推荐热门塔罗师配置 -->
-          <div class="mb-6 rounded-xl border border-gold-500/10 bg-white/[0.02] overflow-hidden">
+          <div v-if="false" class="hidden">
             <div class="px-4 py-3 border-b border-gold-500/8">
               <p class="font-medium text-gold-200 text-sm">{{ t('pages.admin.featuredTitle') }}</p>
               <p class="text-gray-500 text-xs mt-0.5">{{ t('pages.admin.featuredHint') }}</p>
@@ -1045,33 +1461,179 @@ function cardBackRowKey(b: Record<string, unknown>, index: number): string {
             </div>
           </div>
 
-          <div class="space-y-3">
-            <div v-for="r in readerMeta" :key="r.code" class="rounded-xl border border-gold-500/8 bg-white/2 overflow-hidden">
+          <div class="mb-3 flex flex-wrap items-center justify-between gap-2">
+            <p class="text-xs text-gray-500">{{ t('pages.admin.promptListHint') }}</p>
+            <div class="flex gap-2">
+              <button type="button" class="admin-btn-ghost" @click="selectFirstFilteredReader">{{ t('pages.admin.selectFirst') }}</button>
+              <button type="button" class="admin-btn-ghost" @click="collapsePromptReader">{{ t('pages.admin.collapseAll') }}</button>
+            </div>
+          </div>
+
+          <div class="admin-reader-board">
+            <div class="admin-reader-grid">
+              <button
+                v-for="r in filteredReaderMeta"
+                :key="`reader-card-${r.code}`"
+                type="button"
+                class="admin-reader-tile"
+                :class="selectedReaderCode === r.code ? 'admin-reader-tile-active' : ''"
+                @click="selectPromptReader(r.code)"
+              >
+                <span v-if="promptAvatarUrl(r.code)" class="admin-reader-tile-avatar">
+                  <img
+                    :src="publicAssetUrl(promptAvatarUrl(r.code))"
+                    :alt="readerLocalizedName(r.code)"
+                    loading="lazy"
+                    decoding="async"
+                  />
+                </span>
+                <span v-else class="admin-reader-tile-avatar admin-reader-tile-emoji">{{ (promptRow(r.code).emoji || '').trim() || promptRow(r.code).defaultEmoji || r.emoji }}</span>
+                <span class="min-w-0 flex-1 text-left">
+                  <span class="block truncate text-sm font-medium text-gray-200">{{ promptDisplayName(r.code) }}</span>
+                  <span class="block text-xs text-gray-600">{{ r.code }}</span>
+                </span>
+                <span class="admin-reader-tile-badges">
+                  <span class="admin-badge border" :class="promptAccessClass(r.code)">{{ promptAccessLabel(r.code) }}</span>
+                  <span v-if="isFeaturedReader(r.code)" class="admin-badge bg-gold-500/10 text-gold-300 border-gold-500/20">{{ t('pages.admin.featuredIsActive') }}</span>
+                </span>
+              </button>
+              <p v-if="!filteredReaderMeta.length" class="admin-empty-state md:col-span-2 xl:col-span-3">{{ t('pages.admin.promptEmptyFiltered') }}</p>
+            </div>
+
+            <div v-if="selectedReaderCode" class="admin-reader-editor">
+              <div class="flex flex-wrap items-center justify-between gap-3 border-b border-gold-500/8 pb-4">
+                <div class="flex min-w-0 items-center gap-3">
+                  <span v-if="promptAvatarUrl(selectedReaderCode)" class="admin-reader-editor-avatar">
+                    <img
+                      :src="publicAssetUrl(promptAvatarUrl(selectedReaderCode))"
+                      :alt="readerLocalizedName(selectedReaderCode)"
+                      loading="lazy"
+                      decoding="async"
+                    />
+                  </span>
+                  <span v-else class="admin-reader-editor-avatar admin-reader-tile-emoji">{{ (promptRow(selectedReaderCode).emoji || '').trim() || promptRow(selectedReaderCode).defaultEmoji || readerMeta.find((x) => x.code === selectedReaderCode)?.emoji }}</span>
+                  <span class="min-w-0">
+                    <span class="block truncate text-base font-medium text-gold-100">{{ promptDisplayName(selectedReaderCode) }}</span>
+                    <span class="block text-xs text-gray-600">{{ selectedReaderCode }}</span>
+                  </span>
+                </div>
+                <div class="flex flex-wrap gap-1.5">
+                  <span class="admin-badge border" :class="promptAccessClass(selectedReaderCode)">{{ promptAccessLabel(selectedReaderCode) }}</span>
+                  <span v-if="isFeaturedReader(selectedReaderCode)" class="admin-badge bg-gold-500/10 text-gold-300 border-gold-500/20">{{ t('pages.admin.featuredIsActive') }}</span>
+                  <span v-if="hasCustomPromptConfig(selectedReaderCode)" class="admin-badge bg-white/5 text-gray-400 border-white/8">{{ t('pages.admin.promptCustomBadge') }}</span>
+                </div>
+              </div>
+
+              <div class="grid gap-4 pt-4 lg:grid-cols-[280px_1fr]">
+                <div class="space-y-3">
+                  <div class="admin-config-panel">
+                    <div class="flex items-center gap-3">
+                      <span v-if="promptAvatarUrl(selectedReaderCode)" class="admin-reader-editor-avatar">
+                        <img
+                          :src="publicAssetUrl(promptAvatarUrl(selectedReaderCode))"
+                          :alt="readerLocalizedName(selectedReaderCode)"
+                          loading="lazy"
+                          decoding="async"
+                        />
+                      </span>
+                      <span v-else class="admin-reader-editor-avatar admin-reader-tile-emoji">{{ (promptRow(selectedReaderCode).emoji || '').trim() || promptRow(selectedReaderCode).defaultEmoji || readerMeta.find((x) => x.code === selectedReaderCode)?.emoji }}</span>
+                      <label class="admin-btn-sm inline-flex cursor-pointer">
+                        {{ t('pages.admin.uploadAvatar') }}
+                        <input type="file" accept="image/*" class="hidden" @change="uploadReaderAvatar(selectedReaderCode, $event)" />
+                      </label>
+                    </div>
+                  </div>
+                  <div>
+                    <label class="admin-label">{{ t('pages.admin.labelDisplayName') }}</label>
+                    <input v-model="promptRow(selectedReaderCode).displayName" class="admin-input w-full" :placeholder="t('pages.admin.displayNamePh')" />
+                    <p class="text-xs text-gray-600 mt-1">{{ t('pages.admin.builtinDefault') }}<span class="text-gold-500/80">{{ promptRow(selectedReaderCode).defaultDisplayName }}</span></p>
+                  </div>
+                  <div>
+                    <label class="admin-label">{{ t('pages.admin.labelEmoji') }}</label>
+                    <input v-model="promptRow(selectedReaderCode).emoji" class="admin-input w-full" :placeholder="t('pages.admin.emojiPh')" />
+                  </div>
+                  <div>
+                    <label class="admin-label">{{ t('pages.admin.labelAccess') }}</label>
+                    <select v-model="promptRow(selectedReaderCode).accessLevel" class="admin-input w-full">
+                      <option value="">{{ t('pages.admin.accessFollowBuiltin') }}</option>
+                      <option value="free">{{ t('pages.admin.accessFree') }}</option>
+                      <option value="vip">{{ t('pages.admin.accessVip') }}</option>
+                    </select>
+                  </div>
+                  <div class="grid grid-cols-[1fr_76px] gap-2 border-t border-gold-500/8 pt-3">
+                    <label class="flex items-center gap-2 text-sm text-gray-400 cursor-pointer">
+                      <input
+                        v-model="featuredRow(selectedReaderCode).isActive"
+                        type="checkbox"
+                        class="accent-gold-500 w-4 h-4"
+                      />
+                      {{ t('pages.admin.featuredIsActive') }}
+                    </label>
+                    <input
+                      v-model.number="featuredRow(selectedReaderCode).sortOrder"
+                      type="number"
+                      min="0"
+                      max="9999"
+                      class="admin-input text-center"
+                      :aria-label="t('pages.admin.featuredSort')"
+                    />
+                  </div>
+                </div>
+
+                <div class="space-y-3 min-w-0">
+                  <div>
+                    <label class="admin-label">{{ t('pages.admin.labelSystemPrompt') }}</label>
+                    <textarea v-model="promptRow(selectedReaderCode).systemPrompt" rows="11" class="admin-input w-full resize-y font-mono text-xs leading-relaxed"></textarea>
+                  </div>
+                  <div>
+                    <label class="admin-label">{{ t('pages.admin.labelGreeting') }}</label>
+                    <textarea v-model="promptRow(selectedReaderCode).greeting" rows="3" class="admin-input w-full resize-y"></textarea>
+                  </div>
+                  <div class="flex flex-wrap justify-end gap-2">
+                    <button type="button" :disabled="tabLoading.prompts" class="admin-btn-ghost" @click="saveFeatured">{{ tabLoading.prompts ? t('pages.admin.saving') : t('pages.admin.saveFeaturedShort') }}</button>
+                    <button type="button" :disabled="tabLoading.prompts" class="admin-btn-primary" @click="savePrompt(selectedReaderCode)">{{ tabLoading.prompts ? t('pages.admin.saving') : t('pages.admin.saveReader') }}</button>
+                  </div>
+                </div>
+              </div>
+            </div>
+            <p v-else class="admin-empty-state">{{ t('pages.admin.promptEmptyFiltered') }}</p>
+          </div>
+
+          <div v-if="false" class="space-y-3">
+            <div v-for="r in filteredReaderMeta" :key="r.code" class="admin-reader-card">
               <button
                 type="button"
-                class="w-full flex items-center gap-3 px-5 py-4 hover:bg-gold-500/3 transition-colors"
+                class="w-full flex items-center gap-3 px-5 py-4 hover:bg-gold-500/3 transition-colors text-left"
                 :aria-expanded="expandedPrompt === r.code"
                 :aria-controls="promptPanelId(r.code)"
                 @click="onTogglePromptReader(r.code)"
               >
-                <span v-if="promptRow(r.code).avatarUrl" class="w-10 h-10 rounded-xl overflow-hidden flex-shrink-0 ring-1 ring-gold-500/15">
+                <span v-if="promptAvatarUrl(r.code)" class="w-10 h-10 rounded-xl overflow-hidden flex-shrink-0 ring-1 ring-gold-500/15">
                   <img
-                    :src="publicAssetUrl(promptRow(r.code).avatarThumbUrl || promptRow(r.code).avatarUrl)"
+                    :src="publicAssetUrl(promptAvatarUrl(r.code))"
                     :alt="readerLocalizedName(r.code)"
                     class="w-full h-full object-cover"
                     loading="lazy"
                     decoding="async"
                   />
                 </span>
-                <span v-else class="text-2xl">{{ (promptRow(r.code).emoji || '').trim() || promptRow(r.code).defaultEmoji || r.emoji }}</span>
-                <span class="font-medium text-gray-200">{{ (promptRow(r.code).displayName || '').trim() || promptRow(r.code).defaultDisplayName || readerLocalizedName(r.code) }}</span>
-                <span class="text-xs text-gray-600 ml-1">({{ r.code }})</span>
+                <span v-else class="w-10 h-10 rounded-xl bg-white/5 flex items-center justify-center text-xl flex-shrink-0">{{ (promptRow(r.code).emoji || '').trim() || promptRow(r.code).defaultEmoji || r.emoji }}</span>
+                <span class="min-w-0 flex-1">
+                  <span class="block font-medium text-gray-200 truncate">{{ promptDisplayName(r.code) }}</span>
+                  <span class="block text-xs text-gray-600">{{ r.code }}</span>
+                </span>
+                <span class="hidden lg:flex items-center gap-1.5">
+                  <span class="admin-badge border" :class="promptAccessClass(r.code)">{{ promptAccessLabel(r.code) }}</span>
+                  <span v-if="isFeaturedReader(r.code)" class="admin-badge bg-gold-500/10 text-gold-300 border-gold-500/20">{{ t('pages.admin.featuredIsActive') }}</span>
+                  <span v-if="hasCustomPromptConfig(r.code)" class="admin-badge bg-white/5 text-gray-400 border-white/8">{{ t('pages.admin.promptCustomBadge') }}</span>
+                </span>
                 <ChevronDown class="w-4 h-4 ml-auto text-gray-600 transition-transform duration-200" :class="expandedPrompt === r.code ? 'rotate-180' : ''" :size="16" />
               </button>
-              <div v-if="expandedPrompt === r.code" :id="promptPanelId(r.code)" class="px-5 pb-5 space-y-3 border-t border-gold-500/6 pt-4">
-                <div class="flex flex-wrap items-start gap-4 pb-3 border-b border-gold-500/6">
-                  <div class="flex flex-col items-center gap-2">
-                    <div class="w-16 h-16 rounded-xl overflow-hidden bg-white/5 border border-gold-500/10 flex items-center justify-center text-3xl">
+              <div v-if="expandedPrompt === r.code" :id="promptPanelId(r.code)" class="px-5 pb-5 border-t border-gold-500/6 pt-4">
+                <div class="grid gap-4 lg:grid-cols-[280px_1fr]">
+                  <div class="admin-config-panel space-y-3">
+                    <div class="flex items-center gap-3">
+                      <div class="w-16 h-16 rounded-xl overflow-hidden bg-white/5 border border-gold-500/10 flex items-center justify-center text-3xl flex-shrink-0">
                       <img
                         v-if="promptRow(r.code).avatarUrl"
                         :src="publicAssetUrl(promptRow(r.code).avatarThumbUrl || promptRow(r.code).avatarUrl)"
@@ -1082,12 +1644,15 @@ function cardBackRowKey(b: Record<string, unknown>, index: number): string {
                       />
                       <span v-else>{{ (promptRow(r.code).emoji || '').trim() || promptRow(r.code).defaultEmoji || r.emoji }}</span>
                     </div>
-                    <label class="admin-btn-sm cursor-pointer">
-                      {{ t('pages.admin.uploadAvatar') }}
-                      <input type="file" accept="image/*" class="hidden" @change="uploadReaderAvatar(r.code, $event)" />
-                    </label>
-                  </div>
-                  <div class="flex-1 min-w-[200px] space-y-2">
+                      <div class="min-w-0">
+                        <p class="truncate text-sm font-medium text-gray-200">{{ promptDisplayName(r.code) }}</p>
+                        <p class="text-xs text-gray-600">{{ r.code }}</p>
+                        <label class="admin-btn-sm mt-2 inline-flex cursor-pointer">
+                          {{ t('pages.admin.uploadAvatar') }}
+                          <input type="file" accept="image/*" class="hidden" @change="uploadReaderAvatar(r.code, $event)" />
+                        </label>
+                      </div>
+                    </div>
                     <div>
                       <label class="admin-label">{{ t('pages.admin.labelDisplayName') }}</label>
                       <input v-model="promptRow(r.code).displayName" class="admin-input w-full" :placeholder="t('pages.admin.displayNamePh')" />
@@ -1105,21 +1670,43 @@ function cardBackRowKey(b: Record<string, unknown>, index: number): string {
                         <option value="vip">{{ t('pages.admin.accessVip') }}</option>
                       </select>
                     </div>
+                    <div class="grid grid-cols-[1fr_76px] gap-2 border-t border-gold-500/8 pt-3">
+                      <label class="flex items-center gap-2 text-sm text-gray-400 cursor-pointer">
+                        <input
+                          v-model="featuredRow(r.code).isActive"
+                          type="checkbox"
+                          class="accent-gold-500 w-4 h-4"
+                        />
+                        {{ t('pages.admin.featuredIsActive') }}
+                      </label>
+                      <input
+                        v-model.number="featuredRow(r.code).sortOrder"
+                        type="number"
+                        min="0"
+                        max="9999"
+                        class="admin-input text-center"
+                        :aria-label="t('pages.admin.featuredSort')"
+                      />
+                    </div>
                   </div>
-                </div>
-                <div>
-                  <label class="admin-label">{{ t('pages.admin.labelSystemPrompt') }}</label>
-                  <textarea v-model="promptRow(r.code).systemPrompt" rows="8" class="admin-input w-full resize-y font-mono text-xs leading-relaxed"></textarea>
-                </div>
-                <div>
-                  <label class="admin-label">{{ t('pages.admin.labelGreeting') }}</label>
-                  <textarea v-model="promptRow(r.code).greeting" rows="3" class="admin-input w-full resize-y"></textarea>
-                </div>
-                <div class="flex justify-end">
-                  <button type="button" :disabled="tabLoading.prompts" class="admin-btn-primary" @click="savePrompt(r.code)">{{ tabLoading.prompts ? t('pages.admin.saving') : t('pages.admin.saveReader') }}</button>
+                  <div class="space-y-3 min-w-0">
+                    <div>
+                      <label class="admin-label">{{ t('pages.admin.labelSystemPrompt') }}</label>
+                      <textarea v-model="promptRow(r.code).systemPrompt" rows="9" class="admin-input w-full resize-y font-mono text-xs leading-relaxed"></textarea>
+                    </div>
+                    <div>
+                      <label class="admin-label">{{ t('pages.admin.labelGreeting') }}</label>
+                      <textarea v-model="promptRow(r.code).greeting" rows="3" class="admin-input w-full resize-y"></textarea>
+                    </div>
+                    <div class="flex flex-wrap justify-end gap-2">
+                      <button type="button" :disabled="tabLoading.prompts" class="admin-btn-ghost" @click="saveFeatured">{{ tabLoading.prompts ? t('pages.admin.saving') : t('pages.admin.saveFeaturedShort') }}</button>
+                      <button type="button" :disabled="tabLoading.prompts" class="admin-btn-primary" @click="savePrompt(r.code)">{{ tabLoading.prompts ? t('pages.admin.saving') : t('pages.admin.saveReader') }}</button>
+                    </div>
+                  </div>
                 </div>
               </div>
             </div>
+            <p v-if="!filteredReaderMeta.length" class="admin-empty-state">{{ t('pages.admin.promptEmptyFiltered') }}</p>
           </div>
         </section>
 
@@ -1215,6 +1802,24 @@ function cardBackRowKey(b: Record<string, unknown>, index: number): string {
 </template>
 
 <style scoped>
+.admin-topbar {
+  min-height: 76px;
+  padding: 14px 24px;
+  border-bottom: 1px solid rgba(212,168,83,.08);
+  background: rgba(12,10,22,.84);
+  backdrop-filter: blur(18px);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  flex-shrink: 0;
+}
+.admin-section-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
 .admin-stat-card {
   padding: 20px;
   border-radius: 16px;
@@ -1233,6 +1838,140 @@ function cardBackRowKey(b: Record<string, unknown>, index: number): string {
 .admin-action-card:hover {
   border-color: rgba(212,168,83,.15);
   background: rgba(212,168,83,.03);
+}
+.admin-mini-stat {
+  min-height: 76px;
+  border-radius: 12px;
+  border: 1px solid rgba(212,168,83,.07);
+  background: rgba(255,255,255,.018);
+  padding: 14px;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+}
+.admin-mini-stat span {
+  color: #6b7280;
+  font-size: 12px;
+}
+.admin-mini-stat strong {
+  color: #f3ead7;
+  font-size: 24px;
+  line-height: 1;
+}
+.admin-reader-card {
+  border-radius: 12px;
+  border: 1px solid rgba(212,168,83,.08);
+  background: rgba(255,255,255,.018);
+  overflow: hidden;
+}
+.admin-reader-card:hover {
+  border-color: rgba(212,168,83,.14);
+}
+.admin-reader-board {
+  display: grid;
+  grid-template-columns: minmax(280px, 0.92fr) minmax(360px, 1.28fr);
+  gap: 16px;
+  align-items: start;
+}
+.admin-reader-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+  gap: 10px;
+}
+.admin-reader-tile {
+  min-height: 92px;
+  border-radius: 12px;
+  border: 1px solid rgba(212,168,83,.08);
+  background: rgba(255,255,255,.018);
+  padding: 12px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  transition: border-color .2s, background .2s, box-shadow .2s;
+}
+.admin-reader-tile:hover {
+  border-color: rgba(212,168,83,.16);
+  background: rgba(212,168,83,.035);
+}
+.admin-reader-tile-active {
+  border-color: rgba(212,168,83,.32);
+  background: linear-gradient(145deg, rgba(212,168,83,.1), rgba(255,255,255,.025));
+  box-shadow: inset 0 0 0 1px rgba(212,168,83,.08), 0 12px 30px rgba(0,0,0,.18);
+}
+.admin-reader-tile-avatar,
+.admin-reader-editor-avatar {
+  border-radius: 12px;
+  overflow: hidden;
+  border: 1px solid rgba(212,168,83,.1);
+  background: rgba(255,255,255,.05);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+.admin-reader-tile-avatar {
+  width: 44px;
+  height: 44px;
+}
+.admin-reader-editor-avatar {
+  width: 56px;
+  height: 56px;
+}
+.admin-reader-tile-avatar img,
+.admin-reader-editor-avatar img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+.admin-reader-tile-emoji {
+  color: #e8e0d4;
+  font-size: 22px;
+}
+.admin-reader-tile-badges {
+  width: 100%;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  margin-top: 8px;
+  grid-column: 1 / -1;
+}
+.admin-reader-tile {
+  flex-wrap: wrap;
+}
+.admin-reader-editor {
+  position: sticky;
+  top: 16px;
+  border-radius: 14px;
+  border: 1px solid rgba(212,168,83,.1);
+  background:
+    linear-gradient(145deg, rgba(255,255,255,.032), rgba(255,255,255,.014)),
+    rgba(12,10,22,.72);
+  padding: 18px;
+  box-shadow: 0 18px 45px rgba(0,0,0,.22);
+}
+.admin-reader-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border-radius: 8px;
+  border: 1px solid rgba(212,168,83,.12);
+  background: rgba(212,168,83,.06);
+  color: #d9c48d;
+  padding: 5px 9px;
+  font-size: 12px;
+}
+.admin-reader-chip small {
+  color: #6b7280;
+  font-size: 11px;
+}
+.admin-empty-state {
+  border-radius: 12px;
+  border: 1px dashed rgba(212,168,83,.12);
+  background: rgba(255,255,255,.014);
+  color: #6b7280;
+  padding: 28px;
+  text-align: center;
+  font-size: 13px;
 }
 .admin-table-wrap {
   border-radius: 12px;
@@ -1253,6 +1992,11 @@ function cardBackRowKey(b: Record<string, unknown>, index: number): string {
   outline: none;
   border-color: rgba(212,168,83,.3);
   box-shadow: 0 0 0 2px rgba(212,168,83,.06);
+}
+.admin-input:disabled {
+  cursor: not-allowed;
+  color: #6b7280;
+  background: rgba(255,255,255,.018);
 }
 .admin-inline-input {
   width: 100%;
@@ -1316,6 +2060,54 @@ function cardBackRowKey(b: Record<string, unknown>, index: number): string {
   font-weight: 500;
   border: 1px solid transparent;
 }
+.admin-config-panel {
+  border-radius: 12px;
+  border: 1px solid rgba(212,168,83,.08);
+  background:
+    linear-gradient(145deg, rgba(255,255,255,.035), rgba(255,255,255,.015)),
+    rgba(7,6,14,.35);
+  padding: 14px;
+}
+.admin-config-panel-muted {
+  border-color: rgba(255,255,255,.055);
+  background: rgba(255,255,255,.018);
+}
+.admin-users-note {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+.admin-help {
+  color: #6b7280;
+  font-size: 12px;
+  line-height: 1.6;
+}
+.admin-segment {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 4px;
+  padding: 4px;
+  border-radius: 10px;
+  border: 1px solid rgba(212,168,83,.08);
+  background: rgba(255,255,255,.025);
+}
+.admin-segment-option {
+  border-radius: 8px;
+  padding: 8px 10px;
+  color: #9ca3af;
+  font-size: 13px;
+  transition: background .2s, color .2s, box-shadow .2s;
+}
+.admin-segment-option:hover {
+  color: #e8e0d4;
+  background: rgba(255,255,255,.04);
+}
+.admin-segment-option-active {
+  color: #07060e;
+  background: linear-gradient(135deg, var(--color-gold-500), var(--color-gold-600));
+  box-shadow: 0 8px 20px rgba(212,168,83,.14);
+}
 .admin-modal-overlay {
   position: fixed;
   inset: 0;
@@ -1334,6 +2126,9 @@ function cardBackRowKey(b: Record<string, unknown>, index: number): string {
   background: #0c0a16;
   padding: 24px;
 }
+.admin-modal-wide {
+  max-width: 42rem;
+}
 .modal-enter-active { transition: opacity .2s, transform .2s; }
 .modal-leave-active { transition: opacity .15s, transform .15s; }
 .modal-enter-from { opacity: 0; transform: scale(.95) translateY(8px); }
@@ -1342,4 +2137,20 @@ function cardBackRowKey(b: Record<string, unknown>, index: number): string {
 .toast-leave-active { transition: opacity .2s, transform .2s; }
 .toast-enter-from { opacity: 0; transform: translateY(-12px); }
 .toast-leave-to { opacity: 0; transform: translateY(-8px); }
+@media (max-width: 900px) {
+  .admin-topbar {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+  .admin-section-toolbar {
+    align-items: stretch;
+    flex-direction: column;
+  }
+  .admin-reader-board {
+    grid-template-columns: 1fr;
+  }
+  .admin-reader-editor {
+    position: static;
+  }
+}
 </style>

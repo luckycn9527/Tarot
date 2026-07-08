@@ -70,11 +70,12 @@ export async function dailyFortune(req: Request, res: Response) {
 export async function horoscope(req: Request, res: Response) {
   try {
     const sign = typeof req.query.sign === 'string' ? req.query.sign : '';
+    const period = typeof req.query.period === 'string' ? req.query.period : 'today';
     if (!sign) {
       res.status(400).json(fail('请提供星座 sign'));
       return;
     }
-    const result = await HoroscopeService.getHoroscope(sign);
+    const result = await HoroscopeService.getHoroscope(sign, period);
     res.json(success(result));
   } catch (err: unknown) {
     const msg = getErrMsg(err, '星座运势获取失败');

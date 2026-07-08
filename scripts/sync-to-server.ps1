@@ -1,6 +1,6 @@
 <#
 .SYNOPSIS
-  Pack tarot-clone and upload via scp/ssh. By default EXCLUDES tarot-server/.env so server DB/JWT secrets are not overwritten.
+  Build locally, pack tarot-clone, and upload via scp/ssh. By default EXCLUDES tarot-server/.env so server DB/JWT secrets are not overwritten.
 
 .PARAMETER IncludeEnv
   Include tarot-server/.env in the archive (overwrites server .env — only if you intend to).
@@ -9,7 +9,7 @@ Example:
   .\scripts\sync-to-server.ps1 -RemoteHost 106.75.23.170 -Port 2223 -User ubuntu `
     -KeyPath "C:\Users\admin\Documents\beiji123.pem" -RemotePath "~/tarot-clone"
 
-  .\scripts\sync-to-server.ps1 ... -SkipBuild
+  .\scripts\sync-to-server.ps1 ... -SkipBuild  # use existing local dist/build output
   .\scripts\sync-to-server.ps1 ... -IncludeEnv   # 打包本机 .env（会覆盖服务器 DB 等配置，慎用）
 #>
 param(
@@ -37,11 +37,17 @@ if (-not $SkipBuild) {
   Push-Location (Join-Path $repoRoot "tarot-server")
   npm run build
   Pop-Location
-  Write-Host "INFO: build tarot-vue..." -ForegroundColor Cyan
+  Write-Host "INFO: build tarot-vue dist locally..." -ForegroundColor Cyan
   Push-Location (Join-Path $repoRoot "tarot-vue")
   npm run build
   Pop-Location
 }
+
+$distIndex = Join-Path $repoRoot "tarot-vue\dist\index.html"
+if (-not (Test-Path -LiteralPath $distIndex)) {
+  throw "Missing tarot-vue/dist/index.html. Run `npm run build` in tarot-vue first, or rerun this script without -SkipBuild."
+}
+Write-Host "INFO: local frontend dist is ready: $distIndex" -ForegroundColor Green
 
 $tarName = "tarot-clone-deploy.tar"
 $tarPath = Join-Path (Split-Path $repoRoot -Parent) $tarName
@@ -79,4 +85,4 @@ Write-Host "INFO: remote extract to $RemotePath" -ForegroundColor Cyan
 
 Remove-Item $tarPath -Force -ErrorAction SilentlyContinue
 Write-Host "DONE: sync finished." -ForegroundColor Green
-Write-Host "On server (example): cd $RemotePath/tarot-server ; npm ci --omit=dev ; bash ../deploy.sh restart" -ForegroundColor Gray
+Write-Host "On server (example): cd $RemotePath/tarot-server/deploy ; ./deploy.sh" -ForegroundColor Gray

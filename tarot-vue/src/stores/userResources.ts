@@ -9,6 +9,7 @@ interface QuotaState {
   remaining: number
   total: number
   isVip: boolean
+  unlimited?: boolean
   membership: string
   membershipExpiresAt: string | null
 }
@@ -23,6 +24,7 @@ export const useUserResourcesStore = defineStore('userResources', () => {
     remaining: DAILY_LIMIT,
     total: DAILY_LIMIT,
     isVip: false,
+    unlimited: false,
     membership: 'free',
     membershipExpiresAt: null,
   })
@@ -31,7 +33,8 @@ export const useUserResourcesStore = defineStore('userResources', () => {
   let settingsFetchedAt: number | null = null
 
   const remaining = computed(() => quotaState.value.remaining)
-  const isExhausted = computed(() => !quotaState.value.isVip && quotaState.value.remaining <= 0)
+  const isUnlimited = computed(() => quotaState.value.isVip || quotaState.value.unlimited === true)
+  const isExhausted = computed(() => !isUnlimited.value && quotaState.value.remaining <= 0)
   const isVip = computed(() => quotaState.value.isVip)
 
   async function fetchQuota(force = false) {
@@ -61,6 +64,7 @@ export const useUserResourcesStore = defineStore('userResources', () => {
   }
 
   function decrement() {
+    if (isUnlimited.value) return
     if (quotaState.value.remaining > 0) {
       quotaState.value = { ...quotaState.value, remaining: quotaState.value.remaining - 1 }
     }
@@ -84,6 +88,7 @@ export const useUserResourcesStore = defineStore('userResources', () => {
     quotaState,
     settings,
     remaining,
+    isUnlimited,
     isExhausted,
     isVip,
     fetchQuota,

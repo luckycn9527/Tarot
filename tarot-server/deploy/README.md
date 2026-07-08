@@ -4,17 +4,26 @@
 
 ## 一键部署（推荐）
 
-把代码拉到服务器后，在 `tarot-server/deploy/` 下：
+低内存服务器推荐先在本地构建前端 dist，再把产物同步到服务器：
+
+```powershell
+.\scripts\sync-to-server.ps1 -RemoteHost 106.75.23.170 -Port 2223 -User ubuntu `
+  -KeyPath "C:\Users\admin\Documents\beiji123.pem" -RemotePath "~/tarot-clone"
+```
+
+同步完成后，在服务器 `tarot-server/deploy/` 下：
 ```bash
 chmod +x deploy.sh
 ./deploy.sh init-env     # 首次：交互生成生产 .env（自动生成 JWT 密钥，权限 600）
-./deploy.sh              # 全流程：依赖检测 → 后端 build+pm2 → 前端 build+发布 → Nginx+证书 → 健康自检
+./deploy.sh              # 全流程：依赖检测 → 后端 build+pm2 → 发布已同步的前端 dist → Nginx+证书 → 健康自检
 # 其它子命令：
 ./deploy.sh check        # 仅检测：依赖 + DNS + .env + 运行健康自检
-./deploy.sh backend      # 仅后端    ./deploy.sh frontend  # 仅前端    ./deploy.sh nginx  # 仅 Nginx+证书
+./deploy.sh backend      # 仅后端    ./deploy.sh frontend  # 仅发布 dist    ./deploy.sh nginx  # 仅 Nginx+证书
 ```
 > 脚本已内置：依赖/Node 版本/DNS/备案 检测、`.env` 关键项校验、首次自动签发 HTTPS 证书，以及部署后健康自检（后端存活、Nginx 反代、SPA 深链接回退、SMTP 鉴权、数据库表）。
 > 健康自检也可单独跑：`node deploy/healthcheck.mjs`。
+>
+> 2G 内存服务器默认不再构建前端。只有临时需要在服务器构建时，才使用：`BUILD_FRONTEND_ON_SERVER=true FRONTEND_BUILD_MAX_OLD_SPACE=1024 ./deploy.sh frontend`。
 >
 > 下面是脚本各步骤背后的**手动等价操作**，供理解与排查。
 
@@ -34,11 +43,11 @@ pm2 save
 
 ## 2. 前端（Vue 构建产物）
 ```bash
+# 在本地或 CI 上执行，而不是在 2G 服务器上执行
 cd tarot-vue
 npm ci
 npm run build          # 产出 dist/（api baseURL 为相对 '/api'，天然适配同域名）
-# 把 dist 传到服务器 Nginx 的 root 目录：
-#   例如 rsync -av dist/ root@106.75.23.170:/var/www/tarot.zaopic.cn/dist/
+# 用 scripts/sync-to-server.ps1 打包上传后，服务器 ./deploy.sh frontend 会发布这个 dist
 ```
 
 ## 3. Nginx + HTTPS

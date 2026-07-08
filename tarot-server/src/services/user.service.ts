@@ -75,8 +75,9 @@ export async function getQuota(userId: number) {
 
   return {
     remaining,
-    total: 3,
+    total: UserModel.DAILY_FREE_QUOTA,
     isVip,
+    unlimited: Boolean(isVip),
     membership: refreshed.membership,
     membershipExpiresAt: refreshed.membership_expires_at,
   };

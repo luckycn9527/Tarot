@@ -4,13 +4,13 @@ import { useRoute, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { useToast } from '../composables/useToast'
 import { tarotCards, getCardImageUrl } from '../data/tarotCards'
-import { type ThreeCardReadingResult } from '../data/tarotReadings'
+import { generateThreeCardReading, type ThreeCardReadingResult } from '../data/tarotReadings'
 import { generateAiThreeCardReading } from '../services/tarotAiReading'
 import { useCardBack } from '../composables/useCardBack'
 import TarotCard3D from '../components/TarotCard3D.vue'
 import RitualLoader from '../components/RitualLoader.vue'
-import { sanitizeInput } from '../utils/sanitize'
-import { StorageKeys, storageGetRaw, storageRemoveRawAndLegacy, storageSet } from '@/utils/storage'
+import { sanitizeStoredInput } from '../utils/sanitize'
+import { StorageKeys, storageGetJson, storageRemoveRawAndLegacy, storageSet } from '@/utils/storage'
 
 const route = useRoute()
 const router = useRouter()
@@ -27,6 +27,7 @@ const isLoading = ref(false)
 const loadingProgress = ref(0)
 const readingResult = ref<ThreeCardReadingResult | null>(null)
 const showResult = ref(false)
+const readingError = ref('')
 
 const ritualMessages = computed(() => tm('pages.yesNoThreeResult.ritualMessages') as string[])
 
@@ -35,45 +36,73 @@ const positionLabels = computed(() => {
   return rows.map(r => r.name)
 })
 const positionColors = ['text-green-400', 'text-red-400', 'text-gold-300']
+const threeCardLevels: ThreeCardReadingResult['level'][] = [
+  'definite-yes',
+  'likely-yes',
+  'conditional',
+  'likely-no',
+  'definite-no',
+]
+const answerColorMap: Record<ThreeCardReadingResult['level'], string> = {
+  'definite-yes': 'text-green-400',
+  'likely-yes': 'text-emerald-400',
+  conditional: 'text-yellow-400',
+  'likely-no': 'text-orange-400',
+  'definite-no': 'text-red-400',
+}
+const confidenceMap: Record<ThreeCardReadingResult['level'], string> = {
+  'definite-yes': '非常高',
+  'likely-yes': '较高',
+  conditional: '中等',
+  'likely-no': '较高',
+  'definite-no': '非常高',
+}
 
 const cards = computed(() =>
-  selectedCards.value.map((idx, i) => {
+  selectedCards.value.flatMap((idx, i) => {
+    const card = tarotCards[idx]
+    if (!card) return []
     const orientation = orientations.value[i] ? t('pages.dailyFortune.reversed') : t('pages.dailyFortune.upright')
-    return {
-      data: tarotCards[idx],
+    return [{
+      data: card,
       isReversed: orientations.value[i],
-      imageUrl: getCardImageUrl(tarotCards[idx].nameEn),
-      displayName: t('pages.yesNoThreeResult.orientationPair', { name: tarotCards[idx].name, orientation }),
-    }
+      imageUrl: getCardImageUrl(card.nameEn, card),
+      displayName: t('pages.yesNoThreeResult.orientationPair', { name: card.name, orientation }),
+    }]
   }),
 )
 
 onMounted(() => {
   void loadCardBack(true)
-  const q = storageGetRaw(StorageKeys.YES_NO_USER_Q, 'userQuestion')
-  if (!q) {
+  const storedQuestion = sanitizeStoredInput(StorageKeys.YES_NO_USER_Q, 'userQuestion')
+  if (!storedQuestion) {
     router.replace('/yes-no-tarot/three-cards')
     return
   }
-  question.value = sanitizeInput(q)
+  question.value = storedQuestion
 
-  const cachedResult = storageGetRaw(StorageKeys.YES_NO_THREE_RESULT, 'threeCardReadingResult')
-  const cachedCards = storageGetRaw(StorageKeys.YES_NO_THREE_CARDS, 'threeCardSelectedCards')
-  const cachedOrientations = storageGetRaw(StorageKeys.YES_NO_THREE_ORIENTS, 'threeCardOrientations')
-
-  if (cachedResult && cachedCards && cachedOrientations) {
-    selectedCards.value = JSON.parse(cachedCards)
-    orientations.value = JSON.parse(cachedOrientations)
-    flippedCards.value = [true, true, true]
-    allFlipped.value = true
-    readingResult.value = JSON.parse(cachedResult)
-    showResult.value = true
-  } else {
+  if (!hydrateCachedReading()) {
     selectRandomCards()
   }
 })
 
 function selectRandomCards() {
+  showResult.value = false
+  readingResult.value = null
+  readingError.value = ''
+  flippedCards.value = [false, false, false]
+  allFlipped.value = false
+  isLoading.value = false
+  selectedCards.value = []
+  orientations.value = []
+
+  if (tarotCards.length < 3) {
+    const message = String(t('pages.yesNoThreeResult.toastDeckFailed'))
+    readingError.value = message
+    toast.error(message)
+    return
+  }
+
   const indices = new Set<number>()
   while (indices.size < 3) {
     indices.add(Math.floor(Math.random() * tarotCards.length))
@@ -99,6 +128,17 @@ function flipCard(index: number) {
 }
 
 function startReading() {
+  if (isLoading.value) return
+  if (!buildCardPairs()) {
+    clearThreeCardCache()
+    const message = String(t('pages.yesNoThreeResult.toastDeckFailed'))
+    readingError.value = message
+    toast.error(message)
+    selectRandomCards()
+    return
+  }
+
+  readingError.value = ''
   isLoading.value = true
   loadingProgress.value = 0
 
@@ -118,13 +158,17 @@ function startReading() {
 }
 
 async function finishReading() {
-  const cardPairs = selectedCards.value.map((idx, i) => ({
-    card: tarotCards[idx],
-    isReversed: orientations.value[i],
-  }))
+  const cardPairs = buildCardPairs()
+  if (!cardPairs) {
+    readingError.value = String(t('pages.yesNoThreeResult.toastDeckFailed'))
+    isLoading.value = false
+    return
+  }
 
   try {
-    const result = await generateAiThreeCardReading(cardPairs, question.value)
+    const rawResult = await generateAiThreeCardReading(cardPairs, question.value)
+    const fallback = generateThreeCardReading(cardPairs, question.value)
+    const result = normalizeReadingResult(rawResult, fallback) ?? fallback
 
     loadingProgress.value = 100
     readingResult.value = result
@@ -138,24 +182,138 @@ async function finishReading() {
   } catch (err: unknown) {
     const ax = err as { response?: { status: number; data?: { message?: string } }; message?: string }
     if (ax.response?.status === 401) {
-      toast.error(t('pages.yesNoThreeResult.toastLoginRequired'))
+      const message = String(t('pages.yesNoThreeResult.toastLoginRequired'))
+      readingError.value = message
+      toast.error(message)
       void router.replace({ path: '/login', query: { redirect: route.fullPath } })
     } else if (ax.response?.status === 429) {
-      toast.error(t('pages.yesNoThreeResult.toastQuota'))
+      const message = String(t('pages.yesNoThreeResult.toastQuota'))
+      readingError.value = message
+      toast.error(message)
     } else {
-      toast.error(ax.response?.data?.message || ax.message || t('pages.yesNoThreeResult.toastFailed'))
+      const message = ax.response?.data?.message || ax.message || String(t('pages.yesNoThreeResult.toastFailed'))
+      readingError.value = message
+      toast.error(message)
     }
   } finally {
     isLoading.value = false
   }
 }
 
-function startOver() {
+function clearThreeCardCache() {
   storageRemoveRawAndLegacy(StorageKeys.YES_NO_THREE_RESULT, 'threeCardReadingResult')
   storageRemoveRawAndLegacy(StorageKeys.YES_NO_THREE_CARDS, 'threeCardSelectedCards')
   storageRemoveRawAndLegacy(StorageKeys.YES_NO_THREE_ORIENTS, 'threeCardOrientations')
+}
+
+function startOver() {
+  clearThreeCardCache()
   storageRemoveRawAndLegacy(StorageKeys.YES_NO_USER_Q, 'userQuestion')
   router.push('/yes-no-tarot/three-cards')
+}
+
+function retryReading() {
+  if (isLoading.value) return
+  showResult.value = false
+  readingResult.value = null
+  startReading()
+}
+
+function hydrateCachedReading() {
+  const cachedCards = storageGetJson<unknown>(StorageKeys.YES_NO_THREE_CARDS, 'threeCardSelectedCards')
+  const cachedOrientations = storageGetJson<unknown>(StorageKeys.YES_NO_THREE_ORIENTS, 'threeCardOrientations')
+  const cachedResult = storageGetJson<unknown>(StorageKeys.YES_NO_THREE_RESULT, 'threeCardReadingResult')
+
+  if (!isValidCardIndexes(cachedCards) || !isValidOrientations(cachedOrientations) || cachedResult == null) {
+    clearThreeCardCache()
+    return false
+  }
+
+  selectedCards.value = cachedCards
+  orientations.value = cachedOrientations
+
+  const cardPairs = buildCardPairs()
+  if (!cardPairs) {
+    clearThreeCardCache()
+    return false
+  }
+
+  const normalized = normalizeReadingResult(cachedResult, generateThreeCardReading(cardPairs, question.value))
+  if (!normalized) {
+    clearThreeCardCache()
+    return false
+  }
+
+  flippedCards.value = [true, true, true]
+  allFlipped.value = true
+  readingResult.value = normalized
+  showResult.value = true
+  readingError.value = ''
+  return true
+}
+
+function buildCardPairs() {
+  if (!isValidCardIndexes(selectedCards.value) || !isValidOrientations(orientations.value)) return null
+  return selectedCards.value.map((idx, i) => ({
+    card: tarotCards[idx],
+    isReversed: orientations.value[i],
+  }))
+}
+
+function isValidCardIndexes(value: unknown): value is number[] {
+  return Array.isArray(value)
+    && value.length === 3
+    && value.every(idx => Number.isInteger(idx) && idx >= 0 && idx < tarotCards.length && tarotCards[idx])
+}
+
+function isValidOrientations(value: unknown): value is boolean[] {
+  return Array.isArray(value) && value.length === 3 && value.every(item => typeof item === 'boolean')
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value)
+}
+
+function readString(value: unknown, fallback: string) {
+  return typeof value === 'string' && value.trim() ? value.trim() : fallback
+}
+
+function normalizeLevel(value: unknown, answer: unknown, fallback: ThreeCardReadingResult['level']) {
+  if (typeof value === 'string' && threeCardLevels.includes(value as ThreeCardReadingResult['level'])) {
+    return value as ThreeCardReadingResult['level']
+  }
+
+  const answerText = typeof answer === 'string' ? answer : ''
+  if (answerText.includes('明确') && answerText.includes('是')) return 'definite-yes'
+  if (answerText.includes('可能') && answerText.includes('是')) return 'likely-yes'
+  if (answerText.includes('明确') && answerText.includes('否')) return 'definite-no'
+  if (answerText.includes('可能') && answerText.includes('否')) return 'likely-no'
+  if (answerText.includes('否')) return 'likely-no'
+  if (answerText.includes('是')) return 'likely-yes'
+  return fallback
+}
+
+function normalizeReadingResult(value: unknown, fallback: ThreeCardReadingResult): ThreeCardReadingResult | null {
+  if (!isRecord(value)) return null
+
+  const level = normalizeLevel(value.level, value.answer, fallback.level)
+  const rawCardReadings = Array.isArray(value.cardReadings) ? value.cardReadings : []
+  const cardReadings = fallback.cardReadings.map((fallbackReading, i) => {
+    const raw = rawCardReadings[i]
+    if (!isRecord(raw)) return fallbackReading
+    return { summary: readString(raw.summary, fallbackReading.summary) }
+  })
+
+  return {
+    answer: readString(value.answer, fallback.answer),
+    answerColor: answerColorMap[level],
+    confidence: readString(value.confidence, confidenceMap[level]),
+    level,
+    interpretation: readString(value.interpretation, fallback.interpretation),
+    advice: readString(value.advice, fallback.advice),
+    conclusion: readString(value.conclusion, fallback.conclusion),
+    cardReadings,
+  }
 }
 
 function getLevelBadge(level: string) {
@@ -171,10 +329,12 @@ function getLevelBadge(level: string) {
   }
 }
 
-function answerLooksYes(answer: string) {
+function answerLooksYes(answer: string | undefined) {
+  if (!answer) return false
   return answer.includes('是') || /\byes\b/i.test(answer)
 }
-function answerLooksNo(answer: string) {
+function answerLooksNo(answer: string | undefined) {
+  if (!answer) return false
   return answer.includes('否') || /\bno\b/i.test(answer)
 }
 </script>
@@ -227,6 +387,28 @@ function answerLooksNo(answer: string) {
     <section v-if="isLoading" class="w-full max-w-md mx-auto px-4 py-4">
       <div class="card-glass p-6 text-center">
         <RitualLoader :progress="Math.min(loadingProgress, 100)" :messages="ritualMessages" />
+      </div>
+    </section>
+
+    <!-- Error Recovery -->
+    <section v-if="readingError && !isLoading && !showResult" class="w-full max-w-md mx-auto px-4 py-4">
+      <div class="card-glass p-6 text-center space-y-4">
+        <h3 class="text-gold-200 font-serif font-semibold">{{ t('pages.yesNoThreeResult.errorTitle') }}</h3>
+        <p class="text-gray-400 text-sm leading-relaxed">{{ readingError }}</p>
+        <div class="flex flex-col sm:flex-row gap-3">
+          <button
+            class="flex-1 py-3 rounded-full cta-button text-white font-semibold hover:shadow-lg hover:shadow-gold-500/20 transition-all"
+            @click="retryReading"
+          >
+            {{ t('pages.yesNoThreeResult.retry') }}
+          </button>
+          <button
+            class="flex-1 py-3 rounded-full border border-gold-500/15 text-gray-300 font-semibold hover:bg-gold-500/5 transition-all"
+            @click="startOver"
+          >
+            {{ t('pages.yesNoThreeResult.again') }}
+          </button>
+        </div>
       </div>
     </section>
 

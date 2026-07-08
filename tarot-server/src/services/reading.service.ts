@@ -1,5 +1,6 @@
 import { tarotCards } from '../data/tarotCards.js';
 import type { TarotCard } from '../data/tarotCards.js';
+import { generateThreeCardReading, type ThreeCardReadingResult } from '../data/tarotReadings.js';
 import { callDeepSeek } from './deepseek.service.js';
 import { SYSTEM_PROMPT, buildSingleCardPrompt, buildThreeCardPrompt, buildDailyFortunePrompt, buildReaderReadingPrompt, buildReaderFollowupPrompt } from '../utils/prompts.js';
 import { getReaderById } from '../data/readers.js';
@@ -82,6 +83,81 @@ function randomCards(count: number): { card: TarotCard; isReversed: boolean }[] 
   return result;
 }
 
+const threeCardLevels: ThreeCardReadingResult['level'][] = [
+  'definite-yes',
+  'likely-yes',
+  'conditional',
+  'likely-no',
+  'definite-no',
+];
+
+const threeCardAnswerColorMap: Record<ThreeCardReadingResult['level'], string> = {
+  'definite-yes': 'text-green-400',
+  'likely-yes': 'text-emerald-400',
+  conditional: 'text-yellow-400',
+  'likely-no': 'text-orange-400',
+  'definite-no': 'text-red-400',
+};
+
+const threeCardConfidenceMap: Record<ThreeCardReadingResult['level'], string> = {
+  'definite-yes': '非常高',
+  'likely-yes': '较高',
+  conditional: '中等',
+  'likely-no': '较高',
+  'definite-no': '非常高',
+};
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function cleanString(value: unknown, fallback: string): string {
+  return typeof value === 'string' && value.trim() ? value.trim() : fallback;
+}
+
+function normalizeThreeCardLevel(
+  value: unknown,
+  answer: unknown,
+  fallback: ThreeCardReadingResult['level'],
+): ThreeCardReadingResult['level'] {
+  if (typeof value === 'string' && threeCardLevels.includes(value as ThreeCardReadingResult['level'])) {
+    return value as ThreeCardReadingResult['level'];
+  }
+
+  const answerText = typeof answer === 'string' ? answer : '';
+  if (answerText.includes('明确') && answerText.includes('是')) return 'definite-yes';
+  if (answerText.includes('可能') && answerText.includes('是')) return 'likely-yes';
+  if (answerText.includes('明确') && answerText.includes('否')) return 'definite-no';
+  if (answerText.includes('可能') && answerText.includes('否')) return 'likely-no';
+  if (answerText.includes('否')) return 'likely-no';
+  if (answerText.includes('是')) return 'likely-yes';
+  return fallback;
+}
+
+function normalizeThreeCardResult(
+  data: Record<string, unknown>,
+  fallback: ThreeCardReadingResult,
+): ThreeCardReadingResult {
+  const level = normalizeThreeCardLevel(data.level, data.answer, fallback.level);
+  const rawCardReadings = Array.isArray(data.cardReadings) ? data.cardReadings : [];
+  const cardReadings = fallback.cardReadings.map((fallbackReading, i) => {
+    const raw = rawCardReadings[i];
+    if (!isRecord(raw)) return fallbackReading;
+    return { summary: cleanString(raw.summary, fallbackReading.summary) };
+  });
+
+  return {
+    answer: cleanString(data.answer, fallback.answer),
+    answerColor: threeCardAnswerColorMap[level],
+    confidence: cleanString(data.confidence, threeCardConfidenceMap[level]),
+    level,
+    interpretation: cleanString(data.interpretation, fallback.interpretation),
+    advice: cleanString(data.advice, fallback.advice),
+    conclusion: cleanString(data.conclusion, fallback.conclusion),
+    cardReadings,
+  };
+}
+
 export async function singleCardReading(userId: number, question: string, clientCardId?: number, clientOrientation?: string) {
   let card: TarotCard;
   let isReversed: boolean;
@@ -161,38 +237,25 @@ export async function threeCardReading(userId: number, question: string, clientC
   }).join('\n');
 
   const userPrompt = buildThreeCardPrompt(cardDescriptions, question);
+  const fallbackResult = generateThreeCardReading(cards, question);
   const responseText = await callDeepSeek([
     { role: 'system', content: SYSTEM_PROMPT },
     { role: 'user', content: userPrompt },
   ]);
-  const data = parseJsonResponse(responseText);
-
-  const level = data.level as string;
-  const answerColorMap: Record<string, string> = {
-    'definite-yes': 'text-green-400',
-    'likely-yes': 'text-emerald-400',
-    'conditional': 'text-yellow-400',
-    'likely-no': 'text-orange-400',
-    'definite-no': 'text-red-400',
-  };
-  const confidenceMap: Record<string, string> = {
-    'definite-yes': '非常高',
-    'likely-yes': '较高',
-    'conditional': '中等',
-    'likely-no': '较高',
-    'definite-no': '非常高',
-  };
-
-  const result = {
-    answer: data.answer as string,
-    answerColor: answerColorMap[level] || 'text-yellow-400',
-    confidence: confidenceMap[level] || '中等',
-    level,
-    interpretation: data.interpretation as string,
-    advice: data.advice as string,
-    conclusion: data.conclusion as string,
-    cardReadings: data.cardReadings as { summary: string }[],
-  };
+  let result: ThreeCardReadingResult;
+  try {
+    result = normalizeThreeCardResult(parseJsonResponse(responseText), fallbackResult);
+  } catch (err) {
+    console.warn(
+      JSON.stringify({
+        ts: new Date().toISOString(),
+        level: 'warn',
+        event: 'three_card_ai_payload_fallback',
+        message: err instanceof Error ? err.message : String(err),
+      }),
+    );
+    result = fallbackResult;
+  }
 
   const historyId = await ReadingModel.create({
     userId,

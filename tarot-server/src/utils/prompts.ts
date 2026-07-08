@@ -69,17 +69,17 @@ ${cardDescriptions}
 /**
  * 星座每日运势：将外部英文原文「翻译 + 扩展」为结构化中文运势。
  * 若 sourceText 为空（外部源不可用），则退化为基于星座特质的纯生成。
- * 返回严格 JSON：一句话总结 + 五维文字 + 五维星级 + 幸运提示。
+ * 返回严格 JSON：一句话总结 + 五维文字 + 五维星级 + 能量雷达 + 行动建议 + 幸运提示。
  */
-export function buildHoroscopePrompt(signName: string, dateStr: string, sourceText?: string): string {
+export function buildHoroscopePrompt(signName: string, dateStr: string, sourceText?: string, periodLabel = '今日'): string {
   const sourceBlock = sourceText && sourceText.trim()
-    ? `以下是该星座今日运势的英文原文，请以它为依据进行翻译并合理扩展（不要照搬直译，要符合中文表达习惯）：
+    ? `以下是该星座${periodLabel}运势的英文原文，请以它为依据进行翻译并合理扩展（不要照搬直译，要符合中文表达习惯）：
 """
 ${sourceText.trim()}
 """`
-    : `（暂无外部原文，请基于「${signName}」的典型星座特质，生成符合当日基调的运势。）`;
+    : `（暂无外部原文，请基于「${signName}」的典型星座特质，生成符合${periodLabel}基调的运势。）`;
 
-  return `今天是 ${dateStr}，请输出「${signName}」的今日星座运势。
+  return `时间范围：${dateStr}。请输出「${signName}」的${periodLabel}星座运势。
 
 ${sourceBlock}
 
@@ -92,7 +92,7 @@ ${sourceBlock}
 
 你必须只返回以下 JSON 对象（不要包含 markdown 代码块标记，不要输出 JSON 以外的任何字符）：
 {
-  "summary": "今日整体基调一句话，20-35字",
+  "summary": "${periodLabel}整体基调一句话，20-35字",
   "overallScore": 55到98的整数,
   "sections": {
     "overall": "综合运势，60-100字",
@@ -100,6 +100,18 @@ ${sourceBlock}
     "career": "事业/学业运势，50-90字",
     "wealth": "财富运势，50-90字",
     "health": "健康运势，50-90字"
+  },
+  "energy": {
+    "mood": 0到100的整数,
+    "action": 0到100的整数,
+    "social": 0到100的整数,
+    "intuition": 0到100的整数
+  },
+  "advice": {
+    "do": "适合做什么，12-24字",
+    "avoid": "不适合做什么，12-24字",
+    "mantra": "一句提醒，12-24字",
+    "keyword": "关键词，2-6字"
   },
   "ratings": {
     "overall": 1到5的整数,
@@ -112,7 +124,7 @@ ${sourceBlock}
   "luckyNumber": 0到9的整数
 }
 
-关于 overallScore：这是当日综合运势指数（55-98）。请依据原文与各维度强弱**真实给分、充分使用区间**，运势好的日子可到 90 以上、平淡或受挫的日子可低至 60 上下；切忌每次都给 70 多的中间值。`;
+关于 overallScore：这是${periodLabel}综合运势指数（55-98）。请依据原文与各维度强弱**真实给分、充分使用区间**，运势好的时候可到 90 以上、平淡或受挫时可低至 60 上下；切忌每次都给 70 多的中间值。`;
 }
 
 export function buildReaderFollowupPrompt(

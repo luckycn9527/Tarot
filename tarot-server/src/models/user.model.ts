@@ -2,6 +2,8 @@ import { pool } from '../config/database.js';
 import type { RowDataPacket, ResultSetHeader } from 'mysql2';
 import type { DbUser } from '../types/index.js';
 
+export const DAILY_FREE_QUOTA = 3;
+
 export async function findByEmail(email: string): Promise<DbUser | null> {
   const [rows] = await pool.execute<RowDataPacket[]>(
     'SELECT * FROM users WHERE LOWER(TRIM(email)) = ? LIMIT 1',
@@ -135,8 +137,8 @@ export async function consumeQuota(id: number): Promise<'vip' | 'ok' | 'exhauste
 
     // 1. 若配额已过期，先原子重置为 3 次
     await connection.execute(
-      'UPDATE users SET remaining_free_quota = 3, quota_reset_date = ? WHERE id = ? AND (quota_reset_date IS NULL OR quota_reset_date < ?)',
-      [today, id, today]
+      'UPDATE users SET remaining_free_quota = ?, quota_reset_date = ? WHERE id = ? AND (quota_reset_date IS NULL OR quota_reset_date < ?)',
+      [DAILY_FREE_QUOTA, today, id, today]
     );
 
     // 2. VIP 用户直接放行，不扣减
@@ -174,11 +176,11 @@ export async function refundQuota(id: number): Promise<void> {
   const today = new Date().toISOString().slice(0, 10);
   await pool.execute(
     `UPDATE users
-     SET remaining_free_quota = LEAST(remaining_free_quota + 1, 3)
+     SET remaining_free_quota = LEAST(remaining_free_quota + 1, ?)
      WHERE id = ?
        AND membership = 'free'
        AND quota_reset_date = ?`,
-    [id, today],
+    [DAILY_FREE_QUOTA, id, today],
   );
 }
 
@@ -189,8 +191,8 @@ export async function refundQuota(id: number): Promise<void> {
 export async function resetQuotaIfNeeded(id: number): Promise<void> {
   const today = new Date().toISOString().slice(0, 10);
   await pool.execute(
-    'UPDATE users SET remaining_free_quota = 3, quota_reset_date = ? WHERE id = ? AND (quota_reset_date IS NULL OR quota_reset_date < ?)',
-    [today, id, today]
+    'UPDATE users SET remaining_free_quota = ?, quota_reset_date = ? WHERE id = ? AND (quota_reset_date IS NULL OR quota_reset_date < ?)',
+    [DAILY_FREE_QUOTA, today, id, today]
   );
 }
 

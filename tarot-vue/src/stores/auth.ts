@@ -42,17 +42,8 @@ export const useAuthStore = defineStore('auth', () => {
   async function initSession() {
     const token = localStorage.getItem('tarot_access_token')
     if (!token) {
-      try {
-        const refreshRes = await api.post('/auth/refresh')
-        if (refreshRes.data.success) {
-          setAccessToken(refreshRes.data.data.accessToken)
-          currentUser.value = refreshRes.data.data.user
-        }
-      } catch {
-        /* 无有效会话 */
-      } finally {
-        isInitialized.value = true
-      }
+      // 没有 access token 时按游客进入，避免首次访问无 refresh cookie 也打 /auth/refresh 造成控制台 401。
+      isInitialized.value = true
     } else {
       try {
         await fetchProfileFromApi()

@@ -3,9 +3,10 @@ import { useUserResourcesStore } from '@/stores/userResources'
 
 export function useQuota() {
   const s = useUserResourcesStore()
-  const { remaining, isExhausted, isVip, quotaState } = storeToRefs(s)
+  const { remaining, isUnlimited, isExhausted, isVip, quotaState } = storeToRefs(s)
   return {
     remaining,
+    isUnlimited,
     isExhausted,
     isVip,
     fetchQuota: (force?: boolean) => s.fetchQuota(force),

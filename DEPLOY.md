@@ -24,8 +24,17 @@
 
 ## 一键部署（推荐）
 
+低内存服务器推荐在本地构建前端 dist，再同步到服务器：
+
+```powershell
+.\scripts\sync-to-server.ps1 -RemoteHost 106.75.23.170 -Port 2223 -User ubuntu `
+  -KeyPath "C:\Users\admin\Documents\beiji123.pem" -RemotePath "~/tarot-clone"
+```
+
+同步脚本会在本地执行 `tarot-vue npm run build`，并把生成好的 `tarot-vue/dist` 一起打包上传。
+
 ```bash
-# 1. 克隆代码
+# 1. 首次可在服务器克隆代码，后续推荐用本地同步脚本上传产物
 git clone https://github.com/luckycn9527/Tarot.git
 cd Tarot
 
@@ -39,7 +48,7 @@ chmod +x deploy.sh
 
 # 4. 一键全量部署
 ./deploy.sh
-# 流程：依赖检测 → 后端 build+pm2 → 前端 build+发布 → Nginx+证书 → 健康自检
+# 流程：依赖检测 → 后端 build+pm2 → 发布已同步的前端 dist → Nginx+证书 → 健康自检
 ```
 
 部署完成后访问 `https://tarot.zaopic.cn`（或你配置的域名）。
@@ -50,11 +59,11 @@ chmod +x deploy.sh
 
 | 命令 | 说明 |
 |------|------|
-| `./deploy.sh` | 全流程部署（依赖 → 后端 → 前端 → Nginx/证书 → 自检） |
+| `./deploy.sh` | 全流程部署（依赖 → 后端 → 发布前端 dist → Nginx/证书 → 自检） |
 | `./deploy.sh init-env` | 交互生成生产 `.env` |
 | `./deploy.sh check` | 仅检测：依赖 + DNS + `.env` + 运行健康自检 |
 | `./deploy.sh backend` | 仅部署后端（`npm ci` + `build` + `pm2`） |
-| `./deploy.sh frontend` | 仅构建并发布前端 `dist` 到 `/var/www/域名/dist` |
+| `./deploy.sh frontend` | 仅发布已同步的前端 `dist` 到 `/var/www/域名/dist` |
 | `./deploy.sh nginx` | 仅配置 Nginx + 自动签发/更新 HTTPS 证书 |
 
 ---
@@ -63,7 +72,8 @@ chmod +x deploy.sh
 
 | 变量 | 说明 | 示例 |
 |------|------|------|
-| `SKIP_NPM_CI=true` | 跳过 `npm ci`，直接使用现有 `node_modules`（适合低内存服务器） | `SKIP_NPM_CI=true sudo ./deploy.sh frontend` |
+| `BUILD_FRONTEND_ON_SERVER=true` | 应急开关：允许在服务器构建前端；2G 机器不推荐 | `BUILD_FRONTEND_ON_SERVER=true FRONTEND_BUILD_MAX_OLD_SPACE=1024 ./deploy.sh frontend` |
+| `SKIP_NPM_CI=true` | 服务器构建前端时跳过 `npm ci`，直接使用现有 `node_modules` | `BUILD_FRONTEND_ON_SERVER=true SKIP_NPM_CI=true ./deploy.sh frontend` |
 | `DOMAIN` | 覆盖默认域名 | `DOMAIN=tarot.zaopic.cn ./deploy.sh nginx` |
 | `DIST_TARGET` | 覆盖前端 dist 发布路径 | `DIST_TARGET=/var/www/tarot/dist ./deploy.sh frontend` |
 | `BACKEND_PORT` | 覆盖后端端口 | `BACKEND_PORT=5174 ./deploy.sh backend` |

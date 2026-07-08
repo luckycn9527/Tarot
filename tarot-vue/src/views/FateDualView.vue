@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, watch, computed, nextTick, onMounted } from 'vue'
+import { ref, watch, computed, nextTick, onMounted, onUnmounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import api from '@/services/api'
@@ -11,6 +11,7 @@ import { useCardBack } from '@/composables/useCardBack'
 import FateDualAnalyzingRitual from '@/components/FateDualAnalyzingRitual.vue'
 import FateSacredDatetime from '@/components/FateSacredDatetime.vue'
 import { computeZiwei, ZIWEI_GRID_POS, type ZiweiChart } from '@/composables/useZiwei'
+import fateDualCrystalImage from '@/assets/fate/fate-dual-crystal.webp'
 
 void FateSacredDatetime
 
@@ -75,6 +76,17 @@ const currentStepIndex = computed(() => {
   }
 })
 
+const theaterScenes: Record<Step, { chapter: string; title: string; desc: string; pulse: string }> = {
+  form: { chapter: '序章', title: '把摇摆写成一个分岔剧本', desc: '先确认出生锚点和此刻议题，命盘负责底色，塔罗负责变量。', pulse: '等待入场' },
+  pick: { chapter: '第一幕', title: '抽取三枚变量碎片', desc: '每一张牌都是剧情里的一个转折，先不要解释，交给直觉。', pulse: '变量显影' },
+  analyzing: { chapter: '第二幕', title: '双盘正在碰撞', desc: '命盘、塔罗与问题会被叠合成两条可选择路线。', pulse: '能量汇聚' },
+  dual: { chapter: '第三幕', title: '站在两条路的入口', desc: '一条保留筹码，一条主动改写。先看清代价，再做签章。', pulse: '路线待选' },
+  submitting: { chapter: '终幕', title: '路线签章落定中', desc: '正在把你的选择写入本次分岔，并生成下一步指引。', pulse: '刻印中' },
+  done: { chapter: '回声', title: '你的行动剧本已生成', desc: '把玄学结论落到接下来 30 天可执行的节奏里。', pulse: '指引完成' },
+}
+const currentTheaterScene = computed(() => theaterScenes[step.value])
+
+type BranchChoice = 'stable' | 'adventure'
 type PathScores = Partial<Record<'稳健' | '成长' | '风险' | '回报' | '心力', number>>
 
 interface ChoiceGuidance {
@@ -124,7 +136,7 @@ interface AnalyzePayload {
 const analysis = ref<AnalyzePayload | null>(null)
 const finalResult = ref('')
 const choiceGuidance = ref<ChoiceGuidance | null>(null)
-const choiceMade = ref<'stable' | 'adventure' | null>(null)
+const choiceMade = ref<BranchChoice | null>(null)
 
 const { deck, shuffle } = useShuffle()
 const { cardBackUrl, loadCardBack } = useCardBack()
@@ -159,6 +171,7 @@ const scenarioCards: ScenarioCard[] = [
 ]
 
 const selectedDomainOption = computed(() => domainOptions.find((d) => d.key === selectedDomain.value) ?? domainOptions[0])
+const selectedScenarioCard = computed(() => scenarioCards.find((s) => s.key === selectedDomain.value) ?? scenarioCards[0])
 const birthAnchorSummary = computed(() => {
   const y = birthYear.value, m = birthMonth.value, d = birthDay.value
   const day = y && m && d ? `${y}.${pad2(m)}.${pad2(d)}` : '生日待校准'
@@ -167,6 +180,12 @@ const birthAnchorSummary = computed(() => {
   return `${day} · ${time} · ${sex}`
 })
 const chartAnchorLabel = computed(() => chartType.value === 'ziwei' ? '紫微斗数' : '八字四柱')
+const theaterQuestionPreview = computed(() => question.value.trim() || selectedScenarioCard.value.question)
+const theaterClues = computed(() => [
+  { key: 'domain', label: '议题领域', value: selectedDomainOption.value.label },
+  { key: 'scenario', label: '剧本开场', value: selectedScenarioCard.value.title },
+  { key: 'anchor', label: '命盘锚点', value: chartAnchorLabel.value },
+])
 
 const birthDateWheelTouched = ref(false)
 const profilePrefilled = ref(false)
@@ -236,22 +255,48 @@ function commitBirthTime() {
 
 const baziPillars = ref<{ year: string; month: string; day: string; time: string } | null>(null)
 let baziComputeSeq = 0
-watch([birthYear, birthMonth, birthDay, birthHour, birthMinute], async ([y, m, d, h, mm]) => {
+let baziComputeTimer: ReturnType<typeof window.setTimeout> | null = null
+
+function cancelBaziCompute() {
+  if (!baziComputeTimer) return
+  window.clearTimeout(baziComputeTimer)
+  baziComputeTimer = null
+}
+
+function scheduleBaziCompute(task: () => Promise<void>) {
+  cancelBaziCompute()
+  baziComputeTimer = window.setTimeout(() => {
+    baziComputeTimer = null
+    void task()
+  }, 520)
+}
+
+onUnmounted(cancelBaziCompute)
+
+watch([chartType, birthYear, birthMonth, birthDay, birthHour, birthMinute], ([type, y, m, d, h, mm]) => {
   const seq = ++baziComputeSeq
+  if (type !== 'bazi') {
+    cancelBaziCompute()
+    return
+  }
   if (!y || !m || !d) {
+    cancelBaziCompute()
     baziPillars.value = null
     return
   }
-  try {
-    const { Solar } = await import('lunar-javascript')
-    const solar = Solar.fromYmdHms(y, m, d, h ?? 12, mm ?? 0, 0)
-    const ec = solar.getLunar().getEightChar()
-    if (seq === baziComputeSeq) {
-      baziPillars.value = { year: ec.getYear(), month: ec.getMonth(), day: ec.getDay(), time: ec.getTime() }
+  scheduleBaziCompute(async () => {
+    if (seq !== baziComputeSeq) return
+    try {
+      const { Solar } = await import('lunar-javascript')
+      const solar = Solar.fromYmdHms(y, m, d, h ?? 12, mm ?? 0, 0)
+      const ec = solar.getLunar().getEightChar()
+      if (seq === baziComputeSeq) {
+        baziPillars.value = { year: ec.getYear(), month: ec.getMonth(), day: ec.getDay(), time: ec.getTime() }
+      }
+    } catch {
+      if (seq === baziComputeSeq) baziPillars.value = null
     }
-  } catch {
-    if (seq === baziComputeSeq) baziPillars.value = null
-  }
+  })
 }, { immediate: true })
 
 /** 紫微斗数星盘（按出生信息实时排盘，选择紫微时才加载排盘库） */
@@ -373,12 +418,12 @@ async function runAnalyzeWithPickedCards() {
   }
 }
 
-async function onChoose(choice: 'stable' | 'adventure') {
+async function onChoose(choice: BranchChoice) {
   if (!analysis.value) return; step.value = 'submitting'; choiceMade.value = choice
   try {
     const res = await api.post('/fate/choose', { conflict_id: analysis.value.conflictId, choice: choice === 'stable' ? 'stable' : 'adventure' })
     if (!res.data.success) { toast.error(res.data.message || t('pages.fateDual.toastSubmitFail')); step.value = 'dual'; return }
-    const data = res.data.data as { result: string; guidance?: ChoiceGuidance; alreadyChosen?: boolean; choiceType?: 'stable' | 'adventure' }
+    const data = res.data.data as { result: string; guidance?: ChoiceGuidance; alreadyChosen?: boolean; choiceType?: BranchChoice }
     finalResult.value = data.result
     choiceGuidance.value = data.guidance ?? null
     if (data.choiceType === 'stable' || data.choiceType === 'adventure') choiceMade.value = data.choiceType
@@ -523,6 +568,66 @@ const pathComparison = computed(() => {
 })
 const hasPathScores = computed(() => pathComparison.value.length > 0)
 
+interface RouteTheaterMeta {
+  code: string
+  eyebrow: string
+  title: string
+  subtitle: string
+  persona: string
+  payoff: string
+  caution: string
+  symbol: string
+  buttonHint: string
+}
+
+const routeTheaterMeta: Record<BranchChoice, RouteTheaterMeta> = {
+  stable: {
+    code: 'A',
+    eyebrow: 'MOON LINE',
+    title: '月影守线',
+    subtitle: '守住现在',
+    persona: '适合先保留筹码、稳住节奏、观察窗口的人。',
+    payoff: '把波动拆小，等证据更清晰后再加码。',
+    caution: '小心把谨慎变成拖延。',
+    symbol: '月',
+    buttonHint: '选择守线',
+  },
+  adventure: {
+    code: 'B',
+    eyebrow: 'SPARK LINE',
+    title: '星火破局',
+    subtitle: '主动破局',
+    persona: '适合愿意承担波动、重写叙事、换取成长的人。',
+    payoff: '用一次可控行动，让真正的反馈浮出水面。',
+    caution: '小心让冲动放大代价。',
+    symbol: '星',
+    buttonHint: '选择破局',
+  },
+}
+
+const routeTheaterCards = computed(() => {
+  const branches = analysis.value?.branches
+  return (['stable', 'adventure'] as BranchChoice[]).map((choice) => {
+    const scores = choice === 'stable' ? branches?.stableScores : branches?.adventureScores
+    const focusAxes = SCORE_AXES
+      .map((axis) => ({ axis, value: Math.round(Number(scores?.[axis] ?? 0)) }))
+      .filter((item) => item.value > 0)
+      .sort((a, b) => b.value - a.value)
+      .slice(0, 2)
+
+    return {
+      choice,
+      ...routeTheaterMeta[choice],
+      branchText: (choice === 'stable' ? branches?.stable : branches?.adventure) ?? '',
+      tag: choice === 'stable' ? branches?.stableTag : branches?.adventureTag,
+      horizon: choice === 'stable' ? branches?.stableHorizon : branches?.adventureHorizon,
+      focusAxes,
+    }
+  })
+})
+
+const chosenRouteTheater = computed(() => choiceMade.value ? routeTheaterMeta[choiceMade.value] : null)
+
 function splitDisplayParagraphs(text: string): string[] {
   const raw = text.trim(); if (!raw) return []
   const byBlank = raw.split(/\n{2,}/).map((s) => s.trim()).filter(Boolean)
@@ -559,6 +664,24 @@ function splitDisplayParagraphs(text: string): string[] {
           </li>
         </ol>
       </header>
+
+      <section class="fate-theater-strip" aria-label="命运分岔剧场序章">
+        <div class="fate-theater-copy">
+          <p class="fate-theater-kicker">{{ currentTheaterScene.chapter }} · {{ currentTheaterScene.pulse }}</p>
+          <h2>{{ currentTheaterScene.title }}</h2>
+          <p>{{ currentTheaterScene.desc }}</p>
+        </div>
+        <div class="fate-theater-clues" aria-label="当前剧情线索">
+          <span v-for="clue in theaterClues" :key="clue.key">
+            <small>{{ clue.label }}</small>
+            {{ clue.value }}
+          </span>
+        </div>
+        <div class="fate-theater-question">
+          <small>当前剧本</small>
+          <p>{{ theaterQuestionPreview }}</p>
+        </div>
+      </section>
 
       <!-- 三栏主体 -->
       <div class="fate-main-grid" :class="ctaInvoking ? 'opacity-30 pointer-events-none' : ''">
@@ -651,6 +774,14 @@ function splitDisplayParagraphs(text: string): string[] {
         <!-- ─── 中栏：星盘 ─── -->
         <section class="fate-center" aria-label="命运星盘">
           <div v-if="chartType === 'bazi'" class="fate-orrery-container">
+            <img
+              :src="fateDualCrystalImage"
+              alt="紫银水晶命盘"
+              class="fate-static-orb-image"
+              decoding="async"
+              fetchpriority="high"
+              draggable="false"
+            >
             <!-- 四柱徽章 -->
             <div class="fate-pillar fate-pillar--tl">
               <span class="fate-pillar-label">年柱</span>
@@ -669,81 +800,6 @@ function splitDisplayParagraphs(text: string): string[] {
               <span class="fate-pillar-gz">{{ baziPillars ? baziPillars.time : '—' }}</span>
             </div>
 
-            <!-- 星盘本体 -->
-            <div class="fate-orrery" aria-hidden="true">
-              <!-- 静态星点 -->
-              <svg class="fate-stars-svg" viewBox="0 0 400 400" fill="none">
-                <g fill="#F5E9FF">
-                  <circle cx="24" cy="40" r="1.1" opacity="0.55"/><circle cx="62" cy="18" r="0.8" opacity="0.35"/>
-                  <circle cx="96" cy="54" r="1.3" opacity="0.6"/><circle cx="182" cy="44" r="1" opacity="0.5"/>
-                  <circle cx="228" cy="22" r="0.9" opacity="0.42"/><circle cx="274" cy="48" r="1.2" opacity="0.58"/>
-                  <circle cx="356" cy="58" r="1.1" opacity="0.5"/><circle cx="380" cy="96" r="0.8" opacity="0.36"/>
-                  <circle cx="18" cy="148" r="1.2" opacity="0.55"/><circle cx="30" cy="244" r="1" opacity="0.46"/>
-                  <circle cx="42" cy="346" r="1.2" opacity="0.54"/><circle cx="150" cy="384" r="1" opacity="0.48"/>
-                  <circle cx="262" cy="386" r="1.1" opacity="0.52"/><circle cx="362" cy="338" r="1.2" opacity="0.56"/>
-                  <circle cx="388" cy="180" r="1" opacity="0.48"/><circle cx="110" cy="282" r="1" opacity="0.46"/>
-                </g>
-              </svg>
-              <!-- 轨道网格 -->
-              <svg class="fate-grid-svg" viewBox="0 0 400 400" fill="none">
-                <g stroke="#C4A8FF" stroke-opacity="0.06" stroke-width="0.5">
-                  <g v-for="k in 12" :key="'s'+k" :transform="'rotate('+(k-1)*30+' 200 200)'"><line x1="200" y1="22" x2="200" y2="196"/></g>
-                </g>
-                <ellipse cx="200" cy="200" rx="48" ry="47" stroke="#A78BFA" stroke-opacity="0.18" stroke-width="0.8"/>
-                <ellipse cx="200" cy="200" rx="84" ry="81" stroke="#D4AF37" stroke-opacity="0.12" stroke-width="0.7"/>
-                <ellipse cx="200" cy="200" rx="120" ry="114" stroke="#A78BFA" stroke-opacity="0.14" stroke-width="0.6"/>
-                <ellipse cx="200" cy="200" rx="156" ry="146" stroke="#8A2BE2" stroke-opacity="0.1" stroke-width="0.6"/>
-                <ellipse cx="200" cy="200" rx="184" ry="170" stroke="#D4AF37" stroke-opacity="0.1" stroke-width="0.55"/>
-                <ellipse cx="200" cy="200" rx="198" ry="186" stroke="#A78BFA" stroke-opacity="0.08" stroke-width="0.5"/>
-                <g stroke="#D4AF37" stroke-opacity="0.08" stroke-width="0.5" fill="none">
-                  <polyline points="96,54 182,44 274,48 318,28"/><polyline points="30,244 74,300 150,300 206,372"/>
-                </g>
-              </svg>
-              <div class="fate-astral-aura" />
-              <div class="fate-sigil-ring" aria-hidden="true">
-                <span
-                  v-for="(mark, mi) in ['乾','坤','震','巽','坎','离','艮','兑']"
-                  :key="mark"
-                  class="fate-sigil-mark"
-                  :style="`--i:${mi}`"
-                >{{ mark }}</span>
-              </div>
-              <div class="fate-energy-line fate-energy-line--x" />
-              <div class="fate-energy-line fate-energy-line--y" />
-              <div class="fate-oracle-mist" />
-              <!-- 中心水晶球 + 环 -->
-              <div class="fate-crystal-field" aria-hidden="true">
-                <span class="fate-crystal-orbit fate-crystal-orbit--one" />
-                <span class="fate-crystal-orbit fate-crystal-orbit--two" />
-                <span class="fate-crystal-orbit fate-crystal-orbit--three" />
-                <span
-                  v-for="(rune, ri) in ['✧','☽','◇','✦','☉','✶','✷','✺']"
-                  :key="rune + ri"
-                  class="fate-crystal-rune"
-                  :style="`--r:${ri}`"
-                >{{ rune }}</span>
-              </div>
-              <div class="fate-core fate-crystal-core">
-                <div class="fate-crystal-backglow" />
-                <div class="fate-crystal-depth" />
-                <div class="fate-crystal-mist" />
-                <div class="fate-crystal-sigils" aria-hidden="true">
-                  <span v-for="(glyph, gi) in ['☽','✦','◇','✧','☉','✶','△','✷']" :key="glyph" :style="`--g:${gi}`">{{ glyph }}</span>
-                </div>
-                <div class="fate-crystal-lines" />
-                <div class="fate-crystal-facet fate-crystal-facet--one" />
-                <div class="fate-crystal-facet fate-crystal-facet--two" />
-                <div class="fate-crystal-shine" />
-              </div>
-              <div class="fate-ring"/>
-              <!-- 公转轨道 -->
-              <div class="fate-orb fate-orb--1"><span class="fate-dot fate-dot--gold"/></div>
-              <div class="fate-orb fate-orb--2"><span class="fate-dot fate-dot--violet"/><span class="fate-dot fate-dot--mini-gold"/></div>
-              <div class="fate-orb fate-orb--3"><span class="fate-dot fate-dot--blue"/></div>
-              <div class="fate-orb fate-orb--4"><span class="fate-dot fate-dot--pale"/><span class="fate-dot fate-dot--mini-blue"/></div>
-              <div class="fate-orb fate-orb--5"><span class="fate-dot fate-dot--amber"/></div>
-              <div class="fate-orb fate-orb--6"><span class="fate-dot fate-dot--violet-sm"/></div>
-            </div>
           </div>
 
           <!-- 紫微斗数命盘 -->
@@ -859,14 +915,21 @@ function splitDisplayParagraphs(text: string): string[] {
 
     <!-- ═══════ PICK 步骤 ═══════ -->
     <div v-else-if="step === 'pick'" class="fate-inner-wrap">
-      <header class="text-center mb-8">
-        <p class="text-xs tracking-[0.28em] text-[#D4AF37]/55">FATE DUAL</p>
-        <h1 class="font-serif text-3xl font-semibold tracking-[0.12em] text-[#E2D9F3] mt-2">抽取当下变量</h1>
+      <header class="fate-pick-stage">
+        <div>
+          <p class="fate-theater-kicker">{{ currentTheaterScene.chapter }} · {{ currentTheaterScene.pulse }}</p>
+          <h1>抽取三枚变量碎片</h1>
+          <p>先不要解释牌义。把它当成剧情里突然亮起的三束光，依直觉翻开就好。</p>
+        </div>
+        <div class="fate-pick-script">
+          <small>本次剧本</small>
+          <p>{{ theaterQuestionPreview }}</p>
+        </div>
       </header>
       <div class="max-w-4xl mx-auto">
         <div class="text-center mb-8">
           <h2 class="text-lg font-serif text-gold-200 mb-2">让塔罗补上命盘看不见的变量</h2>
-          <p class="text-gray-500 text-sm">依直觉抽 3 张牌，对应当前牵引、隐藏阻力、未来变量。</p>
+          <p class="text-gray-500 text-sm">三张牌会落入牵引、阻力、变量三个幕位。</p>
           <!-- 选牌进度 -->
           <div class="flex items-center justify-center gap-2 mt-4">
             <span
@@ -893,10 +956,19 @@ function splitDisplayParagraphs(text: string): string[] {
               </div>
             </div>
           </div>
-          <div class="mb-10">
-            <p class="text-center text-gray-600 text-sm mb-5">三张牌会成为本次双盘碰撞的变量层</p>
-            <div class="flex flex-wrap justify-center gap-5">
-              <div v-for="(position, posIndex) in fateSpreadPositions" :key="posIndex" class="flex flex-col items-center">
+          <div class="fate-variable-stage mb-10">
+            <div class="fate-variable-head">
+              <span>三幕变量</span>
+              <p>它们会和命盘一起碰撞出两条路线。</p>
+            </div>
+            <div class="fate-variable-grid">
+              <div
+                v-for="(position, posIndex) in fateSpreadPositions"
+                :key="posIndex"
+                class="fate-variable-card"
+                :class="{ 'fate-variable-card--filled': selectedIndices.length > posIndex }"
+              >
+                <span class="fate-variable-index">0{{ posIndex + 1 }}</span>
                 <div class="position-slot" :class="selectedIndices.length > posIndex ? 'position-filled' : 'position-empty'">
                   <template v-if="selectedIndices.length > posIndex && selectedCards[posIndex]">
                     <div class="w-full h-full rounded-lg overflow-hidden">
@@ -905,7 +977,9 @@ function splitDisplayParagraphs(text: string): string[] {
                   </template>
                   <template v-else><span class="text-gray-600 text-2xl font-light font-serif">{{ posIndex + 1 }}</span></template>
                 </div>
-                <p class="text-gray-500 text-xs mt-2.5 text-center max-w-[100px]">{{ position }}</p>
+                <p class="fate-variable-name">{{ position }}</p>
+                <small v-if="selectedCards[posIndex]">{{ selectedCards[posIndex].card.name }}</small>
+                <small v-else>等待翻开</small>
               </div>
             </div>
           </div>
@@ -1011,38 +1085,72 @@ function splitDisplayParagraphs(text: string): string[] {
         <p class="fate-collision-label">命运天平</p>
         <p class="fate-collision-summary">{{ analysis.conflict.summary }}</p>
       </section>
-      <div class="grid grid-cols-1 gap-5 md:grid-cols-2">
-        <div class="fate-route-card fate-route-card--stable">
-          <div class="flex items-center justify-between gap-2 mb-3">
-            <div>
-              <p class="fate-route-label">路线 A</p>
-              <p class="font-medium text-slate-200">守住现在</p>
-            </div>
-            <span v-if="analysis.branches.stableTag" class="fate-path-tag fate-path-tag--stable">{{ analysis.branches.stableTag }}</span>
+      <section class="fate-fork-stage" aria-labelledby="fate-fork-title">
+        <div class="fate-fork-head">
+          <div>
+            <p class="fate-theater-kicker">{{ currentTheaterScene.chapter }} · {{ currentTheaterScene.pulse }}</p>
+            <h3 id="fate-fork-title">{{ currentTheaterScene.title }}</h3>
           </div>
-          <p class="fate-route-sub">更适合需要降低变量、保留资源、等待时机的人。</p>
-          <p v-for="(para, pi) in splitDisplayParagraphs(analysis.branches.stable)" :key="pi" class="text-sm text-gray-400 mb-2">{{ para }}</p>
-          <p v-if="analysis.branches.stableHorizon" class="mt-3 flex items-center gap-1.5 text-[11px] text-slate-400/70">
-            <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2" stroke-linecap="round" stroke-linejoin="round"/></svg>
-            {{ t('pages.fateDual.horizonLabel') }} · {{ analysis.branches.stableHorizon }}
-          </p>
+          <p>{{ currentTheaterScene.desc }}</p>
         </div>
-        <div class="fate-route-card fate-route-card--adventure">
-          <div class="flex items-center justify-between gap-2 mb-3">
-            <div>
-              <p class="fate-route-label">路线 B</p>
-              <p class="font-medium text-fuchsia-100/95">主动破局</p>
+
+        <div class="fate-fork-lines">
+          <article
+            v-for="route in routeTheaterCards"
+            :key="route.choice"
+            class="fate-route-card fate-route-card--theater"
+            :class="`fate-route-card--${route.choice}`"
+          >
+            <div class="fate-route-portal" aria-hidden="true">
+              <span class="fate-route-symbol">{{ route.symbol }}</span>
+              <span class="fate-route-orbit fate-route-orbit--one" />
+              <span class="fate-route-orbit fate-route-orbit--two" />
             </div>
-            <span v-if="analysis.branches.adventureTag" class="fate-path-tag fate-path-tag--adventure">{{ analysis.branches.adventureTag }}</span>
+
+            <div class="fate-route-topline">
+              <span class="fate-route-code">路线 {{ route.code }}</span>
+              <span v-if="route.tag" class="fate-path-tag" :class="`fate-path-tag--${route.choice}`">{{ route.tag }}</span>
+            </div>
+
+            <p class="fate-route-eyebrow">{{ route.eyebrow }}</p>
+            <h4>{{ route.title }}</h4>
+            <p class="fate-route-subtitle">{{ route.subtitle }}</p>
+            <p class="fate-route-persona">{{ route.persona }}</p>
+
+            <div class="fate-route-body">
+              <p v-for="(para, pi) in splitDisplayParagraphs(route.branchText)" :key="pi">{{ para }}</p>
+            </div>
+
+            <div class="fate-route-insights">
+              <span v-if="route.horizon">
+                <small>{{ t('pages.fateDual.horizonLabel') }}</small>
+                {{ route.horizon }}
+              </span>
+              <span v-for="axis in route.focusAxes" :key="route.choice + axis.axis">
+                <small>{{ axis.axis }}</small>
+                {{ axis.value }}
+              </span>
+            </div>
+
+            <div class="fate-route-note">
+              <p>{{ route.payoff }}</p>
+              <small>{{ route.caution }}</small>
+            </div>
+
+            <button type="button" class="fate-route-choose cursor-pointer" :class="`fate-route-choose--${route.choice}`" @click="onChoose(route.choice)">
+              <span>{{ route.buttonHint }}</span>
+              <small>{{ route.subtitle }}</small>
+            </button>
+          </article>
+
+          <div class="fate-fork-rift" aria-hidden="true">
+            <span class="fate-fork-rift-core" />
+            <span class="fate-fork-rune fate-fork-rune--one">命</span>
+            <span class="fate-fork-rune fate-fork-rune--two">岔</span>
+            <span class="fate-fork-rune fate-fork-rune--three">择</span>
           </div>
-          <p class="fate-route-sub">更适合愿意承担波动、重写叙事、换取成长的人。</p>
-          <p v-for="(para, pi) in splitDisplayParagraphs(analysis.branches.adventure)" :key="pi" class="text-sm text-gray-400 mb-2">{{ para }}</p>
-          <p v-if="analysis.branches.adventureHorizon" class="mt-3 flex items-center gap-1.5 text-[11px] text-fuchsia-300/70">
-            <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2" stroke-linecap="round" stroke-linejoin="round"/></svg>
-            {{ t('pages.fateDual.horizonLabel') }} · {{ analysis.branches.adventureHorizon }}
-          </p>
         </div>
-      </div>
+      </section>
 
       <!-- 两条路径数值对比 -->
       <section v-if="hasPathScores" class="fate-compare rounded-2xl border border-white/10 bg-white/[0.02] p-6 sm:p-7">
@@ -1078,22 +1186,6 @@ function splitDisplayParagraphs(text: string): string[] {
         </div>
       </section>
 
-      <section class="fate-choice-panel">
-        <div>
-          <p class="fate-choice-kicker">留下本次命运签章</p>
-          <h3>你这次要相信哪一种行动策略？</h3>
-        </div>
-        <div class="fate-choice-actions">
-          <button type="button" class="fate-choice-btn fate-choice-btn--stable cursor-pointer" @click="onChoose('stable')">
-            <span>守住现在</span>
-            <small>顺势、观察、减少变量</small>
-          </button>
-          <button type="button" class="fate-choice-btn fate-choice-btn--adventure cursor-pointer" @click="onChoose('adventure')">
-            <span>主动破局</span>
-            <small>行动、承担、改写路径</small>
-          </button>
-        </div>
-      </section>
     </div>
 
     <!-- Submitting -->
@@ -1109,6 +1201,21 @@ function splitDisplayParagraphs(text: string): string[] {
         <h3>{{ chosenPathLabel }}</h3>
         <p class="fate-seal-sub">AI 已根据你的双盘分岔，生成这条路线的解析与行动指引。</p>
       </div>
+
+      <section v-if="chosenRouteTheater" class="fate-route-cover" :class="`fate-route-cover--${choiceMade}`">
+        <div class="fate-route-cover-symbol" aria-hidden="true">
+          <span>{{ chosenRouteTheater.symbol }}</span>
+        </div>
+        <div class="fate-route-cover-copy">
+          <p class="fate-theater-kicker">ROUTE SEALED · {{ chosenRouteTheater.eyebrow }}</p>
+          <h4>{{ chosenRouteTheater.title }}</h4>
+          <p>{{ chosenRouteTheater.persona }}</p>
+        </div>
+        <div class="fate-route-cover-note">
+          <small>路线提醒</small>
+          <p>{{ chosenRouteTheater.caution }}</p>
+        </div>
+      </section>
 
       <section class="fate-guidance-hero">
         <div class="fate-guidance-orb" aria-hidden="true">
@@ -1555,63 +1662,6 @@ function splitDisplayParagraphs(text: string): string[] {
   color: #EBE0FF; text-shadow: 0 0 14px rgba(167,139,250,0.5);
 }
 
-/* 星盘本体 */
-.fate-orrery {
-  position: absolute; inset: 5%;
-  display: flex; align-items: center; justify-content: center;
-  transform: perspective(1000px) rotateX(8deg);
-  transform-style: preserve-3d;
-}
-.fate-stars-svg { position: absolute; inset: -5%; width: 110%; height: 110%; pointer-events: none; }
-.fate-grid-svg { position: absolute; inset: 0; width: 100%; height: 100%; }
-.fate-core {
-  position: absolute; top: 50%; left: 50%; width: 18%; height: 18%;
-  transform: translate(-50%, -50%); border-radius: 50%;
-  background: radial-gradient(circle at 42% 38%, #E9DBFF 0%, #A78BFA 32%, #8A2BE2 62%, #4C1D95 100%);
-  box-shadow: 0 0 40px rgba(138,43,226,0.6), 0 0 80px rgba(167,139,250,0.35);
-  animation: core-pulse 5s ease-in-out infinite;
-}
-@keyframes core-pulse {
-  0%, 100% { box-shadow: 0 0 40px rgba(138,43,226,0.6), 0 0 80px rgba(167,139,250,0.35); }
-  50% { box-shadow: 0 0 52px rgba(138,43,226,0.8), 0 0 110px rgba(167,139,250,0.5); }
-}
-.fate-ring {
-  position: absolute; top: 50%; left: 50%; width: 48%; height: 48%;
-  transform: translate(-50%, -50%) rotateX(74deg) rotateZ(-12deg);
-  border-radius: 50%; border: 2.5px solid rgba(196,168,255,0.6);
-  box-shadow: 0 0 20px rgba(167,139,250,0.5), 0 0 40px rgba(138,43,226,0.3);
-  pointer-events: none;
-}
-.fate-ring::after {
-  content: ''; position: absolute; inset: -6px; border-radius: 50%;
-  border: 1.2px solid rgba(212,175,55,0.3);
-}
-
-/* 公转轨道 */
-.fate-orb {
-  position: absolute; top: 50%; left: 50%; border-radius: 50%;
-  transform: translate(-50%, -50%);
-}
-.fate-orb--1 { width: 24%; height: 24%; animation: orb-spin 14s linear infinite; }
-.fate-orb--2 { width: 42%; height: 41%; animation: orb-spin 22s linear infinite reverse; }
-.fate-orb--3 { width: 60%; height: 57%; animation: orb-spin 30s linear infinite; }
-.fate-orb--4 { width: 78%; height: 73%; animation: orb-spin 40s linear infinite reverse; }
-.fate-orb--5 { width: 92%; height: 85%; animation: orb-spin 50s linear infinite; }
-.fate-orb--6 { width: 99%; height: 93%; animation: orb-spin 60s linear infinite reverse; }
-@keyframes orb-spin { to { transform: translate(-50%, -50%) rotate(360deg); } }
-
-.fate-dot {
-  position: absolute; top: -4px; left: 50%; border-radius: 50%;
-}
-.fate-dot--gold { width: 8px; height: 8px; margin-left: -4px; background: #F2D98A; box-shadow: 0 0 12px rgba(242,217,138,0.85); }
-.fate-dot--violet { width: 6px; height: 6px; margin-left: -3px; background: #C4A8FF; box-shadow: 0 0 12px rgba(196,168,255,0.85); }
-.fate-dot--blue { width: 8px; height: 8px; margin-left: -4px; background: #8AB4FF; box-shadow: 0 0 12px rgba(138,180,255,0.8); }
-.fate-dot--pale { width: 6px; height: 6px; margin-left: -3px; background: #F5E9FF; box-shadow: 0 0 10px rgba(245,233,255,0.7); }
-.fate-dot--amber { width: 5px; height: 5px; margin-left: -2.5px; background: #FBBF24; box-shadow: 0 0 12px rgba(251,191,36,0.85); }
-.fate-dot--violet-sm { width: 4px; height: 4px; margin-left: -2px; background: #A78BFA; box-shadow: 0 0 10px rgba(167,139,250,0.8); }
-.fate-dot--mini-gold { width: 4px; height: 4px; margin-left: -2px; background: #F2D98A; box-shadow: 0 0 8px rgba(242,217,138,0.7); top: auto; bottom: -2px; }
-.fate-dot--mini-blue { width: 4px; height: 4px; margin-left: -2px; background: #8AB4FF; box-shadow: 0 0 8px rgba(138,180,255,0.7); top: 50%; left: -2px; margin-top: -2px; }
-
 /* 命盘类型切换 */
 .fate-chart-tabs { display: flex; gap: 0.5rem; margin-top: 1rem; }
 .fate-tab {
@@ -1939,15 +1989,6 @@ function splitDisplayParagraphs(text: string): string[] {
 }
 .fate-orrery-container {
   max-width: 540px;
-  filter: drop-shadow(0 32px 64px rgba(0,0,0,0.38));
-}
-.fate-core {
-  background: radial-gradient(circle at 42% 38%, #FFF7D7 0%, #D4AF37 30%, #8A5CF6 66%, #2F1768 100%);
-  box-shadow: 0 0 42px rgba(212,175,55,0.46), 0 0 90px rgba(138,92,246,0.34);
-}
-.fate-ring {
-  border-color: rgba(212,175,55,0.48);
-  box-shadow: 0 0 22px rgba(212,175,55,0.24), 0 0 46px rgba(138,43,226,0.24);
 }
 .fate-pillar {
   width: 78px;
@@ -2544,174 +2585,9 @@ function splitDisplayParagraphs(text: string): string[] {
     radial-gradient(circle at 50% 50%, rgba(116,86,184,0.19), transparent 54%),
     radial-gradient(ellipse at 50% 100%, rgba(255,255,255,0.04), transparent 44%);
 }
-.fate-center::before {
-  content: '';
-  position: absolute;
-  inset: 7% 11%;
-  z-index: -1;
-  border-radius: 50%;
-  background:
-    conic-gradient(from 90deg, transparent, rgba(212,175,55,0.11), transparent 22%, rgba(138,92,246,0.14), transparent 46%, rgba(245,233,255,0.08), transparent 72%, rgba(212,175,55,0.1), transparent);
-  filter: blur(18px);
-  opacity: 0.72;
-  animation: fate-nebula-turn 26s linear infinite;
-}
-.fate-center::after {
-  content: '';
-  position: absolute;
-  inset: 9% 14%;
-  z-index: -1;
-  border-radius: 50%;
-  background: radial-gradient(circle, transparent 55%, rgba(212,175,55,0.12) 56%, transparent 58%);
-  opacity: 0.48;
-  animation: fate-breathe 5.8s ease-in-out infinite;
-}
 .fate-orrery-container {
   position: relative;
   z-index: 1;
-  filter:
-    drop-shadow(0 32px 68px rgba(0,0,0,0.44))
-    drop-shadow(0 0 26px rgba(138,92,246,0.16));
-}
-.fate-orrery {
-  transform: perspective(1000px) rotateX(10deg);
-}
-.fate-grid-svg {
-  filter: drop-shadow(0 0 5px rgba(212,175,55,0.12));
-}
-.fate-stars-svg {
-  animation: fate-star-drift 16s ease-in-out infinite alternate;
-}
-.fate-astral-aura {
-  position: absolute;
-  top: 50%;
-  left: 50%;
-  width: 74%;
-  height: 74%;
-  transform: translate(-50%, -50%);
-  border-radius: 50%;
-  background:
-    radial-gradient(circle, rgba(255,247,215,0.14) 0 8%, transparent 9%),
-    radial-gradient(circle, transparent 39%, rgba(212,175,55,0.09) 40%, transparent 42%),
-    conic-gradient(from 180deg, transparent, rgba(212,175,55,0.18), transparent 18%, rgba(138,92,246,0.2), transparent 40%, rgba(255,247,215,0.12), transparent 62%, rgba(212,175,55,0.14), transparent);
-  filter: blur(1px);
-  opacity: 0.72;
-  animation: fate-aura-spin 34s linear infinite;
-}
-.fate-sigil-ring {
-  position: absolute;
-  top: 50%;
-  left: 50%;
-  width: 62%;
-  height: 62%;
-  transform: translate(-50%, -50%);
-  border-radius: 50%;
-  animation: fate-sigil-spin 42s linear infinite reverse;
-}
-.fate-sigil-ring::before,
-.fate-sigil-ring::after {
-  content: '';
-  position: absolute;
-  inset: 0;
-  border-radius: 50%;
-  border: 1px solid rgba(212,175,55,0.16);
-  box-shadow: inset 0 0 26px rgba(138,92,246,0.08), 0 0 22px rgba(212,175,55,0.05);
-}
-.fate-sigil-ring::after {
-  inset: 10%;
-  border-color: rgba(245,233,255,0.1);
-}
-.fate-sigil-mark {
-  position: absolute;
-  top: 50%;
-  left: 50%;
-  width: 1.45rem;
-  height: 1.45rem;
-  margin: -0.725rem;
-  display: grid;
-  place-items: center;
-  transform: rotate(calc(var(--i) * 45deg)) translateY(-9.8rem) rotate(calc(var(--i) * -45deg));
-  color: rgba(247,232,180,0.46);
-  font-family: ui-serif, Georgia, 'Songti SC', serif;
-  font-size: 0.72rem;
-  text-shadow: 0 0 10px rgba(212,175,55,0.25);
-}
-.fate-energy-line {
-  position: absolute;
-  top: 50%;
-  left: 50%;
-  width: 66%;
-  height: 1px;
-  transform-origin: center;
-  background: linear-gradient(90deg, transparent, rgba(212,175,55,0.36), rgba(245,233,255,0.44), rgba(138,92,246,0.28), transparent);
-  opacity: 0.55;
-  filter: blur(0.2px);
-}
-.fate-energy-line--x {
-  transform: translate(-50%, -50%) rotate(0deg);
-  animation: fate-energy-scan 4.8s ease-in-out infinite;
-}
-.fate-energy-line--y {
-  transform: translate(-50%, -50%) rotate(90deg);
-  animation: fate-energy-scan 5.6s ease-in-out infinite reverse;
-}
-.fate-oracle-mist {
-  position: absolute;
-  inset: 19%;
-  border-radius: 50%;
-  background:
-    radial-gradient(circle at 40% 45%, rgba(245,233,255,0.14), transparent 16%),
-    radial-gradient(circle at 58% 55%, rgba(212,175,55,0.12), transparent 18%),
-    radial-gradient(circle at 50% 50%, rgba(138,92,246,0.16), transparent 42%);
-  filter: blur(18px);
-  mix-blend-mode: screen;
-  opacity: 0.55;
-  animation: fate-mist-flow 7.5s ease-in-out infinite alternate;
-}
-.fate-core {
-  width: 16%;
-  height: 16%;
-  background:
-    radial-gradient(circle at 38% 33%, #fffbe7 0%, #F5D46A 26%, #A783FF 56%, #3D2075 100%);
-  box-shadow:
-    0 0 24px rgba(255,247,215,0.42),
-    0 0 62px rgba(212,175,55,0.46),
-    0 0 112px rgba(138,92,246,0.32);
-  animation: fate-core-ritual 4.6s ease-in-out infinite;
-}
-.fate-core::before {
-  content: '';
-  position: absolute;
-  inset: -42%;
-  border-radius: 50%;
-  border: 1px solid rgba(245,233,255,0.18);
-  background: radial-gradient(circle, rgba(255,255,255,0.12), transparent 52%);
-  animation: fate-core-halo 3.8s ease-in-out infinite;
-}
-.fate-ring {
-  width: 54%;
-  height: 54%;
-  border-width: 1.5px;
-  border-color: rgba(247,232,180,0.56);
-  box-shadow:
-    0 0 20px rgba(212,175,55,0.28),
-    0 0 54px rgba(138,92,246,0.22),
-    inset 0 0 12px rgba(245,233,255,0.08);
-  animation: fate-ring-waver 8s ease-in-out infinite;
-}
-.fate-ring::after {
-  border-color: rgba(138,92,246,0.28);
-}
-.fate-dot--gold,
-.fate-dot--amber {
-  box-shadow: 0 0 14px rgba(245,212,106,0.95), 0 0 28px rgba(212,175,55,0.36);
-}
-.fate-dot--violet,
-.fate-dot--violet-sm {
-  box-shadow: 0 0 14px rgba(186,160,255,0.9), 0 0 28px rgba(138,92,246,0.36);
-}
-.fate-dot--blue {
-  box-shadow: 0 0 14px rgba(138,180,255,0.9), 0 0 26px rgba(88,166,255,0.28);
 }
 .fate-pillar {
   backdrop-filter: blur(14px);
@@ -2732,66 +2608,6 @@ function splitDisplayParagraphs(text: string): string[] {
 .fate-pillar--bl .fate-pillar-gz,
 .fate-pillar--br .fate-pillar-gz {
   color: #ECE3FF;
-}
-
-@keyframes fate-nebula-turn {
-  to { transform: rotate(360deg); }
-}
-@keyframes fate-breathe {
-  0%, 100% { opacity: 0.28; transform: scale(0.98); }
-  50% { opacity: 0.62; transform: scale(1.04); }
-}
-@keyframes fate-aura-spin {
-  to { transform: translate(-50%, -50%) rotate(360deg); }
-}
-@keyframes fate-sigil-spin {
-  to { transform: translate(-50%, -50%) rotate(360deg); }
-}
-@keyframes fate-star-drift {
-  0% { transform: translate3d(-3px, 2px, 0) scale(1); opacity: 0.78; }
-  100% { transform: translate3d(4px, -3px, 0) scale(1.01); opacity: 1; }
-}
-@keyframes fate-energy-scan {
-  0%, 100% { opacity: 0.18; width: 50%; }
-  45%, 55% { opacity: 0.72; width: 72%; }
-}
-@keyframes fate-mist-flow {
-  0% { transform: translate3d(-2%, 1%, 0) scale(0.95); opacity: 0.36; }
-  100% { transform: translate3d(2%, -2%, 0) scale(1.08); opacity: 0.62; }
-}
-@keyframes fate-core-ritual {
-  0%, 100% {
-    transform: translate(-50%, -50%) scale(1);
-    box-shadow:
-      0 0 24px rgba(255,247,215,0.42),
-      0 0 62px rgba(212,175,55,0.46),
-      0 0 112px rgba(138,92,246,0.32);
-  }
-  50% {
-    transform: translate(-50%, -50%) scale(1.08);
-    box-shadow:
-      0 0 34px rgba(255,247,215,0.58),
-      0 0 84px rgba(212,175,55,0.56),
-      0 0 142px rgba(138,92,246,0.42);
-  }
-}
-@keyframes fate-core-halo {
-  0%, 100% { opacity: 0.18; transform: scale(0.94); }
-  50% { opacity: 0.48; transform: scale(1.14); }
-}
-@keyframes fate-ring-waver {
-  0%, 100% { transform: translate(-50%, -50%) rotateX(74deg) rotateZ(-12deg) scale(1); }
-  50% { transform: translate(-50%, -50%) rotateX(72deg) rotateZ(-7deg) scale(1.04); }
-}
-
-@media (max-width: 720px) {
-  .fate-sigil-mark {
-    transform: rotate(calc(var(--i) * 45deg)) translateY(-7.2rem) rotate(calc(var(--i) * -45deg));
-  }
-  .fate-astral-aura {
-    width: 78%;
-    height: 78%;
-  }
 }
 
 /* ─── 宽屏沉浸舞台：减少两侧留白，强化命盘主视觉 ─── */
@@ -2860,74 +2676,9 @@ function splitDisplayParagraphs(text: string): string[] {
     inset 0 -70px 120px rgba(1,1,6,0.34),
     0 32px 110px -62px rgba(0,0,0,0.95);
 }
-.fate-center::before {
-  inset: 2% 5%;
-  opacity: 0.86;
-  filter: blur(22px);
-}
-.fate-center::after {
-  inset: 4% 8%;
-}
 .fate-orrery-container {
   max-width: min(100%, clamp(560px, 42vw, 780px));
   isolation: isolate;
-}
-.fate-orrery-container::before {
-  content: '';
-  position: absolute;
-  inset: 6% -6% 4%;
-  z-index: -1;
-  border-radius: 50%;
-  background:
-    conic-gradient(from 220deg, transparent, rgba(247,232,180,0.16), transparent 18%, rgba(100,181,246,0.11), transparent 40%, rgba(138,92,246,0.18), transparent 72%, rgba(247,232,180,0.12), transparent),
-    radial-gradient(circle at 50% 50%, rgba(245,233,255,0.08), transparent 58%);
-  filter: blur(20px);
-  animation: fate-stage-slow-spin 52s linear infinite;
-}
-.fate-orrery-container::after {
-  content: '';
-  position: absolute;
-  inset: 17% 2% 11%;
-  z-index: -1;
-  border-radius: 50%;
-  border: 1px solid rgba(247,232,180,0.12);
-  box-shadow:
-    0 0 34px rgba(212,175,55,0.1),
-    inset 0 0 48px rgba(138,92,246,0.08);
-}
-.fate-orrery {
-  inset: 2%;
-  transform: perspective(1200px) rotateX(9deg);
-}
-.fate-stars-svg {
-  inset: -8%;
-  width: 116%;
-  height: 116%;
-}
-.fate-astral-aura {
-  width: 82%;
-  height: 82%;
-}
-.fate-sigil-ring {
-  width: 68%;
-  height: 68%;
-}
-.fate-sigil-mark {
-  transform: rotate(calc(var(--i) * 45deg)) translateY(clamp(-15.4rem, -13.8vw, -10.8rem)) rotate(calc(var(--i) * -45deg));
-}
-.fate-energy-line {
-  width: 76%;
-}
-.fate-oracle-mist {
-  inset: 14%;
-}
-.fate-core {
-  width: 17%;
-  height: 17%;
-}
-.fate-ring {
-  width: 58%;
-  height: 58%;
 }
 .fate-pillar {
   width: clamp(76px, 5.6vw, 96px);
@@ -2946,9 +2697,6 @@ function splitDisplayParagraphs(text: string): string[] {
 .fate-chart-tabs {
   margin-top: clamp(0.35rem, 0.8vw, 0.85rem);
 }
-@keyframes fate-stage-slow-spin {
-  to { transform: rotate(360deg); }
-}
 @media (min-width: 1440px) and (max-height: 940px) {
   .fate-page--form {
     padding-top: calc(2.2rem + env(safe-area-inset-top, 0px));
@@ -2964,9 +2712,6 @@ function splitDisplayParagraphs(text: string): string[] {
   .fate-hero-copy {
     grid-template-columns: auto minmax(0, 1fr);
   }
-  .fate-sigil-mark {
-    transform: rotate(calc(var(--i) * 45deg)) translateY(-10rem) rotate(calc(var(--i) * -45deg));
-  }
 }
 @media (max-width: 720px) {
   .fate-dashboard {
@@ -2979,9 +2724,6 @@ function splitDisplayParagraphs(text: string): string[] {
   }
   .fate-orrery-container {
     max-width: min(92vw, 430px);
-  }
-  .fate-sigil-mark {
-    transform: rotate(calc(var(--i) * 45deg)) translateY(-7.2rem) rotate(calc(var(--i) * -45deg));
   }
 }
 
@@ -3787,322 +3529,10 @@ function splitDisplayParagraphs(text: string): string[] {
     radial-gradient(ellipse at 50% 100%, rgba(188,180,255,0.055), transparent 44%),
     linear-gradient(180deg, rgba(7,4,18,0.12), rgba(2,1,8,0.34));
 }
-.fate-page--form .fate-center::before {
-  background:
-    conic-gradient(from 90deg, transparent, rgba(232,231,255,0.13), transparent 22%, rgba(139,92,246,0.24), transparent 46%, rgba(221,214,254,0.1), transparent 72%, rgba(99,102,241,0.16), transparent);
-}
-.fate-page--form .fate-center::after {
-  background: radial-gradient(circle, transparent 54%, rgba(232,231,255,0.16) 56%, transparent 58%);
-}
 .fate-page--form .fate-main-grid::before {
   background:
     radial-gradient(ellipse at 50% 50%, rgba(232,231,255,0.08), transparent 34%),
     radial-gradient(ellipse at 50% 46%, rgba(124,58,237,0.22), transparent 58%);
-}
-.fate-page--form .fate-orrery-container {
-  filter:
-    drop-shadow(0 34px 70px rgba(0,0,0,0.46))
-    drop-shadow(0 0 34px rgba(139,92,246,0.22));
-}
-.fate-page--form .fate-orrery-container::before {
-  background:
-    conic-gradient(from 220deg, transparent, rgba(232,231,255,0.18), transparent 18%, rgba(139,92,246,0.18), transparent 42%, rgba(99,102,241,0.18), transparent 70%, rgba(232,231,255,0.12), transparent),
-    radial-gradient(circle at 50% 50%, rgba(232,231,255,0.08), transparent 58%);
-}
-.fate-page--form .fate-orrery-container::after {
-  border-color: rgba(232,231,255,0.16);
-  box-shadow:
-    0 0 36px rgba(232,231,255,0.09),
-    inset 0 0 52px rgba(139,92,246,0.1);
-}
-.fate-page--form .fate-grid-svg {
-  filter: drop-shadow(0 0 7px rgba(232,231,255,0.14));
-}
-.fate-page--form .fate-astral-aura {
-  background:
-    radial-gradient(circle, rgba(245,243,255,0.15) 0 8%, transparent 9%),
-    radial-gradient(circle, transparent 39%, rgba(232,231,255,0.1) 40%, transparent 42%),
-    conic-gradient(from 180deg, transparent, rgba(232,231,255,0.18), transparent 18%, rgba(139,92,246,0.26), transparent 42%, rgba(199,210,254,0.14), transparent 62%, rgba(99,102,241,0.18), transparent);
-}
-.fate-page--form .fate-sigil-ring::before,
-.fate-page--form .fate-sigil-ring::after {
-  border-color: rgba(232,231,255,0.18);
-  box-shadow: inset 0 0 28px rgba(139,92,246,0.12), 0 0 24px rgba(232,231,255,0.06);
-}
-.fate-page--form .fate-sigil-ring::after {
-  border-color: rgba(196,181,253,0.16);
-}
-.fate-page--form .fate-sigil-mark {
-  color: rgba(232,231,255,0.56);
-  text-shadow: 0 0 12px rgba(167,139,250,0.34);
-}
-.fate-page--form .fate-energy-line {
-  background: linear-gradient(90deg, transparent, rgba(167,139,250,0.36), rgba(245,243,255,0.52), rgba(99,102,241,0.32), transparent);
-}
-.fate-page--form .fate-oracle-mist {
-  background:
-    radial-gradient(circle at 40% 45%, rgba(245,243,255,0.16), transparent 16%),
-    radial-gradient(circle at 58% 55%, rgba(167,139,250,0.14), transparent 18%),
-    radial-gradient(circle at 50% 50%, rgba(124,58,237,0.2), transparent 42%);
-}
-.fate-crystal-field {
-  position: absolute;
-  top: 50%;
-  left: 50%;
-  width: 32%;
-  height: 32%;
-  transform: translate(-50%, -50%);
-  transform-style: preserve-3d;
-  pointer-events: none;
-  z-index: 4;
-}
-.fate-crystal-field::before {
-  content: '';
-  position: absolute;
-  inset: -18%;
-  border-radius: 50%;
-  background:
-    radial-gradient(circle at 50% 44%, rgba(245,243,255,0.28), transparent 26%),
-    radial-gradient(circle at 50% 50%, rgba(124,58,237,0.22), transparent 58%);
-  filter: blur(13px);
-  opacity: 0.78;
-  animation: fate-crystal-field-pulse 5.2s ease-in-out infinite;
-}
-.fate-crystal-field::after {
-  content: '';
-  position: absolute;
-  left: 14%;
-  right: 14%;
-  bottom: -17%;
-  height: 18%;
-  border-radius: 50%;
-  background: radial-gradient(ellipse, rgba(10,3,24,0.88), rgba(80,46,160,0.24) 46%, transparent 72%);
-  filter: blur(8px);
-  opacity: 0.78;
-}
-.fate-crystal-orbit {
-  position: absolute;
-  inset: 6%;
-  border-radius: 50%;
-  border: 1px solid rgba(245,243,255,0.2);
-  box-shadow:
-    0 0 16px rgba(167,139,250,0.18),
-    inset 0 0 12px rgba(245,243,255,0.06);
-}
-.fate-crystal-orbit--one {
-  transform: rotateX(68deg) rotateZ(-18deg);
-  animation: fate-crystal-orbit-one 10s ease-in-out infinite;
-}
-.fate-crystal-orbit--two {
-  inset: 13%;
-  border-color: rgba(167,139,250,0.24);
-  transform: rotateX(76deg) rotateZ(66deg);
-  animation: fate-crystal-orbit-two 13s linear infinite;
-}
-.fate-crystal-orbit--three {
-  inset: -4%;
-  border-color: rgba(232,231,255,0.12);
-  border-style: dashed;
-  transform: rotateX(62deg) rotateZ(122deg);
-  animation: fate-crystal-orbit-three 18s linear infinite reverse;
-}
-.fate-crystal-rune {
-  position: absolute;
-  top: 50%;
-  left: 50%;
-  width: 1rem;
-  height: 1rem;
-  margin: -0.5rem;
-  display: grid;
-  place-items: center;
-  transform: rotate(calc(var(--r) * 45deg)) translateY(-58%) rotate(calc(var(--r) * -45deg));
-  color: rgba(245,243,255,0.66);
-  font-family: ui-serif, Georgia, serif;
-  font-size: clamp(0.48rem, 0.56vw, 0.76rem);
-  text-shadow:
-    0 0 8px rgba(245,243,255,0.58),
-    0 0 18px rgba(139,92,246,0.5);
-  opacity: 0.8;
-  animation: fate-crystal-rune-float 4.8s ease-in-out infinite;
-  animation-delay: calc(var(--r) * -0.42s);
-}
-.fate-page--form .fate-core {
-  background:
-    radial-gradient(circle at 36% 30%, #ffffff 0%, #e8e7ff 18%, #a78bfa 45%, #6d28d9 70%, #1e123f 100%);
-  box-shadow:
-    0 0 26px rgba(245,243,255,0.48),
-    0 0 72px rgba(139,92,246,0.5),
-    0 0 124px rgba(99,102,241,0.32);
-}
-.fate-page--form .fate-core::before {
-  border-color: rgba(232,231,255,0.22);
-  background: radial-gradient(circle, rgba(245,243,255,0.16), transparent 52%);
-}
-.fate-page--form .fate-crystal-core {
-  overflow: hidden;
-  z-index: 6;
-  width: 23%;
-  height: 23%;
-  border: 1px solid rgba(245,243,255,0.42);
-  background:
-    radial-gradient(circle at 29% 21%, rgba(255,255,255,0.98) 0 5%, rgba(245,243,255,0.38) 7% 15%, transparent 25%),
-    radial-gradient(circle at 72% 74%, rgba(139,92,246,0.72), transparent 34%),
-    radial-gradient(circle at 38% 50%, rgba(221,214,254,0.4), transparent 30%),
-    radial-gradient(circle at 53% 45%, rgba(122,87,224,0.82), rgba(53,31,112,0.9) 54%, rgba(13,7,36,0.98) 100%);
-  box-shadow:
-    inset 14px 16px 26px rgba(255,255,255,0.27),
-    inset -18px -22px 32px rgba(8,4,24,0.88),
-    inset -3px 4px 10px rgba(196,181,253,0.22),
-    inset 0 0 26px rgba(196,181,253,0.2),
-    0 16px 28px rgba(5,2,14,0.48),
-    0 0 34px rgba(245,243,255,0.56),
-    0 0 86px rgba(139,92,246,0.62),
-    0 0 144px rgba(99,102,241,0.38);
-  transform: translate(-50%, -50%) translateZ(22px);
-  animation: fate-crystal-float 5.8s ease-in-out infinite;
-}
-.fate-page--form .fate-crystal-core::before {
-  inset: -42%;
-  border-color: rgba(232,231,255,0.28);
-  background:
-    radial-gradient(circle at 50% 50%, rgba(245,243,255,0.2), transparent 44%),
-    conic-gradient(from 120deg, transparent, rgba(232,231,255,0.28), transparent 22%, rgba(139,92,246,0.18), transparent 62%, rgba(245,243,255,0.2), transparent);
-  animation: fate-core-halo 3.8s ease-in-out infinite;
-}
-.fate-page--form .fate-crystal-core::after {
-  content: '';
-  position: absolute;
-  inset: 7% 12% auto 20%;
-  height: 30%;
-  border-radius: 999px 999px 60% 60%;
-  background: linear-gradient(135deg, rgba(255,255,255,0.72), rgba(255,255,255,0.16) 48%, transparent 72%);
-  filter: blur(1px);
-  opacity: 0.78;
-  transform: rotate(-22deg);
-  pointer-events: none;
-}
-.fate-page--form .fate-crystal-backglow {
-  position: absolute;
-  inset: -24%;
-  border-radius: 50%;
-  background:
-    radial-gradient(circle at 50% 48%, rgba(245,243,255,0.22), transparent 32%),
-    radial-gradient(circle at 50% 50%, rgba(139,92,246,0.38), transparent 66%);
-  filter: blur(10px);
-  opacity: 0.82;
-  animation: fate-crystal-backglow 4.8s ease-in-out infinite;
-}
-.fate-crystal-depth,
-.fate-crystal-mist,
-.fate-crystal-sigils,
-.fate-crystal-lines,
-.fate-crystal-facet,
-.fate-crystal-shine {
-  position: absolute;
-  inset: 0;
-  border-radius: inherit;
-  pointer-events: none;
-}
-.fate-crystal-depth {
-  background:
-    radial-gradient(ellipse at 48% 78%, rgba(255,255,255,0.14), transparent 21%),
-    radial-gradient(ellipse at 50% 88%, rgba(0,0,0,0.6), transparent 42%),
-    linear-gradient(115deg, transparent 0 39%, rgba(255,255,255,0.11) 44%, transparent 54% 100%),
-    linear-gradient(22deg, transparent 0 48%, rgba(167,139,250,0.16) 52%, transparent 61% 100%);
-  mix-blend-mode: screen;
-  opacity: 0.86;
-}
-.fate-crystal-mist {
-  inset: 10%;
-  background:
-    radial-gradient(circle at 34% 42%, rgba(255,255,255,0.32), transparent 18%),
-    radial-gradient(circle at 66% 58%, rgba(167,139,250,0.4), transparent 23%),
-    radial-gradient(circle at 52% 48%, rgba(59,7,100,0.44), transparent 48%);
-  filter: blur(8px);
-  mix-blend-mode: screen;
-  opacity: 0.8;
-  animation: fate-crystal-mist 6.4s ease-in-out infinite alternate;
-}
-.fate-crystal-lines {
-  inset: 11%;
-  border: 1px solid rgba(245,243,255,0.26);
-  background:
-    linear-gradient(0deg, transparent 46%, rgba(245,243,255,0.24) 49%, transparent 52%),
-    linear-gradient(90deg, transparent 47%, rgba(196,181,253,0.2) 50%, transparent 53%),
-    radial-gradient(ellipse at 50% 50%, transparent 30%, rgba(245,243,255,0.16) 33%, transparent 36%, transparent 53%, rgba(167,139,250,0.14) 56%, transparent 59%, transparent 70%, rgba(232,231,255,0.12) 73%, transparent 76%);
-  box-shadow: inset 0 0 18px rgba(245,243,255,0.08);
-  opacity: 0.8;
-  transform: rotateX(62deg) rotateZ(-12deg);
-  animation: fate-crystal-lines 12s linear infinite;
-}
-.fate-crystal-sigils {
-  animation: fate-crystal-sigils 18s linear infinite;
-}
-.fate-crystal-sigils span {
-  position: absolute;
-  top: 50%;
-  left: 50%;
-  width: 1rem;
-  height: 1rem;
-  margin: -0.5rem;
-  display: grid;
-  place-items: center;
-  transform: rotate(calc(var(--g) * 45deg)) translateY(-37%) rotate(calc(var(--g) * -45deg));
-  color: rgba(245,243,255,0.78);
-  font-family: ui-serif, Georgia, serif;
-  font-size: clamp(0.44rem, 0.58vw, 0.74rem);
-  text-shadow: 0 0 8px rgba(221,214,254,0.72);
-  opacity: 0.82;
-}
-.fate-crystal-facet--one {
-  inset: 20% 18% 45% 42%;
-  border-radius: 38% 62% 42% 58%;
-  background: linear-gradient(130deg, rgba(255,255,255,0.32), transparent 58%);
-  filter: blur(0.6px);
-  opacity: 0.58;
-  transform: rotate(24deg);
-}
-.fate-crystal-facet--two {
-  inset: 50% 48% 16% 18%;
-  border-radius: 58% 42% 62% 38%;
-  background: linear-gradient(135deg, rgba(196,181,253,0.24), transparent 60%);
-  filter: blur(0.7px);
-  opacity: 0.5;
-  transform: rotate(-18deg);
-}
-.fate-crystal-shine {
-  background:
-    linear-gradient(130deg, transparent 0 27%, rgba(255,255,255,0.28) 36%, transparent 49% 100%),
-    radial-gradient(circle at 24% 20%, rgba(255,255,255,0.82), transparent 9%),
-    radial-gradient(circle at 70% 28%, rgba(221,214,254,0.28), transparent 10%),
-    radial-gradient(circle at 42% 12%, rgba(255,255,255,0.28), transparent 6%);
-  mix-blend-mode: screen;
-  opacity: 0.84;
-  animation: fate-crystal-shine 4.8s ease-in-out infinite;
-}
-.fate-page--form .fate-ring {
-  border-color: rgba(232,231,255,0.58);
-  box-shadow:
-    0 0 24px rgba(232,231,255,0.24),
-    0 0 62px rgba(139,92,246,0.28),
-    inset 0 0 14px rgba(245,243,255,0.1);
-}
-.fate-page--form .fate-ring::after {
-  border-color: rgba(167,139,250,0.36);
-}
-.fate-page--form .fate-dot--gold,
-.fate-page--form .fate-dot--amber,
-.fate-page--form .fate-dot--pale {
-  background: #f5f3ff;
-  box-shadow: 0 0 16px rgba(245,243,255,0.95), 0 0 30px rgba(167,139,250,0.34);
-}
-.fate-page--form .fate-dot--violet,
-.fate-page--form .fate-dot--violet-sm,
-.fate-page--form .fate-dot--blue,
-.fate-page--form .fate-dot--mini-blue,
-.fate-page--form .fate-dot--mini-gold {
-  background: #a78bfa;
-  box-shadow: 0 0 15px rgba(196,181,253,0.92), 0 0 30px rgba(124,58,237,0.38);
 }
 .fate-page--form .fate-pillar {
   border-color: rgba(232,231,255,0.2);
@@ -4123,57 +3553,958 @@ function splitDisplayParagraphs(text: string): string[] {
   color: #f4f2ff;
   text-shadow: 0 0 16px rgba(167,139,250,0.4);
 }
-@keyframes fate-crystal-field-pulse {
-  0%, 100% { opacity: 0.55; transform: scale(0.92); }
-  50% { opacity: 0.9; transform: scale(1.08); }
+/* ─── 命运分岔剧场 ─── */
+.fate-theater-kicker {
+  margin: 0;
+  color: rgba(221,214,254,0.72);
+  font-size: 0.7rem;
+  font-weight: 760;
+  letter-spacing: 0;
 }
-@keyframes fate-crystal-orbit-one {
-  0%, 100% { transform: rotateX(68deg) rotateZ(-18deg) scale(1); opacity: 0.72; }
-  50% { transform: rotateX(70deg) rotateZ(-6deg) scale(1.07); opacity: 0.92; }
+.fate-theater-strip {
+  position: relative;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto minmax(260px, 0.9fr);
+  gap: 0.85rem;
+  align-items: stretch;
+  margin: -0.25rem 0 1rem;
+  overflow: hidden;
+  border: 1px solid rgba(232,231,255,0.1);
+  border-radius: 1.25rem;
+  background:
+    radial-gradient(circle at 24% 0%, rgba(196,181,253,0.12), transparent 36%),
+    linear-gradient(135deg, rgba(18,12,34,0.72), rgba(6,4,15,0.68));
+  box-shadow: inset 0 1px 0 rgba(255,255,255,0.06), 0 22px 70px -52px rgba(0,0,0,0.9);
+  padding: 0.85rem;
 }
-@keyframes fate-crystal-orbit-two {
-  to { transform: rotateX(76deg) rotateZ(426deg); }
+.fate-theater-strip::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background:
+    linear-gradient(115deg, transparent 0 42%, rgba(245,243,255,0.08) 49%, transparent 58%),
+    radial-gradient(circle at 86% 12%, rgba(167,139,250,0.12), transparent 24%);
 }
-@keyframes fate-crystal-orbit-three {
-  to { transform: rotateX(62deg) rotateZ(482deg); }
+.fate-theater-strip > * {
+  position: relative;
+  z-index: 1;
 }
-@keyframes fate-crystal-rune-float {
-  0%, 100% { opacity: 0.48; filter: blur(0.2px); }
-  50% { opacity: 0.95; filter: blur(0); }
+.fate-theater-copy h2 {
+  margin: 0.28rem 0 0.34rem;
+  color: #f7f2ff;
+  font-size: 1.12rem;
+  font-weight: 780;
+  line-height: 1.25;
 }
-@keyframes fate-crystal-float {
-  0%, 100% { transform: translate(-50%, -50%) translateZ(22px) scale(1); }
-  50% { transform: translate(-50%, calc(-50% - 4px)) translateZ(32px) scale(1.035); }
+.fate-theater-copy p:last-child {
+  margin: 0;
+  max-width: 38rem;
+  color: rgba(226,217,243,0.68);
+  font-size: 0.82rem;
+  line-height: 1.6;
 }
-@keyframes fate-crystal-backglow {
-  0%, 100% { opacity: 0.58; transform: scale(0.95); }
-  50% { opacity: 0.95; transform: scale(1.08); }
+.fate-theater-clues {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(92px, 1fr));
+  gap: 0.5rem;
+  min-width: min(100%, 360px);
 }
-@keyframes fate-crystal-mist {
-  0% { transform: translate3d(-4%, 2%, 0) scale(0.9); opacity: 0.52; }
-  100% { transform: translate3d(4%, -3%, 0) scale(1.12); opacity: 0.82; }
+.fate-theater-clues span,
+.fate-theater-question {
+  border: 1px solid rgba(245,243,255,0.09);
+  border-radius: 0.9rem;
+  background: rgba(255,255,255,0.035);
+  padding: 0.64rem 0.7rem;
+  color: rgba(245,243,255,0.88);
+  font-size: 0.78rem;
+  line-height: 1.35;
 }
-@keyframes fate-crystal-lines {
-  to { transform: rotateX(62deg) rotateZ(348deg); }
+.fate-theater-clues small,
+.fate-theater-question small,
+.fate-pick-script small,
+.fate-route-cover-note small {
+  display: block;
+  margin-bottom: 0.22rem;
+  color: rgba(196,181,253,0.64);
+  font-size: 0.62rem;
+  font-weight: 700;
+  letter-spacing: 0;
 }
-@keyframes fate-crystal-sigils {
+.fate-theater-question {
+  min-width: 0;
+  background:
+    radial-gradient(circle at 100% 0%, rgba(167,139,250,0.12), transparent 42%),
+    rgba(255,255,255,0.04);
+}
+.fate-theater-question p {
+  margin: 0;
+  color: rgba(245,243,255,0.86);
+  font-size: 0.8rem;
+  line-height: 1.55;
+}
+
+.fate-pick-stage {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(260px, 380px);
+  gap: 1rem;
+  align-items: end;
+  max-width: 980px;
+  margin: 0 auto 2rem;
+  border-bottom: 1px solid rgba(232,231,255,0.1);
+  padding-bottom: 1.15rem;
+}
+.fate-pick-stage h1 {
+  margin: 0.35rem 0 0.5rem;
+  color: #f7f2ff;
+  font-size: 2rem;
+  font-weight: 800;
+  line-height: 1.12;
+}
+.fate-pick-stage p {
+  margin: 0;
+  color: rgba(226,217,243,0.7);
+  font-size: 0.94rem;
+  line-height: 1.7;
+}
+.fate-pick-script {
+  border: 1px solid rgba(196,181,253,0.16);
+  border-radius: 1rem;
+  background:
+    radial-gradient(circle at 100% 0%, rgba(139,92,246,0.16), transparent 44%),
+    rgba(255,255,255,0.035);
+  padding: 0.9rem;
+}
+.fate-pick-script p {
+  color: rgba(245,243,255,0.88);
+  font-size: 0.84rem;
+  line-height: 1.6;
+}
+.fate-variable-stage {
+  border: 1px solid rgba(232,231,255,0.1);
+  border-radius: 1.25rem;
+  background:
+    radial-gradient(circle at 50% 0%, rgba(167,139,250,0.11), transparent 42%),
+    rgba(8,5,18,0.46);
+  padding: 1rem;
+}
+.fate-variable-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 1rem;
+  margin-bottom: 0.9rem;
+}
+.fate-variable-head span {
+  color: #f5f3ff;
+  font-size: 1rem;
+  font-weight: 760;
+}
+.fate-variable-head p {
+  margin: 0;
+  color: rgba(196,181,253,0.64);
+  font-size: 0.78rem;
+}
+.fate-variable-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.75rem;
+}
+.fate-variable-card {
+  position: relative;
+  display: grid;
+  justify-items: center;
+  gap: 0.52rem;
+  min-height: 226px;
+  border: 1px solid rgba(245,243,255,0.08);
+  border-radius: 1rem;
+  background:
+    linear-gradient(180deg, rgba(245,243,255,0.045), rgba(245,243,255,0.015)),
+    rgba(4,3,12,0.5);
+  padding: 0.9rem 0.65rem;
+}
+.fate-variable-card--filled {
+  border-color: rgba(196,181,253,0.2);
+  box-shadow: 0 16px 42px -34px rgba(139,92,246,0.72), inset 0 1px 0 rgba(255,255,255,0.06);
+}
+.fate-variable-index {
+  color: rgba(196,181,253,0.58);
+  font-size: 0.68rem;
+  font-weight: 760;
+  font-variant-numeric: tabular-nums;
+}
+.fate-variable-name {
+  margin: 0;
+  color: rgba(245,243,255,0.9);
+  font-size: 0.82rem;
+  font-weight: 700;
+  text-align: center;
+}
+.fate-variable-card small {
+  color: rgba(196,181,253,0.62);
+  font-size: 0.72rem;
+  line-height: 1.35;
+  text-align: center;
+}
+
+.fate-fork-stage {
+  position: relative;
+  overflow: hidden;
+  border: 1px solid rgba(232,231,255,0.12);
+  border-radius: 1.55rem;
+  background:
+    radial-gradient(circle at 50% 28%, rgba(196,181,253,0.13), transparent 30%),
+    radial-gradient(circle at 15% 12%, rgba(148,163,184,0.1), transparent 28%),
+    radial-gradient(circle at 86% 16%, rgba(217,70,239,0.12), transparent 30%),
+    linear-gradient(145deg, rgba(12,8,28,0.94), rgba(4,3,11,0.96));
+  box-shadow: inset 0 1px 0 rgba(255,255,255,0.07), 0 28px 90px -58px rgba(0,0,0,0.92);
+  padding: 1.15rem;
+}
+.fate-fork-stage::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background:
+    linear-gradient(90deg, transparent 0 48%, rgba(245,243,255,0.08) 50%, transparent 52% 100%),
+    linear-gradient(115deg, transparent 0 36%, rgba(245,243,255,0.05) 46%, transparent 58% 100%);
+}
+.fate-fork-head {
+  position: relative;
+  z-index: 1;
+  display: grid;
+  grid-template-columns: minmax(0, 0.9fr) minmax(260px, 1.1fr);
+  gap: 1rem;
+  align-items: end;
+  margin-bottom: 1rem;
+}
+.fate-fork-head h3 {
+  margin: 0.28rem 0 0;
+  color: #f7f2ff;
+  font-size: 1.75rem;
+  font-weight: 820;
+  line-height: 1.18;
+}
+.fate-fork-head > p {
+  margin: 0;
+  color: rgba(226,217,243,0.72);
+  font-size: 0.92rem;
+  line-height: 1.7;
+}
+.fate-fork-lines {
+  position: relative;
+  z-index: 1;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 1rem;
+}
+.fate-route-card--theater {
+  position: relative;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  min-height: 560px;
+  border-radius: 1.25rem;
+  padding: 1.1rem;
+  border: 1px solid rgba(245,243,255,0.11);
+  background:
+    linear-gradient(180deg, rgba(255,255,255,0.055), rgba(255,255,255,0.018)),
+    rgba(7,5,18,0.72);
+  box-shadow: inset 0 1px 0 rgba(255,255,255,0.06);
+  transition: transform 0.2s ease, border-color 0.2s ease, box-shadow 0.2s ease;
+}
+.fate-route-card--theater:hover {
+  transform: translateY(-3px);
+  border-color: rgba(245,243,255,0.22);
+  box-shadow: inset 0 1px 0 rgba(255,255,255,0.08), 0 24px 70px -48px rgba(139,92,246,0.8);
+}
+.fate-route-card--theater::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  opacity: 0.8;
+}
+.fate-route-card--theater.fate-route-card--stable::before {
+  background:
+    radial-gradient(circle at 82% 16%, rgba(226,232,240,0.16), transparent 30%),
+    radial-gradient(circle at 10% 88%, rgba(148,163,184,0.12), transparent 30%);
+}
+.fate-route-card--theater.fate-route-card--adventure::before {
+  background:
+    radial-gradient(circle at 82% 16%, rgba(217,70,239,0.18), transparent 30%),
+    radial-gradient(circle at 8% 88%, rgba(139,92,246,0.16), transparent 32%);
+}
+.fate-route-card--theater > * {
+  position: relative;
+  z-index: 1;
+}
+.fate-route-card--theater > .fate-route-portal {
+  position: absolute;
+  z-index: 0;
+}
+.fate-route-portal {
+  position: absolute;
+  top: 1rem;
+  right: 1rem;
+  width: 96px;
+  height: 96px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  opacity: 0.86;
+}
+.fate-route-symbol {
+  position: relative;
+  z-index: 2;
+  display: grid;
+  place-items: center;
+  width: 3.2rem;
+  height: 3.2rem;
+  border: 1px solid rgba(245,243,255,0.28);
+  border-radius: 50%;
+  background:
+    radial-gradient(circle at 32% 24%, rgba(255,255,255,0.42), transparent 32%),
+    rgba(255,255,255,0.06);
+  color: #f8f7ff;
+  font-size: 1.25rem;
+  font-weight: 800;
+  box-shadow: 0 0 26px rgba(196,181,253,0.22);
+}
+.fate-route-orbit {
+  position: absolute;
+  inset: 8%;
+  border: 1px solid rgba(245,243,255,0.18);
+  border-radius: 50%;
+  animation: fate-route-orbit 12s linear infinite;
+}
+.fate-route-orbit--two {
+  inset: 18%;
+  border-style: dashed;
+  animation-duration: 18s;
+  animation-direction: reverse;
+}
+.fate-route-card--stable .fate-route-symbol {
+  color: #e2e8f0;
+  box-shadow: 0 0 30px rgba(226,232,240,0.24);
+}
+.fate-route-card--adventure .fate-route-symbol {
+  color: #fae8ff;
+  box-shadow: 0 0 34px rgba(217,70,239,0.32);
+}
+.fate-route-topline {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  min-height: 2rem;
+  gap: 0.75rem;
+  padding-right: 6.2rem;
+}
+.fate-route-code,
+.fate-route-eyebrow {
+  color: rgba(196,181,253,0.64);
+  font-size: 0.68rem;
+  font-weight: 760;
+}
+.fate-route-eyebrow {
+  margin: 1.15rem 0 0.28rem;
+}
+.fate-route-card--theater h4 {
+  margin: 0;
+  color: #f7f2ff;
+  font-size: 1.75rem;
+  font-weight: 850;
+  line-height: 1.12;
+}
+.fate-route-subtitle {
+  margin: 0.3rem 0 0.75rem;
+  color: rgba(245,243,255,0.82);
+  font-size: 0.95rem;
+  font-weight: 720;
+}
+.fate-route-persona {
+  max-width: 24rem;
+  margin: 0 0 0.95rem;
+  color: rgba(226,217,243,0.72);
+  font-size: 0.88rem;
+  line-height: 1.65;
+}
+.fate-route-body {
+  display: grid;
+  gap: 0.55rem;
+  margin: 0.1rem 0 0.95rem;
+}
+.fate-route-body p {
+  margin: 0;
+  color: rgba(226,232,240,0.84);
+  font-size: 0.9rem;
+  line-height: 1.72;
+}
+.fate-route-insights {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-top: auto;
+}
+.fate-route-insights span {
+  min-width: 4.8rem;
+  border: 1px solid rgba(245,243,255,0.11);
+  border-radius: 0.85rem;
+  background: rgba(255,255,255,0.04);
+  padding: 0.5rem 0.62rem;
+  color: rgba(245,243,255,0.9);
+  font-size: 0.82rem;
+  font-weight: 760;
+}
+.fate-route-insights small {
+  display: block;
+  margin-bottom: 0.14rem;
+  color: rgba(196,181,253,0.62);
+  font-size: 0.62rem;
+  font-weight: 700;
+}
+.fate-route-note {
+  display: grid;
+  gap: 0.34rem;
+  margin: 0.9rem 0;
+  border-top: 1px solid rgba(245,243,255,0.09);
+  padding-top: 0.82rem;
+}
+.fate-route-note p {
+  margin: 0;
+  color: rgba(245,243,255,0.88);
+  font-size: 0.88rem;
+  line-height: 1.55;
+}
+.fate-route-note small {
+  color: rgba(196,181,253,0.66);
+  font-size: 0.76rem;
+  line-height: 1.5;
+}
+.fate-route-choose {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  min-height: 3.4rem;
+  border-radius: 1rem;
+  padding: 0.78rem 0.95rem;
+  text-align: left;
+  transition: transform 0.18s ease, filter 0.18s ease, box-shadow 0.18s ease;
+}
+.fate-route-choose:active {
+  transform: translateY(1px);
+}
+.fate-route-choose span {
+  color: #fff;
+  font-size: 0.96rem;
+  font-weight: 800;
+}
+.fate-route-choose small {
+  color: rgba(255,255,255,0.72);
+  font-size: 0.72rem;
+}
+.fate-route-choose--stable {
+  border: 1px solid rgba(226,232,240,0.28);
+  background: linear-gradient(135deg, rgba(148,163,184,0.34), rgba(51,65,85,0.66));
+  box-shadow: 0 16px 34px -26px rgba(226,232,240,0.62);
+}
+.fate-route-choose--adventure {
+  border: 1px solid rgba(245,208,254,0.32);
+  background: linear-gradient(135deg, rgba(217,70,239,0.5), rgba(88,28,135,0.72));
+  box-shadow: 0 18px 38px -26px rgba(217,70,239,0.76);
+}
+.fate-route-choose:hover {
+  filter: brightness(1.08);
+}
+.fate-fork-rift {
+  display: none;
+}
+@media (min-width: 900px) {
+  .fate-fork-rift {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    z-index: 4;
+    display: grid;
+    place-items: center;
+    width: 118px;
+    height: 118px;
+    transform: translate(-50%, -50%);
+    pointer-events: none;
+  }
+  .fate-fork-rift-core {
+    position: absolute;
+    inset: 22%;
+    border: 1px solid rgba(245,243,255,0.28);
+    border-radius: 50%;
+    background:
+      radial-gradient(circle at 34% 25%, rgba(255,255,255,0.48), transparent 26%),
+      radial-gradient(circle, rgba(139,92,246,0.42), rgba(12,8,28,0.86));
+    box-shadow: 0 0 28px rgba(245,243,255,0.24), 0 0 70px rgba(139,92,246,0.38);
+    animation: fate-fork-core 5.4s ease-in-out infinite;
+  }
+  .fate-fork-rift::before,
+  .fate-fork-rift::after {
+    content: '';
+    position: absolute;
+    inset: 4%;
+    border-radius: 50%;
+    border: 1px solid rgba(245,243,255,0.13);
+    transform: rotateX(70deg) rotateZ(-18deg);
+    animation: fate-fork-ring 13s linear infinite;
+  }
+  .fate-fork-rift::after {
+    inset: 14%;
+    border-style: dashed;
+    animation-duration: 18s;
+    animation-direction: reverse;
+  }
+  .fate-fork-rune {
+    position: absolute;
+    color: rgba(245,243,255,0.68);
+    font-size: 0.75rem;
+    font-weight: 800;
+    text-shadow: 0 0 14px rgba(245,243,255,0.42);
+  }
+  .fate-fork-rune--one { top: 3%; left: 50%; transform: translateX(-50%); }
+  .fate-fork-rune--two { right: 1%; top: 52%; transform: translateY(-50%); }
+  .fate-fork-rune--three { bottom: 6%; left: 18%; }
+}
+.fate-route-cover {
+  position: relative;
+  overflow: hidden;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) minmax(220px, 0.45fr);
+  gap: 1rem;
+  align-items: center;
+  border: 1px solid rgba(232,231,255,0.13);
+  border-radius: 1.3rem;
+  background:
+    radial-gradient(circle at 18% 50%, rgba(245,243,255,0.12), transparent 28%),
+    linear-gradient(135deg, rgba(17,12,34,0.86), rgba(8,5,18,0.88));
+  padding: 1rem;
+}
+.fate-route-cover::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: linear-gradient(110deg, transparent 0 38%, rgba(245,243,255,0.07) 48%, transparent 58%);
+}
+.fate-route-cover > * {
+  position: relative;
+  z-index: 1;
+}
+.fate-route-cover-symbol {
+  display: grid;
+  place-items: center;
+  width: 5.2rem;
+  height: 5.2rem;
+  border: 1px solid rgba(245,243,255,0.2);
+  border-radius: 50%;
+  background: rgba(255,255,255,0.045);
+  box-shadow: inset 0 1px 0 rgba(255,255,255,0.08), 0 0 38px rgba(139,92,246,0.18);
+}
+.fate-route-cover-symbol span {
+  display: grid;
+  place-items: center;
+  width: 3.2rem;
+  height: 3.2rem;
+  border-radius: 50%;
+  background: rgba(245,243,255,0.08);
+  color: #fff;
+  font-size: 1.25rem;
+  font-weight: 850;
+}
+.fate-route-cover-copy h4 {
+  margin: 0.3rem 0 0.4rem;
+  color: #f7f2ff;
+  font-size: 1.55rem;
+  font-weight: 850;
+  line-height: 1.16;
+}
+.fate-route-cover-copy p,
+.fate-route-cover-note p {
+  margin: 0;
+  color: rgba(226,217,243,0.76);
+  font-size: 0.9rem;
+  line-height: 1.65;
+}
+.fate-route-cover-note {
+  border-left: 1px solid rgba(245,243,255,0.1);
+  padding-left: 1rem;
+}
+.fate-route-cover--stable .fate-route-cover-symbol {
+  box-shadow: inset 0 1px 0 rgba(255,255,255,0.08), 0 0 38px rgba(226,232,240,0.15);
+}
+.fate-route-cover--adventure .fate-route-cover-symbol {
+  box-shadow: inset 0 1px 0 rgba(255,255,255,0.08), 0 0 42px rgba(217,70,239,0.24);
+}
+@keyframes fate-route-orbit {
   to { transform: rotate(360deg); }
 }
-@keyframes fate-crystal-shine {
-  0%, 100% { opacity: 0.48; transform: translateX(-4%) rotate(0deg); }
-  50% { opacity: 0.86; transform: translateX(5%) rotate(4deg); }
+@keyframes fate-fork-core {
+  0%, 100% { transform: scale(0.96); opacity: 0.72; }
+  50% { transform: scale(1.06); opacity: 1; }
+}
+@keyframes fate-fork-ring {
+  to { transform: rotateX(70deg) rotateZ(342deg); }
+}
+@media (max-width: 1100px) {
+  .fate-theater-strip {
+    grid-template-columns: 1fr;
+  }
+  .fate-theater-clues {
+    min-width: 0;
+  }
+}
+@media (max-width: 900px) {
+  .fate-pick-stage,
+  .fate-fork-head,
+  .fate-fork-lines,
+  .fate-route-cover {
+    grid-template-columns: 1fr;
+  }
+  .fate-route-card--theater {
+    min-height: 0;
+  }
+  .fate-route-cover-note {
+    border-left: 0;
+    border-top: 1px solid rgba(245,243,255,0.1);
+    padding-left: 0;
+    padding-top: 0.85rem;
+  }
+}
+@media (max-width: 640px) {
+  .fate-theater-clues,
+  .fate-variable-grid {
+    grid-template-columns: 1fr;
+  }
+  .fate-theater-strip,
+  .fate-fork-stage {
+    border-radius: 1rem;
+    padding: 0.8rem;
+  }
+  .fate-route-portal {
+    width: 76px;
+    height: 76px;
+  }
+  .fate-route-topline {
+    padding-right: 4.8rem;
+  }
+  .fate-route-card--theater h4 {
+    font-size: 1.45rem;
+  }
+}
+
+/* ─── 静态命盘主视觉 ─── */
+.fate-static-orb-image {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  border-radius: 1.6rem;
+  pointer-events: none;
+  user-select: none;
+}
+.fate-page--form .fate-orrery,
+.fate-page--form .fate-center::before,
+.fate-page--form .fate-center::after,
+.fate-page--form .fate-orrery-container::before,
+.fate-page--form .fate-orrery-container::after {
+  display: none !important;
+}
+.fate-page--form .fate-orrery-container {
+  filter: none !important;
+}
+.fate-page--form .fate-center {
+  background:
+    radial-gradient(circle at 50% 48%, rgba(124,58,237,0.16), transparent 58%),
+    linear-gradient(180deg, rgba(7,4,18,0.1), rgba(2,1,8,0.26));
+}
+
+/* ─── 首屏工作台：压缩顶部空间，让核心功能一屏可见 ─── */
+@media (min-width: 1024px) {
+  .fate-page--form {
+    padding-top: calc(0.85rem + env(safe-area-inset-top, 0px));
+    padding-bottom: 1rem;
+  }
+  .fate-dashboard {
+    padding-inline: clamp(1.2rem, 3.2vw, 4.25rem);
+  }
+  .fate-hero-header {
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 1rem;
+    align-items: center;
+    margin-bottom: 0.55rem;
+    padding: 0.15rem 0 0.45rem;
+  }
+  .fate-hero-copy {
+    display: grid;
+    grid-template-columns: auto auto minmax(0, 1fr);
+    grid-template-areas: "kicker title sub";
+    column-gap: 0.8rem;
+    align-items: baseline;
+  }
+  .fate-hero-kicker {
+    margin: 0;
+    font-size: 0.62rem;
+    line-height: 1;
+  }
+  .fate-hero-title {
+    font-size: clamp(1.85rem, 2.45vw, 3rem);
+    line-height: 1;
+    white-space: nowrap;
+  }
+  .fate-hero-sub {
+    max-width: none;
+    font-size: 0.78rem;
+    line-height: 1.45;
+  }
+  .fate-steps {
+    gap: 0.32rem;
+    flex-wrap: nowrap;
+  }
+  .fate-step {
+    padding: 0.18rem 0.5rem 0.18rem 0.24rem;
+  }
+  .fate-step-label {
+    font-size: 0.64rem;
+  }
+  .fate-theater-strip {
+    grid-template-columns: minmax(190px, 0.55fr) minmax(260px, 0.7fr) minmax(360px, 1.35fr);
+    gap: 0.55rem;
+    align-items: center;
+    margin: 0 0 0.7rem;
+    border-radius: 1rem;
+    padding: 0.55rem 0.75rem;
+  }
+  .fate-theater-copy h2 {
+    margin: 0.12rem 0 0;
+    font-size: 0.9rem;
+    line-height: 1.2;
+  }
+  .fate-theater-copy p:last-child {
+    display: none;
+  }
+  .fate-theater-clues {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 0.38rem;
+    min-width: 0;
+  }
+  .fate-theater-clues span,
+  .fate-theater-question {
+    min-height: 45px;
+    border-radius: 0.75rem;
+    padding: 0.42rem 0.55rem;
+    font-size: 0.72rem;
+  }
+  .fate-theater-clues small,
+  .fate-theater-question small {
+    margin-bottom: 0.08rem;
+    font-size: 0.56rem;
+  }
+  .fate-theater-question p {
+    overflow: hidden;
+    display: -webkit-box;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 1;
+    font-size: 0.74rem;
+    line-height: 1.4;
+  }
+  .fate-main-grid {
+    grid-template-columns: minmax(270px, 0.78fr) minmax(520px, 1.62fr) minmax(390px, 1.05fr);
+    gap: 1rem;
+  }
+  .fate-panel {
+    border-radius: 1.05rem;
+    padding: 0.95rem;
+  }
+  .fate-panel-header {
+    margin-bottom: 0.6rem;
+  }
+  .fate-panel-title {
+    font-size: 0.95rem;
+  }
+  .fate-panel-sub {
+    font-size: 0.68rem;
+  }
+  .fate-anchor-card {
+    padding: 0.75rem;
+  }
+  .fate-anchor-main {
+    font-size: 0.88rem;
+  }
+  .fate-anchor-toggle {
+    margin-top: 0.5rem;
+    padding: 0.42rem 0.65rem;
+  }
+  .fate-mini-summary {
+    margin-top: 0.55rem;
+    font-size: 0.62rem;
+  }
+  .fate-center {
+    min-height: min(55vw, calc(100dvh - 245px), 620px);
+    border-radius: 1.35rem;
+  }
+  .fate-orrery-container {
+    max-width: min(100%, calc(100dvh - 255px), 620px);
+  }
+  .fate-pillar {
+    width: clamp(56px, 4.6vw, 78px);
+    height: clamp(56px, 4.6vw, 78px);
+  }
+  .fate-pillar-label {
+    font-size: clamp(0.48rem, 0.42vw, 0.56rem);
+  }
+  .fate-pillar-gz {
+    font-size: clamp(0.92rem, 0.9vw, 1.18rem);
+  }
+  .fate-chart-tabs {
+    margin-top: 0.28rem;
+  }
+  .fate-panel-right {
+    gap: 0.55rem;
+  }
+  .fate-ask {
+    padding: 0.68rem;
+  }
+  .fate-ask-heading {
+    margin-bottom: 0.38rem;
+  }
+  .fate-ask-title {
+    font-size: 0.84rem;
+  }
+  .fate-ask-hint {
+    font-size: 0.62rem;
+  }
+  .fate-suggestions {
+    margin-bottom: 0.45rem;
+    gap: 0.28rem;
+  }
+  .fate-suggestion {
+    padding: 0.24rem 0.48rem;
+    font-size: 0.62rem;
+  }
+  .fate-ask-input {
+    min-height: 70px;
+    padding: 0.62rem 0.76rem 0.28rem;
+    font-size: 0.8rem;
+  }
+  .fate-ask-bar {
+    padding: 0.22rem 0.5rem 0.48rem 0.68rem;
+  }
+  .fate-ask-send {
+    height: 32px;
+    min-width: 6.1rem;
+    font-size: 0.72rem;
+  }
+  .fate-cta-hint {
+    margin-top: 0.3rem;
+    font-size: 0.58rem;
+  }
+  .fate-scenario-head {
+    font-size: 0.74rem;
+  }
+  .fate-scenario-head small {
+    font-size: 0.58rem;
+  }
+  .fate-scenario-grid {
+    gap: 0.4rem;
+  }
+  .fate-scenario-card,
+  .fate-scenario-card--featured {
+    min-height: 58px;
+    border-radius: 0.72rem;
+    padding: 0.5rem 0.56rem;
+  }
+  .fate-scenario-title {
+    font-size: 0.76rem;
+  }
+  .fate-scenario-signal {
+    font-size: 0.52rem;
+    padding: 0.1rem 0.3rem;
+  }
+  .fate-scenario-sub {
+    font-size: 0.58rem;
+    line-height: 1.25;
+  }
+}
+
+@media (min-width: 1440px) and (max-height: 900px) {
+  .fate-page--form {
+    padding-top: calc(0.55rem + env(safe-area-inset-top, 0px));
+  }
+  .fate-hero-header {
+    margin-bottom: 0.38rem;
+    padding-bottom: 0.35rem;
+  }
+  .fate-theater-strip {
+    margin-bottom: 0.55rem;
+    padding-block: 0.45rem;
+  }
+  .fate-center {
+    min-height: min(50vw, calc(100dvh - 220px), 590px);
+  }
+  .fate-orrery-container {
+    max-width: min(100%, calc(100dvh - 230px), 590px);
+  }
+  .fate-panel {
+    padding: 0.82rem;
+  }
+}
+
+/* ─── 性能模式：关闭持续动效，保留静态质感 ─── */
+.fate-page .fate-main-grid::before,
+.fate-page .fate-route-orbit,
+.fate-page .fate-fork-rift-core,
+.fate-page .fate-fork-rift::before,
+.fate-page .fate-fork-rift::after,
+.fate-page .fate-guidance-core,
+.fate-page .fate-guidance-core::before,
+.fate-page .fate-guidance-ring,
+.fate-page .fate-guidance-rune {
+  animation: none !important;
+}
+.fate-page .fate-main-grid::before,
+.fate-page .fate-guidance-orb {
+  filter: none !important;
+}
+.fate-page .fate-guidance-core,
+.fate-page .fate-fork-rift-core {
+  box-shadow:
+    0 0 24px rgba(196,181,253,0.22),
+    0 0 48px rgba(139,92,246,0.18) !important;
+}
+.fate-page .fate-panel,
+.fate-page .fate-ask,
+.fate-page .fate-fork-stage,
+.fate-page .fate-route-card--theater,
+.fate-page .fate-guidance-hero {
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+}
+.fate-page .fate-route-card--theater:hover,
+.fate-page .fate-choice-btn:hover,
+.fate-page .fate-result-action:hover {
+  transform: none;
 }
 
 /* ─── Reduced motion ─── */
 @media (prefers-reduced-motion: reduce) {
   .fate-five-fill, .fate-cmp-fill { transition: none !important; }
-  .fate-core, .fate-orb--1, .fate-orb--2, .fate-orb--3, .fate-orb--4, .fate-orb--5, .fate-orb--6,
-  .fate-dashboard--entered, .fate-center::before, .fate-center::after, .fate-astral-aura,
-  .fate-sigil-ring, .fate-stars-svg, .fate-energy-line, .fate-oracle-mist,
-  .fate-core::before, .fate-ring, .fate-orrery-container::before, .fate-crystal-mist,
-  .fate-crystal-lines, .fate-crystal-sigils, .fate-crystal-shine, .fate-crystal-core,
-  .fate-crystal-field::before, .fate-crystal-orbit, .fate-crystal-rune,
-  .fate-crystal-backglow { animation: none !important; }
+  .fate-dashboard--entered,
+  .fate-guidance-core,
+  .fate-guidance-core::before,
+  .fate-guidance-ring,
+  .fate-guidance-rune,
+  .fate-route-orbit,
+  .fate-fork-rift-core,
+  .fate-fork-rift::before,
+  .fate-fork-rift::after { animation: none !important; }
   .fate-dashboard--entered { opacity: 1 !important; transform: none !important; }
 }
 </style>

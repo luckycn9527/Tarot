@@ -77,13 +77,18 @@ export async function generateAiDailyFortune(
 }
 
 // 星座运势类型
+export type HoroscopePeriod = 'today' | 'tomorrow' | 'week'
+
 export interface HoroscopeResult {
   sign: string
   date: string
+  period?: HoroscopePeriod
   summary: string
   overallScore: number
   sections: { overall: string; love: string; career: string; wealth: string; health: string }
   ratings: { overall: number; love: number; career: number; wealth: number; health: number }
+  energy?: { mood: number; action: number; social: number; intuition: number }
+  advice?: { do: string; avoid: string; mantra: string; keyword: string }
   luckyColor: string
   luckyNumber: number
   origin: 'source' | 'ai'
@@ -92,8 +97,8 @@ export interface HoroscopeResult {
 /**
  * 星座今日运势 - 调用后端 API（按星座+日期服务端缓存，公开接口、不消耗配额）
  */
-export async function getHoroscope(sign: string): Promise<HoroscopeResult> {
-  const res = await api.get(`/readings/horoscope?sign=${encodeURIComponent(sign)}`)
+export async function getHoroscope(sign: string, period: HoroscopePeriod = 'today'): Promise<HoroscopeResult> {
+  const res = await api.get(`/readings/horoscope?sign=${encodeURIComponent(sign)}&period=${encodeURIComponent(period)}`)
   if (res.data.success) {
     return res.data.data as HoroscopeResult
   }

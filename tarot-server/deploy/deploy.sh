@@ -5,12 +5,12 @@
 #   ./deploy.sh init-env     首次：交互生成生产 .env（自动生成 JWT 密钥，权限 600）
 #   ./deploy.sh check        仅检测：依赖 + DNS + .env 校验 + 运行健康自检
 #   ./deploy.sh backend      仅部署后端（npm ci + build + pm2）
-#   ./deploy.sh frontend     仅构建并发布前端 dist
+#   ./deploy.sh frontend     仅发布已同步的前端 dist（默认不在服务器构建）
 #   ./deploy.sh nginx        安装站点配置 + 首次自动签发证书 + 校验重载
-#   ./deploy.sh              全流程：check → backend → frontend → nginx → health
+#   ./deploy.sh              全流程：check → backend → 发布前端 dist → nginx → health
 #
 # 可用环境变量覆盖：DOMAIN BACKEND_PORT PM2_NAME DIST_TARGET WEB_DIR
-#                    NGINX_CONF_DST CERTBOT_EMAIL SMTP_USER
+#                    NGINX_CONF_DST CERTBOT_EMAIL SMTP_USER BUILD_FRONTEND_ON_SERVER
 set -euo pipefail
 
 # ---------------- 配置 ----------------
@@ -159,26 +159,33 @@ deploy_backend(){
 
 # ---------------- 部署前端 ----------------
 deploy_frontend(){
-  info "构建并发布前端"
+  info "发布前端 dist"
   cd "$WEB_DIR"
-  if [ "${SKIP_NPM_CI:-false}" = "true" ]; then
-    warn "SKIP_NPM_CI=true，跳过 npm ci（使用现有 node_modules）"
-    if [ ! -d "$WEB_DIR/node_modules" ]; then
-      die "$WEB_DIR/node_modules 不存在，无法跳过 npm ci"
+
+  if [ "${BUILD_FRONTEND_ON_SERVER:-false}" = "true" ]; then
+    warn "BUILD_FRONTEND_ON_SERVER=true，将在服务器构建前端；2G 内存机器不推荐"
+    if [ "${SKIP_NPM_CI:-false}" = "true" ]; then
+      warn "SKIP_NPM_CI=true，跳过 npm ci（使用现有 node_modules）"
+      if [ ! -d "$WEB_DIR/node_modules" ]; then
+        die "$WEB_DIR/node_modules 不存在，无法跳过 npm ci"
+      fi
+    else
+      npm ci
     fi
-  else
-    npm ci
+    # build:prod 只跑 vite build，不跑 vue-tsc；内存上限默认 1024MB，避免 2G 机器被单进程吃满。
+    local max_old_space="${FRONTEND_BUILD_MAX_OLD_SPACE:-1024}"
+    NODE_OPTIONS="${NODE_OPTIONS:+$NODE_OPTIONS }--max-old-space-size=${max_old_space}" npm run build:prod
+  elif [ ! -f "$WEB_DIR/dist/index.html" ]; then
+    die "找不到 $WEB_DIR/dist/index.html。请先在本地运行：cd tarot-vue && npm run build，然后用 scripts/sync-to-server.ps1 同步 dist 到服务器。"
   fi
-  # 使用 build:prod：跳过 vue-tsc 全量类型检查，避免低内存服务器 OOM
-  # 本地开发/CI 中仍可用 npm run build 做类型检查
-  npm run build:prod
+
   mkdir -p "$DIST_TARGET"
   if command -v rsync >/dev/null 2>&1; then
     rsync -a --delete "$WEB_DIR/dist/" "$DIST_TARGET/"
   else
     rm -rf "${DIST_TARGET:?}/"* && cp -r "$WEB_DIR/dist/." "$DIST_TARGET/"
   fi
-  ok "前端已发布到 $DIST_TARGET"
+  ok "前端 dist 已发布到 $DIST_TARGET"
 }
 
 # ---------------- 配置 Nginx + 证书 ----------------
