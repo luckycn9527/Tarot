@@ -17,6 +17,7 @@ export const PUBLIC_OSS_ASSET_ORIGIN = (
 ).replace(/\/$/, '')
 
 const PUBLIC_UPLOADS_ORIGIN = (import.meta.env.VITE_PUBLIC_UPLOADS_ORIGIN as string | undefined)?.replace(/\/$/, '')
+let uploadFallbackInstalled = false
 
 export function ossAssetUrl(path: string): string {
   const s = String(path).trim()
@@ -34,4 +35,30 @@ export function publicAssetUrl(relative: string | null | undefined): string {
   const origin = (import.meta.env.VITE_PUBLIC_API_ORIGIN as string | undefined)?.replace(/\/$/, '')
   if (origin && s.startsWith('/')) return `${origin}${s}`
   return s
+}
+
+export function installUploadImageFallback(): void {
+  if (uploadFallbackInstalled || typeof window === 'undefined' || !PUBLIC_UPLOADS_ORIGIN) return
+  uploadFallbackInstalled = true
+
+  window.addEventListener(
+    'error',
+    (event) => {
+      const target = event.target
+      if (!(target instanceof HTMLImageElement)) return
+
+      const src = target.currentSrc || target.src
+      if (!src || !src.startsWith(`${PUBLIC_UPLOADS_ORIGIN}/uploads/`)) return
+      if (target.dataset.uploadFallbackTried === '1') return
+
+      try {
+        const url = new URL(src)
+        target.dataset.uploadFallbackTried = '1'
+        target.src = `${url.pathname}${url.search}${url.hash}`
+      } catch {
+        // Keep the original broken URL if the browser reports an unexpected src.
+      }
+    },
+    true,
+  )
 }

@@ -9,10 +9,12 @@ import { loadReferenceBundle } from './services/referenceBootstrap'
 import { i18n } from './i18n'
 import { applyLocaleToDocument } from './utils/localeStorage'
 import { useToast } from './composables/useToast'
+import { installUploadImageFallback } from './utils/publicAssetUrl'
 
 const pinia = createPinia()
 // 提前激活 pinia，使 store 在 mount 前即可用（支持并行预取会话）
 setActivePinia(pinia)
+installUploadImageFallback()
 const isAdminRoute = window.location.pathname.startsWith('/admin')
 
 function showBootstrapError(message: string) {
