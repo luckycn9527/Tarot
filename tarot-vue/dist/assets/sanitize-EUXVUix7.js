@@ -1,0 +1,1 @@
+import{c as e}from"./storage-CCmNLaCN.js";const s=/[<>]/g,a=/javascript\s*:/gi,c=/on\w+\s*=/gi,i=500;function o(t){return t.replace(s,"").replace(a,"").replace(c,"").trim().slice(0,i)}function u(t,r){const n=e(t,r);return n?o(n):""}export{u as a,o as s};

@@ -5,6 +5,8 @@ node_modules/
 # Build output
 dist/
 **/dist/
+!tarot-vue/dist/
+!tarot-vue/dist/**
 
 # Environment variables (sensitive!)
 .env

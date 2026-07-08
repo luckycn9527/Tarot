@@ -2,7 +2,9 @@
 node_modules/
 
 # Build output
-dist/
+# Commit frontend dist so low-memory servers can deploy with git pull.
+!dist/
+!dist/**
 
 # Environment variables
 .env
