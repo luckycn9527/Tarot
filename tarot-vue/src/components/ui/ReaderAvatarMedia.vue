@@ -2,7 +2,6 @@
 import { computed } from 'vue'
 import type { ReaderInfo } from '@/data/readers'
 import { getReaderAvatarSrc } from '@/utils/readerDisplay'
-import { publicAssetUrl } from '@/utils/publicAssetUrl'
 
 const props = withDefaults(
   defineProps<{
@@ -23,17 +22,13 @@ const props = withDefaults(
     useGradientFallback: true,
     emojiClass: 'text-2xl',
     avatarRing: true,
-    preferOriginal: false,
+    preferOriginal: true,
   },
 )
 
 const imageSrc = computed(() => {
-  if (!props.reader.avatarUrl) return ''
-  if (props.preferOriginal) {
-    const raw = props.reader.avatarUrl
-    return raw ? publicAssetUrl(String(raw).trim()) : ''
-  }
-  return getReaderAvatarSrc(props.reader)
+  if (!props.reader.avatarUrl && !props.reader.avatarThumbUrl) return ''
+  return getReaderAvatarSrc(props.reader, { prefer: props.preferOriginal ? 'original' : 'thumb' })
 })
 </script>
 

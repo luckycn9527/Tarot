@@ -1,9 +1,20 @@
 import type { ReaderInfo } from '@/data/readers'
 import { publicAssetUrl } from '@/utils/publicAssetUrl'
 
-/** 塔罗师列表/阅读页统一：优先缩略图，再原图 */
-export function getReaderAvatarSrc(reader: Pick<ReaderInfo, 'avatarUrl' | 'avatarThumbUrl'>): string {
-  const raw = reader.avatarThumbUrl || reader.avatarUrl
+type ReaderAvatarPreference = 'original' | 'thumb'
+
+interface ReaderAvatarSrcOptions {
+  prefer?: ReaderAvatarPreference
+}
+
+export function getReaderAvatarSrc(
+  reader: Pick<ReaderInfo, 'avatarUrl' | 'avatarThumbUrl'>,
+  options: ReaderAvatarSrcOptions = {},
+): string {
+  const prefer = options.prefer ?? 'original'
+  const raw = prefer === 'thumb'
+    ? reader.avatarThumbUrl || reader.avatarUrl
+    : reader.avatarUrl || reader.avatarThumbUrl
   if (raw == null || String(raw).trim() === '') return ''
   return publicAssetUrl(String(raw).trim())
 }
