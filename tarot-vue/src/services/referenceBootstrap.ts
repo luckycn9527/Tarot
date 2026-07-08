@@ -48,17 +48,9 @@ function applyReferenceCore(b: ReferenceCore) {
 }
 
 async function fetchReferenceCore(): Promise<ReferenceCore> {
-  try {
-    const res = await api.get('/reference/core')
-    if (!res.data?.success) throw new Error(res.data?.message || 'reference core failed')
-    return res.data.data as ReferenceCore
-  } catch (err: unknown) {
-    const status = (err as { response?: { status?: number } }).response?.status
-    if (status !== 404) throw err
-    const res = await api.get('/reference/bundle')
-    if (!res.data?.success) throw new Error(res.data?.message || 'reference bundle failed')
-    return res.data.data as ReferenceBundle
-  }
+  const res = await api.get('/reference/bundle')
+  if (!res.data?.success) throw new Error(res.data?.message || 'reference bundle failed')
+  return res.data.data as ReferenceBundle
 }
 
 export async function loadReferenceCore(force = false): Promise<void> {

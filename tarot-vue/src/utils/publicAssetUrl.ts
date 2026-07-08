@@ -6,12 +6,17 @@
  * net::ERR_BLOCKED_BY_RESPONSE.NotSameOrigin。
  *
  * 生产：若静态站与 API 不同源，可设 VITE_PUBLIC_API_ORIGIN；同源部署则保持相对路径即可。
+ *
+ * 注意：`/uploads/...` 是用户头像、塔罗师头像、牌背等动态上传资源，默认应走当前站点
+ * 的 `/uploads` 反代。只有明确设置 VITE_PUBLIC_UPLOADS_ORIGIN 时才改到独立资源域。
  */
 const DEFAULT_OSS_ASSET_ORIGIN = 'https://tarot-1.oss-cn-hangzhou.aliyuncs.com'
 
 export const PUBLIC_OSS_ASSET_ORIGIN = (
   (import.meta.env.VITE_PUBLIC_OSS_ORIGIN as string | undefined) || DEFAULT_OSS_ASSET_ORIGIN
 ).replace(/\/$/, '')
+
+const PUBLIC_UPLOADS_ORIGIN = (import.meta.env.VITE_PUBLIC_UPLOADS_ORIGIN as string | undefined)?.replace(/\/$/, '')
 
 export function ossAssetUrl(path: string): string {
   const s = String(path).trim()
@@ -24,7 +29,7 @@ export function publicAssetUrl(relative: string | null | undefined): string {
   if (relative == null || relative === '') return ''
   const s = String(relative).trim()
   if (/^https?:\/\//i.test(s)) return s
-  if (s.startsWith('/uploads/')) return ossAssetUrl(s)
+  if (s.startsWith('/uploads/')) return PUBLIC_UPLOADS_ORIGIN ? `${PUBLIC_UPLOADS_ORIGIN}${s}` : s
   if (import.meta.env.DEV && s.startsWith('/')) return s
   const origin = (import.meta.env.VITE_PUBLIC_API_ORIGIN as string | undefined)?.replace(/\/$/, '')
   if (origin && s.startsWith('/')) return `${origin}${s}`
