@@ -97,6 +97,11 @@ chmod +x deploy.sh
 | `SERVE_STATIC_FRONTEND` | 是否由后端托管前端 | `false`（方式 B 由 Nginx 托管） |
 | `COOKIE_SECURE` | HTTPS 部署设 `true` | `true` |
 | `SMTP_HOST` / `SMTP_PORT` / `SMTP_USER` / `SMTP_PASS` / `SMTP_FROM` | 找回密码邮件 | smtp.qq.com / 465 / you@qq.com / 授权码 / you@qq.com |
+| `PUBLIC_UPLOADS_ORIGIN` | 上传资源公网域名 | `https://tarot-1.oss-cn-hangzhou.aliyuncs.com` |
+| `OSS_BUCKET` / `OSS_ENDPOINT` | 后台上传直传 OSS 的 Bucket 与 Endpoint | tarot-1 / oss-cn-hangzhou.aliyuncs.com |
+| `OSS_ACCESS_KEY_ID` / `OSS_ACCESS_KEY_SECRET` | 后台上传直传 OSS 的访问密钥 | 阿里云 RAM AccessKey |
+| `OSS_PUBLIC_BASE_URL` | OSS 文件最终访问域名 | `https://tarot-1.oss-cn-hangzhou.aliyuncs.com` |
+| `OSS_PREFIX` / `OSS_ACL` / `OSS_SECURITY_TOKEN` | 可选：对象前缀、ACL、STS 临时 Token | 通常留空 |
 
 修改 `.env` 后需 `pm2 restart tarot-api --update-env` 生效。
 

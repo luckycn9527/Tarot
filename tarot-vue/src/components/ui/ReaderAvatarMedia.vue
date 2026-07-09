@@ -5,7 +5,7 @@ import { getReaderAvatarSrc } from '@/utils/readerDisplay'
 
 const props = withDefaults(
   defineProps<{
-    reader: Pick<ReaderInfo, 'avatarUrl' | 'avatarThumbUrl' | 'emoji' | 'name' | 'gradient'>
+    reader: Pick<ReaderInfo, 'id' | 'avatarUrl' | 'avatarThumbUrl' | 'emoji' | 'name' | 'gradient'>
     /** 外层容器 Tailwind class，如 w-14 h-14 rounded-2xl */
     wrapperClass?: string
     /** 无头像时是否使用 reader.gradient 渐变底 */
@@ -27,12 +27,10 @@ const props = withDefaults(
 )
 
 const imageSrc = computed(() => {
-  if (!props.reader.avatarUrl && !props.reader.avatarThumbUrl) return ''
   return getReaderAvatarSrc(props.reader, { prefer: props.preferOriginal ? 'original' : 'thumb' })
 })
 
 const originalSrc = computed(() => {
-  if (!props.reader.avatarUrl && !props.reader.avatarThumbUrl) return ''
   return getReaderAvatarSrc(props.reader, { prefer: 'original' })
 })
 
@@ -55,9 +53,9 @@ function handleImageError() {
   <div
     :class="[
       wrapperClass,
-      (reader.avatarUrl || reader.avatarThumbUrl) && avatarRing ? 'ring-1 ring-gold-500/15' : '',
-      !reader.avatarUrl && useGradientFallback ? `bg-gradient-to-br ${reader.gradient}` : '',
-      !reader.avatarUrl && !useGradientFallback ? 'bg-gold-500/10' : '',
+      renderedSrc && avatarRing ? 'ring-1 ring-gold-500/15' : '',
+      !renderedSrc && useGradientFallback ? `bg-gradient-to-br ${reader.gradient}` : '',
+      !renderedSrc && !useGradientFallback ? 'bg-gold-500/10' : '',
     ]"
   >
     <img

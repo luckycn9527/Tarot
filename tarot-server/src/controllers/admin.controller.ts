@@ -4,7 +4,8 @@ import type { AdminListFeedbackQuery, AdminListUsersQuery } from '../validation/
 import { adminSafeServerMessage } from '../utils/adminHttp.js';
 import { ApiError } from '../utils/apiError.js';
 import { storeUploadedImage } from '../utils/imageUpload.js';
-import { writeReaderAvatarThumbFile } from '../utils/readerAvatarThumb.js';
+import { uploadLocalPublicFileToOss } from '../utils/ossUpload.js';
+import { publicUploadsToFs, writeReaderAvatarThumbFile } from '../utils/readerAvatarThumb.js';
 import { success } from '../utils/response.js';
 
 export async function login(req: Request, res: Response, next: NextFunction): Promise<void> {
@@ -180,7 +181,20 @@ export async function uploadFile(req: Request, res: Response, next: NextFunction
       const t = await writeReaderAvatarThumbFile(image.absPath, image.filename);
       if (t) thumbUrl = t;
     }
-    res.json(success(thumbUrl ? { url: image.publicUrl, thumbUrl } : { url: image.publicUrl }, '上传成功'));
+
+    let publicUrl = image.publicUrl;
+    const ossImage = await uploadLocalPublicFileToOss(image.absPath, image.publicUrl);
+    if (ossImage) publicUrl = ossImage.url;
+
+    if (thumbUrl) {
+      const thumbAbsPath = publicUploadsToFs(thumbUrl);
+      if (thumbAbsPath) {
+        const ossThumb = await uploadLocalPublicFileToOss(thumbAbsPath, thumbUrl);
+        if (ossThumb) thumbUrl = ossThumb.url;
+      }
+    }
+
+    res.json(success(thumbUrl ? { url: publicUrl, thumbUrl } : { url: publicUrl }, '上传成功'));
   } catch (e) {
     next(new ApiError(400, e instanceof Error ? e.message : '上传失败'));
   }
