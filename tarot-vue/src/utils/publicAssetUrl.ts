@@ -27,6 +27,7 @@ function uploadedAssetPath(value: string): string | null {
     const url = new URL(value)
     if (!url.pathname.startsWith('/uploads/')) return null
     if (PUBLIC_UPLOADS_ORIGIN && url.origin === PUBLIC_UPLOADS_ORIGIN) return null
+    if (PUBLIC_UPLOADS_ORIGIN) return `${url.pathname}${url.search}${url.hash}`
 
     const sameSiteOrigins = [
       typeof window !== 'undefined' ? window.location.origin : '',

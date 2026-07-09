@@ -21,13 +21,25 @@ function normalizeUploadPublicPath(value: string): string | null {
 
 /** 原图公开路径 /uploads/admin/xxx.png → 缩略图 /uploads/admin/xxx-thumb.webp */
 export function readerAvatarThumbPublicUrl(originalPublicUrl: string): string | null {
+  const s = originalPublicUrl.trim();
   const normalized = normalizeUploadPublicPath(originalPublicUrl);
   if (!normalized) return null;
   const prefix = '/uploads/admin/';
   if (!normalized.startsWith(prefix)) return null;
   const base = normalized.slice(prefix.length);
   const stem = base.replace(/\.[^.]+$/, '');
-  return `${prefix}${stem}-thumb.webp`;
+  const thumbPath = `${prefix}${stem}-thumb.webp`;
+  if (!/^https?:\/\//i.test(s)) return thumbPath;
+
+  try {
+    const url = new URL(s);
+    url.pathname = thumbPath;
+    url.search = '';
+    url.hash = '';
+    return url.toString();
+  } catch {
+    return thumbPath;
+  }
 }
 
 export function publicUploadsToFs(publicPath: string): string | null {

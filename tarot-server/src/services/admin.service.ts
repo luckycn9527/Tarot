@@ -3,6 +3,7 @@ import * as AdminModel from '../models/admin.model.js';
 import type { AdminReaderPrompt } from '../models/admin.model.js';
 import { readers as staticReaders } from '../data/readers.js';
 import { hashAdminUsername, signAdminToken } from '../utils/adminAuth.js';
+import { getDefaultReaderAvatarUrl } from '../utils/defaultReaderAvatars.js';
 import { resolveReaderAvatarThumbUrl } from '../utils/readerAvatarThumb.js';
 import { fail } from '../utils/response.js';
 
@@ -20,6 +21,8 @@ export interface AdminReaderPromptListItem {
   id: number | null;
   updatedAt: string | null;
   avatarThumbUrl: string | null;
+  effectiveAvatarUrl: string | null;
+  effectiveAvatarThumbUrl: string | null;
 }
 
 function effectivePromptText(
@@ -113,11 +116,14 @@ export async function listReaderPrompts(): Promise<AdminReaderPromptListItem[]> 
     const dn = db?.display_name != null ? String(db.display_name).trim() : '';
     const avatarUrl =
       db?.avatar_url != null && String(db.avatar_url).trim() !== '' ? String(db.avatar_url) : null;
+    const effectiveAvatarUrl = avatarUrl || getDefaultReaderAvatarUrl(sr.id);
     return {
       readerCode: sr.id,
       displayName: dn.length > 0 ? dn : null,
       avatarUrl,
       avatarThumbUrl: resolveReaderAvatarThumbUrl(avatarUrl),
+      effectiveAvatarUrl,
+      effectiveAvatarThumbUrl: resolveReaderAvatarThumbUrl(effectiveAvatarUrl),
       emoji: db?.emoji != null && String(db.emoji).trim() !== '' ? String(db.emoji) : null,
       accessLevel: db?.access_level ?? null,
       systemPrompt: effectivePromptText(db, 'system_prompt', sr.systemPrompt),

@@ -11,7 +11,7 @@ export function getReaderAvatarSrc(
   reader: Pick<ReaderInfo, 'avatarUrl' | 'avatarThumbUrl'>,
   options: ReaderAvatarSrcOptions = {},
 ): string {
-  const prefer = options.prefer ?? 'original'
+  const prefer = options.prefer ?? 'thumb'
   const raw = prefer === 'thumb'
     ? reader.avatarThumbUrl || reader.avatarUrl
     : reader.avatarUrl || reader.avatarThumbUrl

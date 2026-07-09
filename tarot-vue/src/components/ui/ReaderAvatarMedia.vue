@@ -22,7 +22,7 @@ const props = withDefaults(
     useGradientFallback: true,
     emojiClass: 'text-2xl',
     avatarRing: true,
-    preferOriginal: true,
+    preferOriginal: false,
   },
 )
 

@@ -1,6 +1,7 @@
 import { readers as staticReaders } from '../data/readersUi.js';
 import type { ReaderInfo } from '../data/readersUi.js';
 import type { AdminReaderPrompt } from '../models/admin.model.js';
+import { getDefaultReaderAvatarUrl } from './defaultReaderAvatars.js';
 import { resolveReaderAvatarThumbUrl } from './readerAvatarThumb.js';
 
 function trimOrEmpty(s: string | null | undefined): string {
@@ -17,7 +18,7 @@ export function mergeReadersBundle(dbRows: AdminReaderPrompt[]): ReaderInfo[] {
     const accessLevel = db?.access_level ?? sr.accessLevel;
     const name = trimOrEmpty(db?.display_name) || sr.name;
     const emoji = trimOrEmpty(db?.emoji) || sr.emoji;
-    const avatarUrl = trimOrEmpty(db?.avatar_url) || null;
+    const avatarUrl = trimOrEmpty(db?.avatar_url) || trimOrEmpty(sr.avatarUrl) || getDefaultReaderAvatarUrl(sr.id);
     const avatarThumbUrl = resolveReaderAvatarThumbUrl(avatarUrl);
     return {
       ...sr,

@@ -407,6 +407,9 @@ interface ReaderPromptRow {
   avatarUrl: string
   /** 塔罗师头像缩略图（仅站内上传时有）；列表展示优先用 */
   avatarThumbUrl: string
+  /** 实际展示头像：后台自定义优先，无自定义时使用后端默认 OSS 头像 */
+  effectiveAvatarUrl: string
+  effectiveAvatarThumbUrl: string
   emoji: string
   accessLevel: string
   systemPrompt: string
@@ -468,6 +471,8 @@ function ensurePromptRow(code: string): ReaderPromptRow {
       displayName: '',
       avatarUrl: '',
       avatarThumbUrl: '',
+      effectiveAvatarUrl: '',
+      effectiveAvatarThumbUrl: '',
       emoji: '',
       accessLevel: '',
       systemPrompt: '',
@@ -491,7 +496,7 @@ function promptDisplayName(code: string): string {
 
 function promptAvatarUrl(code: string): string {
   const row = promptRow(code)
-  return String(row.avatarUrl || row.avatarThumbUrl || '')
+  return String(row.effectiveAvatarThumbUrl || row.effectiveAvatarUrl || row.avatarThumbUrl || row.avatarUrl || '')
 }
 
 function promptAccessValue(code: string): 'default' | 'free' | 'vip' {
@@ -619,6 +624,8 @@ async function fetchPrompts(opts?: { skipLoading?: boolean }) {
       displayName: row.displayName != null ? String(row.displayName) : '',
       avatarUrl: row.avatarUrl != null ? String(row.avatarUrl) : '',
       avatarThumbUrl: row.avatarThumbUrl != null ? String(row.avatarThumbUrl) : '',
+      effectiveAvatarUrl: row.effectiveAvatarUrl != null ? String(row.effectiveAvatarUrl) : '',
+      effectiveAvatarThumbUrl: row.effectiveAvatarThumbUrl != null ? String(row.effectiveAvatarThumbUrl) : '',
       emoji: row.emoji != null ? String(row.emoji) : '',
       accessLevel: row.accessLevel != null ? String(row.accessLevel) : '',
       systemPrompt: String(row.systemPrompt ?? ''),

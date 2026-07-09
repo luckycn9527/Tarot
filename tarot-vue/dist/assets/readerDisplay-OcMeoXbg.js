@@ -1,0 +1,1 @@
+import{p as n}from"./index-CDbr6K61.js";function l(r,a={}){const t=(a.prefer??"thumb")==="thumb"?r.avatarThumbUrl||r.avatarUrl:r.avatarUrl||r.avatarThumbUrl;return t==null||String(t).trim()===""?"":n(String(t).trim())}export{l as g};
