@@ -11,7 +11,8 @@
     "migrate:all": "tsx src/scripts/migrateAll.ts",
     "migrate:fate-dual": "tsx src/scripts/migrateFateDual.ts",
     "create-admin": "tsx src/scripts/createAdminUser.ts",
-    "seed-admin-config": "tsx src/scripts/seedAdminConfig.ts"
+    "seed-admin-config": "tsx src/scripts/seedAdminConfig.ts",
+    "oss:sync-uploads": "tsx src/scripts/syncUploadsToOss.ts"
   },
   "dependencies": {
     "@types/multer": "^2.0.0",
