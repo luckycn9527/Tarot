@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, ref, watch } from 'vue'
 import type { ReaderInfo } from '@/data/readers'
 import { getReaderAvatarSrc } from '@/utils/readerDisplay'
 
@@ -30,24 +30,44 @@ const imageSrc = computed(() => {
   if (!props.reader.avatarUrl && !props.reader.avatarThumbUrl) return ''
   return getReaderAvatarSrc(props.reader, { prefer: props.preferOriginal ? 'original' : 'thumb' })
 })
+
+const originalSrc = computed(() => {
+  if (!props.reader.avatarUrl && !props.reader.avatarThumbUrl) return ''
+  return getReaderAvatarSrc(props.reader, { prefer: 'original' })
+})
+
+const renderedSrc = ref('')
+
+watch(imageSrc, (src) => {
+  renderedSrc.value = src
+}, { immediate: true })
+
+function handleImageError() {
+  if (renderedSrc.value && originalSrc.value && renderedSrc.value !== originalSrc.value) {
+    renderedSrc.value = originalSrc.value
+    return
+  }
+  renderedSrc.value = ''
+}
 </script>
 
 <template>
   <div
     :class="[
       wrapperClass,
-      reader.avatarUrl && avatarRing ? 'ring-1 ring-gold-500/15' : '',
+      (reader.avatarUrl || reader.avatarThumbUrl) && avatarRing ? 'ring-1 ring-gold-500/15' : '',
       !reader.avatarUrl && useGradientFallback ? `bg-gradient-to-br ${reader.gradient}` : '',
       !reader.avatarUrl && !useGradientFallback ? 'bg-gold-500/10' : '',
     ]"
   >
     <img
-      v-if="imageSrc"
-      :src="imageSrc"
+      v-if="renderedSrc"
+      :src="renderedSrc"
       :alt="reader.name"
       class="w-full h-full object-cover"
       loading="lazy"
       decoding="async"
+      @error="handleImageError"
     />
     <span v-else :class="emojiClass">{{ reader.emoji }}</span>
   </div>

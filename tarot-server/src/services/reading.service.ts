@@ -7,6 +7,7 @@ import { getReaderById } from '../data/readers.js';
 import * as ReadingModel from '../models/reading.model.js';
 import * as UserModel from '../models/user.model.js';
 import * as AdminService from './admin.service.js';
+import { isActiveVip } from '../utils/membership.js';
 
 function parseJsonResponse(text: string): Record<string, unknown> {
   let cleaned = text.trim();
@@ -393,7 +394,7 @@ export async function readerReading(
   // VIP check for non-free readers
   if (reader.accessLevel === 'vip') {
     const user = await UserModel.findById(userId);
-    if (!user || user.membership !== 'vip' || !user.membership_expires_at || new Date(user.membership_expires_at) <= new Date()) {
+    if (!user || !isActiveVip(user)) {
       throw new Error('该塔罗师仅限VIP会员使用');
     }
   }
@@ -482,7 +483,7 @@ export async function readerFollowup(
   // VIP 塔罗师：追问同样需要有效会员
   if (reader.accessLevel === 'vip') {
     const user = await UserModel.findById(userId);
-    if (!user || user.membership !== 'vip' || !user.membership_expires_at || new Date(user.membership_expires_at) <= new Date()) {
+    if (!user || !isActiveVip(user)) {
       throw new Error('该塔罗师仅限VIP会员使用');
     }
   }

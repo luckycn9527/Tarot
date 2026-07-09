@@ -111,6 +111,7 @@ function formatAdminDate(value: unknown): string {
 
 function isActiveVipUser(u: Record<string, unknown> | null | undefined): boolean {
   if (!u || u.membership !== 'vip') return false
+  if (!u.membership_expires_at) return true
   const expiresAt = parseAdminDate(u.membership_expires_at)
   return Boolean(expiresAt && expiresAt.getTime() > Date.now())
 }
@@ -490,7 +491,7 @@ function promptDisplayName(code: string): string {
 
 function promptAvatarUrl(code: string): string {
   const row = promptRow(code)
-  return String(row.avatarThumbUrl || row.avatarUrl || '')
+  return String(row.avatarUrl || row.avatarThumbUrl || '')
 }
 
 function promptAccessValue(code: string): 'default' | 'free' | 'vip' {
@@ -1414,7 +1415,7 @@ function cardBackRowKey(b: Record<string, unknown>, index: number): string {
               >
                 <span v-if="promptRow(r.code).avatarUrl" class="w-8 h-8 rounded-lg overflow-hidden flex-shrink-0 ring-1 ring-gold-500/15">
                   <img
-                    :src="publicAssetUrl(promptRow(r.code).avatarThumbUrl || promptRow(r.code).avatarUrl)"
+                    :src="publicAssetUrl(promptRow(r.code).avatarUrl || promptRow(r.code).avatarThumbUrl)"
                     :alt="readerLocalizedName(r.code)"
                     class="w-full h-full object-cover"
                     loading="lazy"
@@ -1636,7 +1637,7 @@ function cardBackRowKey(b: Record<string, unknown>, index: number): string {
                       <div class="w-16 h-16 rounded-xl overflow-hidden bg-white/5 border border-gold-500/10 flex items-center justify-center text-3xl flex-shrink-0">
                       <img
                         v-if="promptRow(r.code).avatarUrl"
-                        :src="publicAssetUrl(promptRow(r.code).avatarThumbUrl || promptRow(r.code).avatarUrl)"
+                        :src="publicAssetUrl(promptRow(r.code).avatarUrl || promptRow(r.code).avatarThumbUrl)"
                         :alt="readerLocalizedName(r.code)"
                         class="w-full h-full object-cover"
                         loading="lazy"

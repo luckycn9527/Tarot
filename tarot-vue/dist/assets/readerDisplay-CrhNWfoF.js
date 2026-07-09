@@ -1,1 +1,0 @@
-import{p as i}from"./index-fCCIvQyp.js";function u(r,a={}){const t=(a.prefer??"original")==="thumb"?r.avatarThumbUrl||r.avatarUrl:r.avatarUrl||r.avatarThumbUrl;return t==null||String(t).trim()===""?"":i(String(t).trim())}export{u as g};

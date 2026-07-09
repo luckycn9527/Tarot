@@ -126,7 +126,8 @@ function genderLabel(g: string | undefined) {
 }
 
 const membershipExpiry = computed(() => {
-  if (user.value?.membership === 'vip' && user.value.membershipExpiresAt) {
+  if (user.value?.membership === 'vip') {
+    if (!user.value.membershipExpiresAt) return t('pages.profile.membershipLifetime')
     return new Date(user.value.membershipExpiresAt).toLocaleDateString(String(locale.value))
   }
   return t('pages.profile.membershipInactive')

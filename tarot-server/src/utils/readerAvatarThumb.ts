@@ -5,22 +5,39 @@ import { getUploadsRoot } from '../config/uploadsRoot.js';
 
 const THUMB_SIZE = 128;
 
+function normalizeUploadPublicPath(value: string): string | null {
+  const s = value.trim();
+  if (!s) return null;
+  if (s.startsWith('/uploads/')) return s.split(/[?#]/, 1)[0] || null;
+  if (!/^https?:\/\//i.test(s)) return null;
+
+  try {
+    const url = new URL(s);
+    return url.pathname.startsWith('/uploads/') ? url.pathname : null;
+  } catch {
+    return null;
+  }
+}
+
 /** 原图公开路径 /uploads/admin/xxx.png → 缩略图 /uploads/admin/xxx-thumb.webp */
 export function readerAvatarThumbPublicUrl(originalPublicUrl: string): string | null {
+  const normalized = normalizeUploadPublicPath(originalPublicUrl);
+  if (!normalized) return null;
   const prefix = '/uploads/admin/';
-  if (!originalPublicUrl.startsWith(prefix)) return null;
-  const base = originalPublicUrl.slice(prefix.length);
+  if (!normalized.startsWith(prefix)) return null;
+  const base = normalized.slice(prefix.length);
   const stem = base.replace(/\.[^.]+$/, '');
   return `${prefix}${stem}-thumb.webp`;
 }
 
 export function publicUploadsToFs(publicPath: string): string | null {
-  if (!publicPath.startsWith('/uploads/')) return null;
-  const rel = publicPath.slice('/uploads/'.length);
+  const normalized = normalizeUploadPublicPath(publicPath);
+  if (!normalized) return null;
+  const rel = normalized.slice('/uploads/'.length);
   return path.join(getUploadsRoot(), rel);
 }
 
-/** 若磁盘上存在对应 thumb 文件则返回其 URL，否则 null（列表用小图时回退原图） */
+/** 返回对应 thumb URL；本地文件缺失时也交给前端图片加载回退到原图 */
 export function resolveReaderAvatarThumbUrl(avatarUrl: string | null | undefined): string | null {
   const a = avatarUrl?.trim();
   if (!a) return null;
@@ -28,7 +45,7 @@ export function resolveReaderAvatarThumbUrl(avatarUrl: string | null | undefined
   if (!thumb) return null;
   const fsPath = publicUploadsToFs(thumb);
   if (fsPath && fs.existsSync(fsPath)) return thumb;
-  return null;
+  return thumb;
 }
 
 /**

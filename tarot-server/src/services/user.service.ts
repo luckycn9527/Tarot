@@ -5,6 +5,7 @@ import { toPublicUser } from './auth.service.js';
 import { getZodiacFromDate } from '../utils/zodiac.js';
 import { toDateOnly } from '../utils/dateOnly.js';
 import { cacheGet, cacheSet, cacheDel, CACHE_KEYS } from './cacheRedis.service.js';
+import { isActiveVip } from '../utils/membership.js';
 
 const SETTINGS_CACHE_TTL_SEC = 600;
 
@@ -69,9 +70,7 @@ export async function getQuota(userId: number) {
 
   const remaining = refreshed.remaining_free_quota;
 
-  const isVip = refreshed.membership === 'vip' &&
-    refreshed.membership_expires_at &&
-    new Date(refreshed.membership_expires_at) > new Date();
+  const isVip = isActiveVip(refreshed);
 
   return {
     remaining,

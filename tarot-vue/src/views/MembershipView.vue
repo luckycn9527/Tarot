@@ -25,6 +25,14 @@ const yearlyFeatures = computed(() => tm('pages.membership.yearlyFeatures') as s
 const payPerUseFeatures = computed(() => tm('pages.membership.payPerUseFeatures') as string[])
 
 const faqItems = computed(() => tm('pages.membership.faq') as { question: string; answer: string }[])
+
+const vipStatusText = computed(() => {
+  if (user.value?.membership !== 'vip') return ''
+  if (!user.value.membershipExpiresAt) return t('pages.membership.lifetime')
+  return t('pages.membership.expires', {
+    date: new Date(user.value.membershipExpiresAt).toLocaleDateString(String(locale.value)),
+  })
+})
 </script>
 
 <template>
@@ -40,7 +48,7 @@ const faqItems = computed(() => tm('pages.membership.faq') as { question: string
         <!-- VIP status -->
         <div v-if="user?.membership === 'vip'" class="mt-6 px-6 py-3 rounded-full bg-amber-500/20 border border-amber-500/30 inline-flex items-center gap-2">
           <span class="text-amber-400 font-medium">{{ t('pages.membership.vipBadge') }}</span>
-          <span v-if="user.membershipExpiresAt" class="text-amber-300/70 text-sm">{{ t('pages.membership.expires', { date: new Date(user.membershipExpiresAt).toLocaleDateString(String(locale)) }) }}</span>
+          <span class="text-amber-300/70 text-sm">{{ vipStatusText }}</span>
         </div>
       </div>
     </section>

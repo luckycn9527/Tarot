@@ -1,6 +1,7 @@
 import { pool } from '../config/database.js';
 import type { RowDataPacket, ResultSetHeader } from 'mysql2';
 import type { DbUser } from '../types/index.js';
+import { ACTIVE_VIP_SQL_CONDITION } from '../utils/membership.js';
 
 export const DAILY_FREE_QUOTA = 3;
 
@@ -143,8 +144,8 @@ export async function consumeQuota(id: number): Promise<'vip' | 'ok' | 'exhauste
 
     // 2. VIP 用户直接放行，不扣减
     const [vipRows] = await connection.execute<RowDataPacket[]>(
-      'SELECT 1 FROM users WHERE id = ? AND membership = ? AND membership_expires_at > NOW()',
-      [id, 'vip']
+      `SELECT 1 FROM users WHERE id = ? AND ${ACTIVE_VIP_SQL_CONDITION}`,
+      [id]
     );
     if (vipRows.length > 0) {
       await connection.commit();
