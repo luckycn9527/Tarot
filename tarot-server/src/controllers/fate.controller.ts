@@ -47,12 +47,34 @@ export async function analyze(req: Request, res: Response) {
     }
 
     const cat = typeof category === 'string' ? category.trim() : '';
-    if (!['love', 'career', 'wealth'].includes(cat)) {
-      res.status(400).json(fail('category 须为 love | career | wealth'));
+    if (!['love', 'career', 'wealth', 'health', 'relationship', 'decision'].includes(cat)) {
+      res.status(400).json(fail('category 无效'));
       return;
     }
 
     const body = req.body as Record<string, unknown>;
+    const birthPlace = typeof body.birth_place === 'string' ? body.birth_place.trim().slice(0, 120) : null;
+    const gender = body.gender === 'female' ? 'female' : body.gender === 'male' ? 'male' : null;
+    const solarCorrection = body.solar_correction === true;
+    const birthLongitudeRaw = Number(body.birth_longitude);
+    const birthLongitude = Number.isFinite(birthLongitudeRaw) ? birthLongitudeRaw : null;
+    if (solarCorrection && (!timeVal || birthLongitude == null || birthLongitude < 73 || birthLongitude > 135)) {
+      res.status(400).json(fail('启用真太阳时校正时，须提供出生时间及 73–135°E 的出生地经度'));
+      return;
+    }
+
+    const pillarPattern = /^[甲乙丙丁戊己庚辛壬癸][子丑寅卯辰巳午未申酉戌亥]$/;
+    let baziPillars: { year: string; month: string; day: string; time: string } | null = null;
+    if (body.bazi_pillars && typeof body.bazi_pillars === 'object') {
+      const p = body.bazi_pillars as Record<string, unknown>;
+      const values = [p.year, p.month, p.day, p.time];
+      if (values.every((value) => typeof value === 'string' && pillarPattern.test(value))) {
+        baziPillars = {
+          year: String(p.year), month: String(p.month), day: String(p.day), time: String(p.time),
+        };
+      }
+    }
+
     const cardIdsRaw = body.card_ids ?? body.cardIds;
     const orientRaw = body.orientations;
     if (!Array.isArray(cardIdsRaw) || cardIdsRaw.length !== 3) {
@@ -106,6 +128,11 @@ export async function analyze(req: Request, res: Response) {
     const data = await FateService.analyzeFateDual(req.userId!, {
       birthDate,
       birthTime: timeVal,
+      birthPlace,
+      birthLongitude,
+      gender,
+      solarCorrection,
+      baziPillars,
       question: question.trim(),
       category: cat,
       cardIds,

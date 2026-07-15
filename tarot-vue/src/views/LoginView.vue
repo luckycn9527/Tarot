@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, nextTick, onMounted, onBeforeUnmount } from 'vue'
+import { ref, computed, nextTick, onMounted, onBeforeUnmount } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import UserRound from '@icons/user-round.vue'
@@ -9,6 +9,7 @@ import EyeOff from '@icons/eye-off.vue'
 import { useAuth } from '../composables/useAuth'
 import { getLoginFormSchema, formatZodFieldErrors } from '@/schemas/auth'
 import { getGoogleClientId, renderGoogleSignInButton, cancelGoogleOneTap } from '@/composables/useGoogleSignIn'
+import { getRememberLogin } from '@/services/api'
 
 const route = useRoute()
 const router = useRouter()
@@ -22,6 +23,11 @@ const errors = ref<Record<string, string>>({})
 const toastMessage = ref('')
 const showToast = ref(false)
 const submitting = ref(false)
+const rememberMe = ref(getRememberLogin())
+const loginHint = computed(() => {
+  const redirect = typeof route.query.redirect === 'string' ? route.query.redirect : ''
+  return redirect.startsWith('/horoscope') ? t('pages.login.horoscopeMemberHint') : ''
+})
 
 async function handleLogin() {
   errors.value = {}
@@ -32,7 +38,7 @@ async function handleLogin() {
   }
   submitting.value = true
   try {
-    const result = await login(parsed.data.identifier, parsed.data.password)
+    const result = await login(parsed.data.identifier, parsed.data.password, rememberMe.value)
     if (result) {
       if (result.field) {
         errors.value[result.field] = result.message
@@ -89,6 +95,10 @@ onBeforeUnmount(() => {
         <p class="text-gray-400 text-sm">{{ t('pages.login.heroSub') }}</p>
       </div>
 
+      <div v-if="loginHint" class="mb-5 rounded-xl border border-gold-500/20 bg-gold-500/[0.08] px-4 py-3 text-center text-sm text-gold-200">
+        {{ loginHint }}
+      </div>
+
       <form @submit.prevent="handleLogin">
         <div class="space-y-4">
           <!-- Username or Email -->
@@ -127,7 +137,7 @@ onBeforeUnmount(() => {
 
         <div class="flex items-center justify-between mt-4">
           <label class="flex items-center gap-2 cursor-pointer">
-            <input type="checkbox" class="w-4 h-4 rounded bg-white/4 border-white/20 text-gold-600 focus:ring-gold-400 focus:ring-offset-0">
+            <input v-model="rememberMe" type="checkbox" class="w-4 h-4 rounded bg-white/4 border-white/20 text-gold-600 focus:ring-gold-400 focus:ring-offset-0">
             <span class="text-gray-400 text-sm">{{ t('pages.login.remember') }}</span>
           </label>
           <RouterLink to="/forgot-password" class="text-gold-400/90 text-sm hover:text-gold-300 transition-colors">

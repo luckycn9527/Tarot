@@ -19,7 +19,12 @@ const router = createRouter({
     { path: '/yes-no-tarot/single-card/result', name: 'yes-no-single-result', component: () => import('../views/YesNoSingleCardResult.vue') },
     { path: '/yes-no-tarot/three-cards', name: 'yes-no-three', component: () => import('../views/YesNoThreeCards.vue') },
     { path: '/yes-no-tarot/three-cards/result', name: 'yes-no-three-result', component: () => import('../views/YesNoThreeCardsResult.vue') },
-    { path: '/horoscope', name: 'horoscope', component: () => import('../views/HoroscopeView.vue') },
+    {
+      path: '/horoscope',
+      name: 'horoscope',
+      meta: { requiresAuth: true },
+      component: () => import('../views/HoroscopeView.vue'),
+    },
     {
       path: '/fate-dual',
       name: 'fate-dual',

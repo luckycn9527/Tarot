@@ -11,6 +11,14 @@ export async function insertBaziResult(data: {
   userId: number;
   birthDate: string;
   birthTime: string | null;
+  birthPlace: string | null;
+  gender: 'male' | 'female' | null;
+  solarCorrection: boolean;
+  birthLongitude: number | null;
+  correctedBirthDate: string | null;
+  correctedBirthTime: string | null;
+  solarOffsetMinutes: number | null;
+  baziPillars: { year: string; month: string; day: string; time: string } | null;
   fiveElementsJson: object | null;
   luckTrend: string | null;
   keywords: string | null;
@@ -20,12 +28,22 @@ export async function insertBaziResult(data: {
 }): Promise<number> {
   const [r] = await pool.execute<ResultSetHeader>(
     `INSERT INTO bazi_results
-     (user_id, birth_date, birth_time, five_elements_json, luck_trend, keywords, analysis_text, question, category)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+     (user_id, birth_date, birth_time, birth_place, gender, solar_correction, birth_longitude,
+      corrected_birth_date, corrected_birth_time, solar_offset_minutes, bazi_pillars_json,
+      five_elements_json, luck_trend, keywords, analysis_text, question, category)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [
       data.userId,
       data.birthDate,
       data.birthTime,
+      trunc(data.birthPlace, 120),
+      data.gender,
+      data.solarCorrection ? 1 : 0,
+      data.birthLongitude,
+      data.correctedBirthDate,
+      data.correctedBirthTime,
+      data.solarOffsetMinutes,
+      data.baziPillars ? JSON.stringify(data.baziPillars) : null,
       data.fiveElementsJson ? JSON.stringify(data.fiveElementsJson) : null,
       trunc(data.luckTrend, 100),
       trunc(data.keywords, 255),

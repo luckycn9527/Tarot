@@ -44,14 +44,14 @@ export default {
   },
   header: {
     openNavMenu: 'Open menu',
-    bgm: 'Background music (coming soon)',
+    bgm: 'Background music',
     bgmTitle: 'Background music',
+    bgmStart: 'Play background music',
+    bgmStop: 'Stop background music',
     lang: 'Switch language (中文 / English)',
     langTitle: 'Language',
     localeTargetEn: 'EN',
     localeTargetZh: '中',
-    theme: 'Toggle theme (coming soon)',
-    themeTitle: 'Theme',
     mainNavAria: 'Main navigation',
   },
   footer: {

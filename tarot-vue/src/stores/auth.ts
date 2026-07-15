@@ -40,7 +40,7 @@ export const useAuthStore = defineStore('auth', () => {
   }
 
   async function initSession() {
-    const token = localStorage.getItem('tarot_access_token')
+    const token = localStorage.getItem('tarot_access_token') || sessionStorage.getItem('tarot_access_token')
     if (!token) {
       // 没有 access token 时按游客进入，避免首次访问无 refresh cookie 也打 /auth/refresh 造成控制台 401。
       isInitialized.value = true
@@ -108,7 +108,7 @@ export const useAuthStore = defineStore('auth', () => {
         ...(usernameTrimmed ? { username: usernameTrimmed } : {}),
       })
       if (res.data.success) {
-        setAccessToken(res.data.data.accessToken)
+        setAccessToken(res.data.data.accessToken, true)
         currentUser.value = res.data.data.user
         isInitialized.value = true
         const resources = useUserResourcesStore()
@@ -128,7 +128,7 @@ export const useAuthStore = defineStore('auth', () => {
     try {
       const res = await api.post('/auth/google', { idToken })
       if (res.data.success) {
-        setAccessToken(res.data.data.accessToken)
+        setAccessToken(res.data.data.accessToken, true)
         currentUser.value = res.data.data.user
         isInitialized.value = true
         const resources = useUserResourcesStore()
@@ -183,7 +183,7 @@ export const useAuthStore = defineStore('auth', () => {
     }
   }
 
-  async function login(identifier: string, password: string): Promise<AuthError | null> {
+  async function login(identifier: string, password: string, remember = false): Promise<AuthError | null> {
     const idTrimmed = identifier.trim()
     if (!idTrimmed) return { field: 'identifier', message: '请输入用户名或邮箱' }
     if (!password) return { field: 'password', message: '请输入密码' }
@@ -191,7 +191,7 @@ export const useAuthStore = defineStore('auth', () => {
     try {
       const res = await api.post('/auth/login', { identifier: idTrimmed, password })
       if (res.data.success) {
-        setAccessToken(res.data.data.accessToken)
+        setAccessToken(res.data.data.accessToken, remember)
         currentUser.value = res.data.data.user
         isInitialized.value = true
         const resources = useUserResourcesStore()

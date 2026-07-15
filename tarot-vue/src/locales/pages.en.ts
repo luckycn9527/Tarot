@@ -886,6 +886,7 @@ export const pagesEn = {
     identifierPh: 'Username or email',
     passwordPh: 'Password',
     remember: 'Remember me',
+    horoscopeMemberHint: 'Horoscope is a member feature. Log in to view it.',
     forgot: 'Forgot password?',
     submit: 'Log in',
     submitting: 'Signing in…',

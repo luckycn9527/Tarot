@@ -11,6 +11,7 @@ import { useCardBack } from '@/composables/useCardBack'
 import FateDualAnalyzingRitual from '@/components/FateDualAnalyzingRitual.vue'
 import FateSacredDatetime from '@/components/FateSacredDatetime.vue'
 import { computeZiwei, ZIWEI_GRID_POS, type ZiweiChart } from '@/composables/useZiwei'
+import { calculateTrueSolarTime, resolveBirthLongitude } from '@/utils/trueSolarTime'
 import fateDualCrystalImage from '@/assets/fate/fate-dual-crystal.webp'
 
 void FateSacredDatetime
@@ -27,7 +28,8 @@ const step = ref<Step>('form')
 const birthDate = ref('1999-04-21')
 const birthTime = ref('12:00')
 const question = ref('')
-const category = ref<'love' | 'career' | 'wealth'>('career')
+type DomainKey = 'love' | 'career' | 'wealth' | 'health' | 'relationship' | 'decision'
+const category = ref<DomainKey>('career')
 
 const birthYear = ref<number | null>(1999)
 const birthMonth = ref<number | null>(4)
@@ -35,21 +37,34 @@ const birthDay = ref<number | null>(21)
 const birthHour = ref<number | null>(12)
 const birthMinute = ref<number | null>(0)
 const birthPlace = ref('中国·北京市')
+const birthLongitude = ref<number | null>(resolveBirthLongitude(birthPlace.value))
 const gender = ref<'male' | 'female'>('male')
 const solarCorrection = ref(false)
 const chartType = ref<'bazi' | 'ziwei'>('bazi')
 const calibrationOpen = ref(false)
 
-type DomainKey = 'love' | 'career' | 'wealth' | 'health' | 'relationship' | 'decision'
 const selectedDomain = ref<DomainKey>('career')
-const domainOptions: { key: DomainKey; label: string; sub: string; category: 'love' | 'career' | 'wealth' }[] = [
+const domainOptions: { key: DomainKey; label: string; sub: string; category: DomainKey }[] = [
   { key: 'love', label: '感情', sub: '缠绵情感', category: 'love' },
   { key: 'career', label: '事业', sub: '发展方向', category: 'career' },
   { key: 'wealth', label: '财运', sub: '财富机遇', category: 'wealth' },
-  { key: 'health', label: '健康', sub: '身心状态', category: 'wealth' },
-  { key: 'relationship', label: '人际', sub: '关系解析', category: 'love' },
-  { key: 'decision', label: '抉择', sub: '人生选择', category: 'career' },
+  { key: 'health', label: '健康', sub: '身心状态', category: 'health' },
+  { key: 'relationship', label: '人际', sub: '关系解析', category: 'relationship' },
+  { key: 'decision', label: '抉择', sub: '人生选择', category: 'decision' },
 ]
+
+watch(birthPlace, (place) => {
+  birthLongitude.value = resolveBirthLongitude(place)
+})
+
+const correctedBirthContext = computed(() => {
+  if (!solarCorrection.value || !birthTime.value) return null
+  const longitude = Number(birthLongitude.value)
+  return calculateTrueSolarTime(birthDate.value, birthTime.value, longitude)
+})
+const effectiveBirthDate = computed(() => correctedBirthContext.value?.date ?? birthDate.value)
+const effectiveBirthTime = computed(() => correctedBirthContext.value?.time ?? birthTime.value)
+const effectiveBirthHour = computed(() => Number(effectiveBirthTime.value.split(':')[0] ?? 12))
 
 /** 各领域的问题示例（点选即填入，降低输入门槛） */
 const questionSuggestionMap: Record<DomainKey, string[]> = {
@@ -157,7 +172,7 @@ interface ScenarioCard {
   title: string
   sub: string
   question: string
-  category: 'love' | 'career' | 'wealth'
+  category: DomainKey
   signal: string
 }
 
@@ -166,8 +181,8 @@ const scenarioCards: ScenarioCard[] = [
   { key: 'career', title: '事业换轨', sub: '机会与风险并存', question: '我现在适合换工作或调整事业方向吗？', category: 'career', signal: '破局' },
   { key: 'love', title: '关系去留', sub: '继续靠近还是放手', question: '这段关系还有值得继续投入的未来吗？', category: 'love', signal: '牵引' },
   { key: 'wealth', title: '财富决策', sub: '投入、守住或等待', question: '这笔投入值得把握，还是应该先稳住现金流？', category: 'wealth', signal: '筹码' },
-  { key: 'relationship', title: '人际暗流', sub: '贵人与消耗并行', question: '我该如何处理这段让我反复内耗的人际关系？', category: 'love', signal: '边界' },
-  { key: 'health', title: '身心状态', sub: '压力与节奏校准', question: '我近期的身心状态在提醒我调整什么？', category: 'wealth', signal: '节律' },
+  { key: 'relationship', title: '人际暗流', sub: '贵人与消耗并行', question: '我该如何处理这段让我反复内耗的人际关系？', category: 'relationship', signal: '边界' },
+  { key: 'health', title: '身心状态', sub: '压力与节奏校准', question: '我近期的身心状态在提醒我调整什么？', category: 'health', signal: '节律' },
 ]
 
 const selectedDomainOption = computed(() => domainOptions.find((d) => d.key === selectedDomain.value) ?? domainOptions[0])
@@ -210,6 +225,7 @@ watch(
       if (user.value.gender === 'male' || user.value.gender === 'female') {
         gender.value = user.value.gender
       }
+      if (user.value.location?.trim()) birthPlace.value = user.value.location.trim()
     }
   },
   { immediate: true },
@@ -273,12 +289,14 @@ function scheduleBaziCompute(task: () => Promise<void>) {
 
 onUnmounted(cancelBaziCompute)
 
-watch([chartType, birthYear, birthMonth, birthDay, birthHour, birthMinute], ([type, y, m, d, h, mm]) => {
+watch([chartType, effectiveBirthDate, effectiveBirthTime], ([type, date, time]) => {
   const seq = ++baziComputeSeq
   if (type !== 'bazi') {
     cancelBaziCompute()
     return
   }
+  const [y, m, d] = date.split('-').map(Number)
+  const [h, mm] = time.split(':').map(Number)
   if (!y || !m || !d) {
     cancelBaziCompute()
     baziPillars.value = null
@@ -288,7 +306,7 @@ watch([chartType, birthYear, birthMonth, birthDay, birthHour, birthMinute], ([ty
     if (seq !== baziComputeSeq) return
     try {
       const { Solar } = await import('lunar-javascript')
-      const solar = Solar.fromYmdHms(y, m, d, h ?? 12, mm ?? 0, 0)
+      const solar = Solar.fromYmdHms(y, m, d, h || 0, mm || 0, 0)
       const ec = solar.getLunar().getEightChar()
       if (seq === baziComputeSeq) {
         baziPillars.value = { year: ec.getYear(), month: ec.getMonth(), day: ec.getDay(), time: ec.getTime() }
@@ -303,7 +321,7 @@ watch([chartType, birthYear, birthMonth, birthDay, birthHour, birthMinute], ([ty
 const ziweiChart = ref<ZiweiChart | null>(null)
 let ziweiComputeSeq = 0
 watch(
-  [chartType, birthDate, birthHour, gender],
+  [chartType, effectiveBirthDate, effectiveBirthHour, gender],
   async ([type, date, hour, g]) => {
     const seq = ++ziweiComputeSeq
     if (type !== 'ziwei' || !/^\d{4}-\d{2}-\d{2}$/.test(date)) {
@@ -340,6 +358,7 @@ function applyScenario(card: ScenarioCard) {
 /** 校验缺失项：返回第一条缺失提示，无缺失返回 null */
 function firstMissing(): string | null {
   if (!birthDate.value || !/^\d{4}-\d{2}-\d{2}$/.test(birthDate.value)) return t('pages.fateDual.toastPickBirth')
+  if (solarCorrection.value && !correctedBirthContext.value) return '请填写有效的出生地经度后再启用真太阳时校正'
   if (question.value.trim().length < 5) return t('pages.fateDual.toastQuestionMin')
   return null
 }
@@ -404,6 +423,11 @@ async function runAnalyzeWithPickedCards() {
   try {
     const res = await api.post('/fate/analyze', {
       birth_date: birthDate.value, birth_time: birthTime.value || undefined,
+      birth_place: birthPlace.value.trim() || undefined,
+      birth_longitude: birthLongitude.value,
+      gender: gender.value,
+      solar_correction: solarCorrection.value,
+      bazi_pillars: chartType.value === 'bazi' ? baziPillars.value : undefined,
       question: question.value.trim(), category: category.value,
       card_ids: selectedCards.value.map((s) => s.card.id),
       orientations: selectedCards.value.map((s) => (s.isReversed ? 'reversed' : 'upright')),
@@ -761,6 +785,17 @@ function splitDisplayParagraphs(text: string): string[] {
                 <button type="button" role="switch" :aria-checked="solarCorrection" class="fate-switch cursor-pointer" :class="solarCorrection ? 'fate-switch--on' : ''" @click="solarCorrection = !solarCorrection">
                   <span class="fate-switch-knob" />
                 </button>
+              </div>
+              <div v-if="solarCorrection" class="fate-field">
+                <label class="fate-label">出生地经度（东经）</label>
+                <div class="fate-input-row">
+                  <input v-model.number="birthLongitude" type="number" min="73" max="135" step="0.0001" placeholder="116.4074" class="fate-input fate-input--text" aria-label="出生地经度">
+                  <span class="text-xs text-violet-200/60">°E</span>
+                </div>
+                <p v-if="correctedBirthContext" class="mt-2 text-xs text-violet-200/60">
+                  校正后：{{ correctedBirthContext.date }} {{ correctedBirthContext.time }}（{{ correctedBirthContext.offsetMinutes >= 0 ? '+' : '' }}{{ correctedBirthContext.offsetMinutes }} 分钟）
+                </p>
+                <p v-else class="mt-2 text-xs text-amber-300/70">已按常用城市自动识别；未识别时请手动填写经度。</p>
               </div>
             </div>
           </Transition>

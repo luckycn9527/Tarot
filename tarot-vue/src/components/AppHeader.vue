@@ -5,7 +5,6 @@ import { useRoute, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import Menu from '@icons/menu.vue'
 import Music from '@icons/music.vue'
-import Moon from '@icons/moon.vue'
 import ChevronDown from '@icons/chevron-down.vue'
 import UserRound from '@icons/user-round.vue'
 import Clock from '@icons/clock.vue'
@@ -18,11 +17,13 @@ import { useAuth } from '../composables/useAuth'
 import { ossAssetUrl, publicAssetUrl } from '../utils/publicAssetUrl'
 import { applyLocaleToDocument, setStoredLocale, type AppLocale } from '@/utils/localeStorage'
 import { applyRouteDocumentMeta } from '@/seo/documentMeta'
+import { useBackgroundMusic } from '@/composables/useBackgroundMusic'
 
 const { t, locale } = useI18n()
 const route = useRoute()
 const router = useRouter()
 const { user, isLoggedIn, logout } = useAuth()
+const { isPlaying: isBgmPlaying, toggleBackgroundMusic, stopBackgroundMusic } = useBackgroundMusic()
 
 const logoUrl = ossAssetUrl('/frontend-assets/logo/logo.webp')
 const isVip = computed(() => user.value?.membership === 'vip')
@@ -71,6 +72,7 @@ onMounted(() => {
 onUnmounted(() => {
   window.removeEventListener('scroll', onScroll)
   document.removeEventListener('click', closeDropdown)
+  void stopBackgroundMusic()
 })
 
 interface NavItem {
@@ -174,7 +176,15 @@ function toggleLocale() {
 
         <!-- Right Controls -->
         <div class="flex items-center space-x-3">
-          <button type="button" class="p-2 rounded-full text-gray-500 hover:text-gold-300 transition-colors" :title="t('header.bgmTitle')" :aria-label="t('header.bgm')">
+          <button
+            type="button"
+            class="p-2 rounded-full transition-colors"
+            :class="isBgmPlaying ? 'text-gold-300 bg-gold-500/10' : 'text-gray-500 hover:text-gold-300'"
+            :title="isBgmPlaying ? t('header.bgmStop') : t('header.bgmStart')"
+            :aria-label="isBgmPlaying ? t('header.bgmStop') : t('header.bgmStart')"
+            :aria-pressed="isBgmPlaying"
+            @click="toggleBackgroundMusic"
+          >
             <Music :size="18" aria-hidden="true" />
           </button>
           <button
@@ -186,10 +196,6 @@ function toggleLocale() {
           >
             {{ langButtonShort }}
           </button>
-          <button type="button" class="p-2 rounded-full text-gray-500 hover:text-gold-300 transition-colors" :title="t('header.themeTitle')" :aria-label="t('header.theme')">
-            <Moon :size="18" aria-hidden="true" />
-          </button>
-
           <!-- Logged in: user dropdown -->
           <div v-if="isLoggedIn && user" class="relative user-dropdown-container hidden sm:block">
             <button

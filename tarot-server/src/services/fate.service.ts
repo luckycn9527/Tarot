@@ -1,11 +1,15 @@
 import { callDeepSeek } from './deepseek.service.js';
 import { tarotCards, type TarotCard } from '../data/tarotCards.js';
 import * as FateModel from '../models/fate.model.js';
+import { calculateTrueSolarTime } from '../utils/trueSolarTime.js';
 
 const CATEGORY_LABEL: Record<string, string> = {
   love: '感情',
   career: '事业',
   wealth: '财运',
+  health: '身心健康',
+  relationship: '人际关系',
+  decision: '人生抉择',
 };
 
 function categoryLabel(cat: string): string {
@@ -188,6 +192,11 @@ export async function analyzeFateDual(
   userId: number,  input: {
     birthDate: string;
     birthTime: string | null;
+    birthPlace: string | null;
+    birthLongitude: number | null;
+    gender: 'male' | 'female' | null;
+    solarCorrection: boolean;
+    baziPillars: { year: string; month: string; day: string; time: string } | null;
     question: string;
     category: string;
     cardIds: number[];
@@ -208,16 +217,29 @@ export async function analyzeFateDual(
 ) {
   const cat = input.category;
   const catZh = categoryLabel(cat);
-  const timeStr = input.birthTime ?? '未知（可按日柱推演）';
+  const correctedBirth = input.solarCorrection && input.birthTime && input.birthLongitude != null
+    ? calculateTrueSolarTime(input.birthDate, input.birthTime, input.birthLongitude)
+    : null;
+  const effectiveBirthDate = correctedBirth?.date ?? input.birthDate;
+  const effectiveBirthTime = correctedBirth?.time ?? input.birthTime;
+  const timeStr = effectiveBirthTime ?? '未知（可按日柱推演）';
+  const genderLabel = input.gender === 'female' ? '女' : input.gender === 'male' ? '男' : '未提供';
+  const placeLabel = input.birthPlace || '未提供';
+  const correctionLabel = correctedBirth
+    ? `已校正（${correctedBirth.offsetMinutes >= 0 ? '+' : ''}${correctedBirth.offsetMinutes} 分钟）`
+    : '未启用';
+  const pillarsText = input.baziPillars
+    ? `${input.baziPillars.year}年 ${input.baziPillars.month}月 ${input.baziPillars.day}日 ${input.baziPillars.time}时`
+    : '未提供';
   const useZiwei = input.chartType === 'ziwei' && input.ziwei != null;
 
   const baziSystem = useZiwei
     ? buildZiweiSystemPrompt(catZh)
-    : `你是一位精通八字命理（子平术）的分析师。请根据用户出生日期与时间，结合其问题领域（${catZh}），给出**意象化但有命理质感**的运势侧写（非严谨排盘软件，侧重心理与象征，避免恐吓性断言）。
+    : `你是一位精通八字命理（子平术）的分析师。用户提供了由排盘程序计算出的四柱，请优先依据四柱、性别和真太阳时校正结果，结合其问题领域（${catZh}），给出运势侧写（侧重心理与象征，避免恐吓性断言）。
 
 请尽量充实内容、用词专业而温暖。严格只输出一个 JSON 对象，不要 markdown 代码块，不要其它文字。格式：
 {
-  "dayMaster": "日主天干（如：甲木、庚金），结合出生日期意象推断",
+  "dayMaster": "依据程序四柱中的日柱天干给出日主（如：甲木、庚金）",
   "dayMasterStrength": "日主旺衰，从下列里选一个：身强 / 身弱 / 中和 / 偏强 / 偏弱",
   "fiveElements": {"木":"该五行在命局中的意象描述8-16字","火":"…","土":"…","金":"…","水":"…"},
   "fiveElementScores": {"木":0-100整数,"火":0-100整数,"土":0-100整数,"金":0-100整数,"水":0-100整数},
@@ -231,14 +253,21 @@ export async function analyzeFateDual(
 }
 注意：fiveElementScores 五项要有明显高低差异、加起来不必为100，体现命局五行的实际强弱分布。`;
 
+  const birthContext = `原始出生日期：${input.birthDate}
+原始出生时间：${input.birthTime ?? '未提供'}
+出生地：${placeLabel}${input.birthLongitude != null ? `（东经 ${input.birthLongitude}°）` : ''}
+性别：${genderLabel}
+真太阳时：${correctionLabel}
+分析采用日期：${effectiveBirthDate}
+分析采用时间：${timeStr}`;
+
   const baziUser = useZiwei
-    ? `出生日期：${input.birthDate}
-出生时间：${timeStr}
+    ? `${birthContext}
 ${formatZiweiForPrompt(input.ziwei!)}
 问题：${input.question}
 场景：${catZh}`
-    : `出生日期：${input.birthDate}
-出生时间：${timeStr}
+    : `${birthContext}
+程序排盘四柱：${pillarsText}
 问题：${input.question}
 场景：${catZh}`;
 
@@ -402,6 +431,14 @@ ${tarotAnalysis}`;
     userId,
     birthDate: input.birthDate,
     birthTime: input.birthTime,
+    birthPlace: input.birthPlace,
+    gender: input.gender,
+    solarCorrection: input.solarCorrection,
+    birthLongitude: input.birthLongitude,
+    correctedBirthDate: correctedBirth?.date ?? null,
+    correctedBirthTime: correctedBirth?.time ?? null,
+    solarOffsetMinutes: correctedBirth?.offsetMinutes ?? null,
+    baziPillars: input.baziPillars,
     fiveElementsJson: baziParsed.fiveElements ?? null,
     luckTrend: baziParsed.luckTrend ?? null,
     keywords: keywordsStr,

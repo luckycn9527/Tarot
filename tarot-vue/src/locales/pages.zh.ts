@@ -903,6 +903,7 @@ export const pagesZh = {
     identifierPh: '用户名或邮箱',
     passwordPh: '请输入密码',
     remember: '记住登入信息',
+    horoscopeMemberHint: '星座运势是会员专属功能，登入后即可查看。',
     forgot: '忘记密码？',
     submit: '登入',
     submitting: '登入中...',

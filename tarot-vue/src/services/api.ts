@@ -6,15 +6,36 @@ const api = axios.create({
   withCredentials: true,
 })
 
-// Access token 存储
-let accessToken: string | null = localStorage.getItem('tarot_access_token')
+const ACCESS_TOKEN_KEY = 'tarot_access_token'
+const REMEMBER_LOGIN_KEY = 'tarot_remember_login'
 
-export function setAccessToken(token: string | null) {
+// “记住我”使用 localStorage；未勾选时仅保存在当前标签页的 sessionStorage。
+let rememberLogin = localStorage.getItem(REMEMBER_LOGIN_KEY) === 'true'
+const localToken = localStorage.getItem(ACCESS_TOKEN_KEY)
+const sessionToken = sessionStorage.getItem(ACCESS_TOKEN_KEY)
+let accessToken: string | null = localToken || sessionToken
+if (localToken) rememberLogin = true
+
+export function getRememberLogin(): boolean {
+  return rememberLogin
+}
+
+export function setAccessToken(token: string | null, persist = rememberLogin) {
   accessToken = token
   if (token) {
-    localStorage.setItem('tarot_access_token', token)
+    rememberLogin = persist
+    if (persist) {
+      localStorage.setItem(REMEMBER_LOGIN_KEY, 'true')
+      localStorage.setItem(ACCESS_TOKEN_KEY, token)
+      sessionStorage.removeItem(ACCESS_TOKEN_KEY)
+    } else {
+      localStorage.removeItem(REMEMBER_LOGIN_KEY)
+      localStorage.removeItem(ACCESS_TOKEN_KEY)
+      sessionStorage.setItem(ACCESS_TOKEN_KEY, token)
+    }
   } else {
-    localStorage.removeItem('tarot_access_token')
+    localStorage.removeItem(ACCESS_TOKEN_KEY)
+    sessionStorage.removeItem(ACCESS_TOKEN_KEY)
   }
 }
 

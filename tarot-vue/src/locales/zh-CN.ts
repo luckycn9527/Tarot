@@ -44,14 +44,14 @@ export default {
   },
   header: {
     openNavMenu: '打开选单',
-    bgm: '背景音乐（即将推出）',
+    bgm: '背景音乐',
     bgmTitle: '背景音乐',
+    bgmStart: '播放背景音乐',
+    bgmStop: '停止背景音乐',
     lang: '切换界面语言（中文 / English）',
     langTitle: '语言',
     localeTargetEn: 'EN',
     localeTargetZh: '中',
-    theme: '切换主题（即将推出）',
-    themeTitle: '切换主题',
     mainNavAria: '主导航',
   },
   footer: {
