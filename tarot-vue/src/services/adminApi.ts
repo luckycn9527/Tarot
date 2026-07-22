@@ -1,13 +1,18 @@
 import axios from 'axios'
 import router from '../router'
 
+const configuredApiBaseUrl = import.meta.env.VITE_PUBLIC_API_BASE_URL?.trim().replace(/\/+$/, '')
+const configuredApiOrigin = import.meta.env.VITE_PUBLIC_API_ORIGIN?.trim().replace(/\/+$/, '')
+const adminApiBaseUrl = `${configuredApiBaseUrl || (import.meta.env.PROD && configuredApiOrigin ? `${configuredApiOrigin}/api` : '/api')}/admin`
+
 const adminApi = axios.create({
-  baseURL: '/api/admin',
+  baseURL: adminApiBaseUrl,
   timeout: 30000,
 })
 
 const ADMIN_TOKEN_KEY = 'admin_access_token'
 
+// 管理员凭证仅保留在当前标签页，清除旧版本可能留下的持久化令牌。
 localStorage.removeItem(ADMIN_TOKEN_KEY)
 
 let adminToken: string | null = sessionStorage.getItem(ADMIN_TOKEN_KEY)

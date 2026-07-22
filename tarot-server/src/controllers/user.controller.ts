@@ -1,7 +1,11 @@
 import type { Request, Response } from 'express';
+import fs from 'fs/promises';
+import path from 'path';
 import * as UserService from '../services/user.service.js';
 import { success, fail } from '../utils/response.js';
 import { storeUploadedImage } from '../utils/imageUpload.js';
+import { env } from '../config/env.js';
+import { getUploadsRoot } from '../config/uploadsRoot.js';
 
 function getErrMsg(err: unknown, fallback: string): string {
   return err instanceof Error ? err.message : fallback;
@@ -102,8 +106,33 @@ export async function updateBirthInfo(req: Request, res: Response) {
   }
 }
 
-export async function activateVip(req: Request, res: Response) {
-  // 付费功能暂未开放，直接返回敬请期待
-  void req.body;
-  res.status(503).json(fail('支付功能即将上线，敬请期待', { code: 'payment_not_available' }));
+async function deleteLocalAvatar(avatar: string | null): Promise<void> {
+  if (!avatar?.startsWith('/uploads/avatars/')) return;
+  const filename = path.basename(avatar);
+  if (!filename || filename !== avatar.slice('/uploads/avatars/'.length)) return;
+  try {
+    await fs.unlink(path.join(getUploadsRoot(), 'avatars', filename));
+  } catch (error: unknown) {
+    if ((error as NodeJS.ErrnoException).code !== 'ENOENT') {
+      console.warn('[user] failed to delete avatar after account deletion', error);
+    }
+  }
+}
+
+export async function deleteAccount(req: Request, res: Response) {
+  try {
+    const { password } = req.body as { password: string };
+    const { avatar } = await UserService.deleteAccount(req.userId!, password);
+    await deleteLocalAvatar(avatar);
+    res.clearCookie('refreshToken', {
+      httpOnly: true,
+      secure: env.COOKIE_SECURE,
+      sameSite: 'lax',
+      path: '/api/auth',
+      ...(env.COOKIE_DOMAIN ? { domain: env.COOKIE_DOMAIN } : {}),
+    });
+    res.json(success(null, '账号已注销，相关数据已删除'));
+  } catch (err: unknown) {
+    res.status(400).json(fail(getErrMsg(err, '账号注销失败')));
+  }
 }

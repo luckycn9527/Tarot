@@ -15,6 +15,7 @@ export default {
     gallery: 'Card gallery',
     spreads: 'Spreads',
     oracleGallery: 'Oracle gallery',
+    blog: 'Tarot notes',
   },
   auth: {
     loginFirst: 'Please log in first',
@@ -163,6 +164,8 @@ export default {
       'card-detail': 'Card detail',
       spreads: 'Spread guide',
       'oracle-gallery': 'Oracle gallery',
+      blog: 'Tarot reader notes',
+      'blog-article': 'Tarot article',
       'card-back-settings': 'Card back settings',
       'reader-ask': 'Ask the reader',
       'reader-spread': 'Choose spread',

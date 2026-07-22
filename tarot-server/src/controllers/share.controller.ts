@@ -25,17 +25,36 @@ export async function createShare(req: Request, res: Response) {
 
 export async function getShare(req: Request, res: Response) {
   try {
-    const code = req.params.code;
-    if (!code || code.length > 32) {
+    const code = typeof req.params.code === 'string' ? req.params.code : '';
+    if (!code || !/^[A-Za-z0-9_-]{8,32}$/.test(code)) {
       res.status(400).json(fail('无效的分享码'));
       return;
     }
     const data = await AuxModel.getShareByCode(code);
     if (!data) { res.status(404).json(fail('分享不存在')); return; }
+    res.set('Cache-Control', 'private, no-store');
     res.json(success(data));
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : '获取分享失败';
     res.status(500).json(fail(msg));
+  }
+}
+
+export async function deleteShare(req: Request, res: Response) {
+  try {
+    const code = typeof req.params.code === 'string' ? req.params.code : '';
+    if (!code || !/^[A-Za-z0-9_-]{8,32}$/.test(code)) {
+      res.status(400).json(fail('分享码无效'));
+      return;
+    }
+    const deleted = await AuxModel.deleteShare(req.userId!, code);
+    if (!deleted) {
+      res.status(404).json(fail('分享不存在或无权撤销'));
+      return;
+    }
+    res.json(success(null, '分享链接已撤销'));
+  } catch (err: unknown) {
+    res.status(500).json(fail('撤销分享失败'));
   }
 }
 

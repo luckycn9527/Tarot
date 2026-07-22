@@ -7,6 +7,7 @@ import { questionCategories, type QuestionCategory, type SubCategory } from '../
 import { recommendSpreads } from '../../utils/recommendSpread'
 import { categoryIcon, spreadIcon } from '../../utils/uiIcons'
 import { useAuth } from '../../composables/useAuth'
+import { readerSpreads } from '../../data/spreadsData'
 import { useDynamicSeoTitle } from '../../composables/useDynamicSeoTitle'
 import ReaderAvatarMedia from '../../components/ui/ReaderAvatarMedia.vue'
 
@@ -87,6 +88,11 @@ function goNext() {
 /** 直接用推荐牌阵开始占卜，跳过牌阵列表 */
 function goWithSpread(spreadId: string) {
   if (!questionValid.value || !reader.value) return
+  const spread = readerSpreads.find((item) => item.id === spreadId)
+  if (spread?.accessLevel === 'vip' && (!isLoggedIn.value || user.value?.membership !== 'vip')) {
+    void router.push({ path: '/membership', query: { source: 'recommendation' } })
+    return
+  }
   router.push({
     name: 'reader-reading',
     params: { readerId },

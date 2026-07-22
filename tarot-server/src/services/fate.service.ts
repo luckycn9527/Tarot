@@ -646,6 +646,25 @@ function normalizeChoiceGuidance(
   };
 }
 
+function readCachedChoiceGuidance(
+  value: unknown,
+  row: Record<string, unknown>,
+  resultText: string,
+  choice: 'stable' | 'adventure',
+): ChoiceGuidance | null {
+  if (value == null || value === '') return null;
+  try {
+    const parsed = typeof value === 'string' ? JSON.parse(value) : value;
+    if (!parsed || typeof parsed !== 'object') return null;
+    return normalizeChoiceGuidance(
+      parsed as ChoiceGuidanceJson,
+      buildChoiceGuidanceFallback(row, resultText, choice),
+    );
+  } catch {
+    return null;
+  }
+}
+
 async function buildChoiceGuidance(
   row: Record<string, unknown>,
   resultText: string,
@@ -726,9 +745,19 @@ export async function chooseFatePath(
   if (existing) {
     const existingChoice = existing.choice_type === 'adventure' ? 'adventure' : 'stable';
     const resultText = String(existing.result_path_text);
+    let guidance = readCachedChoiceGuidance(
+      existing.guidance_json,
+      row,
+      resultText,
+      existingChoice,
+    );
+    if (!guidance) {
+      guidance = await buildChoiceGuidance(row, resultText, existingChoice);
+      await FateModel.updateFateChoiceGuidance(Number(existing.id), guidance);
+    }
     return {
       result: resultText,
-      guidance: await buildChoiceGuidance(row, resultText, existingChoice),
+      guidance,
       alreadyChosen: true as const,
       choiceType: existingChoice,
     };
@@ -761,16 +790,18 @@ export async function chooseFatePath(
     resultText = baseText;
   }
 
+  const guidance = await buildChoiceGuidance(row, resultText, choice);
   await FateModel.insertFateChoice({
     userId,
     conflictId,
     choiceType: choice,
     resultPathText: resultText,
+    guidance,
   });
 
   return {
     result: resultText,
-    guidance: await buildChoiceGuidance(row, resultText, choice),
+    guidance,
     alreadyChosen: false as const,
     choiceType: choice,
   };

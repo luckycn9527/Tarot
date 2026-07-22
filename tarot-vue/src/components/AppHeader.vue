@@ -38,6 +38,8 @@ const avatarImageSrc = computed(() => publicAssetUrl(user.value?.avatar))
 const mobileMenuOpen = ref(false)
 const scrolled = ref(false)
 const dropdownOpen = ref(false)
+const scrollSentinel = ref<HTMLElement | null>(null)
+let scrollObserver: IntersectionObserver | null = null
 
 function closeMobileMenu() {
   mobileMenuOpen.value = false
@@ -61,16 +63,19 @@ async function handleLogout() {
   router.push('/')
 }
 
-function onScroll() {
-  scrolled.value = window.scrollY > 100
-}
-
 onMounted(() => {
-  window.addEventListener('scroll', onScroll, { passive: true })
+  const sentinel = scrollSentinel.value
+  scrollObserver = sentinel
+    ? new IntersectionObserver(([entry]) => {
+        scrolled.value = !entry.isIntersecting
+      }, { threshold: 0 })
+    : null
+  if (scrollObserver && sentinel) scrollObserver.observe(sentinel)
   document.addEventListener('click', closeDropdown)
 })
 onUnmounted(() => {
-  window.removeEventListener('scroll', onScroll)
+  scrollObserver?.disconnect()
+  scrollObserver = null
   document.removeEventListener('click', closeDropdown)
   void stopBackgroundMusic()
 })
@@ -105,6 +110,7 @@ const dropdownItems = computed<DropdownItem[]>(() => [
 ])
 
 function isActive(name: string): boolean {
+  if (name === 'blog') return route.name === 'blog' || route.name === 'blog-article'
   return route.name === name
 }
 
@@ -135,6 +141,7 @@ function toggleLocale() {
 </script>
 
 <template>
+  <div ref="scrollSentinel" class="header-scroll-sentinel" aria-hidden="true" />
   <nav
     class="fixed top-0 left-0 right-0 z-50 pt-[env(safe-area-inset-top,0px)] transition-all duration-300"
     :class="scrolled
@@ -176,6 +183,20 @@ function toggleLocale() {
 
         <!-- Right Controls -->
         <div class="flex items-center space-x-3">
+          <RouterLink
+            to="/blog"
+            class="hidden xl:inline-flex items-center text-xs font-medium text-gray-500 hover:text-gold-300 transition-colors"
+            :class="activeClass('blog')"
+          >
+            {{ t('nav.blog') }}
+          </RouterLink>
+          <RouterLink
+            to="/oracle-gallery"
+            class="hidden 2xl:inline-flex items-center text-xs font-medium text-gray-500 hover:text-gold-300 transition-colors"
+            :class="activeClass('oracle-gallery')"
+          >
+            {{ t('nav.oracleGallery') }}
+          </RouterLink>
           <button
             type="button"
             class="p-2 rounded-full transition-colors"
@@ -280,6 +301,20 @@ function toggleLocale() {
     >
       {{ navItem.label }}
     </RouterLink>
+    <RouterLink
+      to="/blog"
+      class="block py-3 text-lg text-gray-200 border-b border-gold-500/10"
+      @click="closeMobileMenu"
+    >
+      {{ t('nav.blog') }}
+    </RouterLink>
+    <RouterLink
+      to="/oracle-gallery"
+      class="block py-3 text-lg text-gray-200 border-b border-gold-500/10"
+      @click="closeMobileMenu"
+    >
+      {{ t('nav.oracleGallery') }}
+    </RouterLink>
 
     <!-- Mobile: logged in -->
     <template v-if="isLoggedIn && user">
@@ -338,6 +373,14 @@ function toggleLocale() {
 </template>
 
 <style scoped>
+.header-scroll-sentinel {
+  position: absolute;
+  top: 6.25rem;
+  left: 0;
+  width: 1px;
+  height: 1px;
+  pointer-events: none;
+}
 .app-header-bar {
   padding-left: max(1rem, env(safe-area-inset-left, 0px));
   padding-right: max(1rem, env(safe-area-inset-right, 0px));

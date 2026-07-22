@@ -1,30 +1,56 @@
 <script setup lang="ts">
-import { ref, computed } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
+import { useRoute, useRouter } from 'vue-router'
 import { useScrollReveal } from '../composables/useScrollReveal'
 import { useAuth } from '../composables/useAuth'
 import FaqAccordion from '../components/FaqAccordion.vue'
+import api from '../services/api'
 
 useScrollReveal()
 
 const { t, tm, locale } = useI18n()
-const { user } = useAuth()
+const route = useRoute()
+const router = useRouter()
+const { user, isLoggedIn, refreshUser } = useAuth()
 
-const qty = ref(1)
-const unitPrice = 1.38
+type PlanCode = 'vip_monthly' | 'vip_yearly'
+type PaymentPlan = { code: PlanCode; amountCents: number; currency: string }
+type Subscription = { planCode: PlanCode; status: string; currentPeriodEndAt: string | null; canCancel: boolean }
 
-const totalPrice = computed(() => 'US$' + (qty.value * unitPrice).toFixed(2))
-
-function changeQty(delta: number) {
-  qty.value = Math.max(1, qty.value + delta)
-}
+const paymentAvailable = ref(false)
+const plans = ref<PaymentPlan[]>([])
+const selectedPlanCode = ref<PlanCode>('vip_yearly')
+const checkoutLoading = ref<PlanCode | null>(null)
+const checkoutError = ref('')
+const subscription = ref<Subscription | null>(null)
+const cancelLoading = ref(false)
+const cancellationMessage = ref('')
 
 const freeFeatures = computed(() => tm('pages.membership.freeFeatures') as string[])
-const monthlyFeatures = computed(() => tm('pages.membership.monthlyFeatures') as string[])
-const yearlyFeatures = computed(() => tm('pages.membership.yearlyFeatures') as string[])
-const payPerUseFeatures = computed(() => tm('pages.membership.payPerUseFeatures') as string[])
+const vipFeatures = computed(() => tm('pages.membership.vipFeatures') as string[])
 
 const faqItems = computed(() => tm('pages.membership.faq') as { question: string; answer: string }[])
+
+const isYearlySelected = computed(() => selectedPlanCode.value === 'vip_yearly')
+
+const selectedPrice = computed(() => {
+  if (isYearlySelected.value) {
+    const plan = plans.value.find((item) => item.code === 'vip_yearly')
+    if (plan) return formatPlanAmount(Math.round(plan.amountCents / 12), plan.currency)
+    return t('pages.membership.priceYearlyMonthly')
+  }
+  return planPrice('vip_monthly') || t('pages.membership.priceMonthly')
+})
+
+const selectedPriceDetail = computed(() => {
+  if (isYearlySelected.value) {
+    return t('pages.membership.billedYearly', {
+      price: planPrice('vip_yearly') || t('pages.membership.priceYearly'),
+    })
+  }
+  return t('pages.membership.planMonthlySub')
+})
 
 const vipStatusText = computed(() => {
   if (user.value?.membership !== 'vip') return ''
@@ -33,112 +59,209 @@ const vipStatusText = computed(() => {
     date: new Date(user.value.membershipExpiresAt).toLocaleDateString(String(locale.value)),
   })
 })
+
+function formatPlanAmount(amountCents: number, currency: string) {
+  return new Intl.NumberFormat(String(locale.value), {
+    style: 'currency',
+    currency,
+    minimumFractionDigits: 2,
+  }).format(amountCents / 100)
+}
+
+function planPrice(planCode: PlanCode) {
+  const plan = plans.value.find((item) => item.code === planCode)
+  if (!plan) return ''
+  return formatPlanAmount(plan.amountCents, plan.currency)
+}
+
+function selectPlan(planCode: PlanCode) {
+  selectedPlanCode.value = planCode
+  checkoutError.value = ''
+}
+
+async function startCheckout(planCode: PlanCode) {
+  checkoutError.value = ''
+  if (!isLoggedIn.value) {
+    await router.push({ path: '/login', query: { redirect: '/membership' } })
+    return
+  }
+  checkoutLoading.value = planCode
+  try {
+    const res = await api.post('/payments/checkout', { planCode })
+    const checkoutUrl = res.data?.data?.checkoutUrl
+    if (!res.data?.success || typeof checkoutUrl !== 'string') {
+      throw new Error(res.data?.message || '无法创建支付订单')
+    }
+    window.location.assign(checkoutUrl)
+  } catch (error: unknown) {
+    checkoutError.value = (error as { response?: { data?: { message?: string } }; message?: string })
+      .response?.data?.message || (error as Error).message || '无法创建支付订单，请稍后再试'
+  } finally {
+    checkoutLoading.value = null
+  }
+}
+
+async function loadSubscription() {
+  if (!isLoggedIn.value) return
+  try {
+    const res = await api.get('/payments/subscription')
+    subscription.value = res.data?.success ? res.data.data : null
+  } catch {
+    subscription.value = null
+  }
+}
+
+async function cancelRenewal() {
+  if (!subscription.value?.canCancel || cancelLoading.value) return
+  if (!window.confirm(t('pages.membership.cancelConfirm'))) return
+  cancelLoading.value = true
+  cancellationMessage.value = ''
+  try {
+    const res = await api.post('/payments/subscription/cancel')
+    if (!res.data?.success) throw new Error(res.data?.message || '取消自动续费失败')
+    subscription.value = subscription.value ? { ...subscription.value, status: 'scheduled_cancel', canCancel: false } : null
+    cancellationMessage.value = res.data?.message || t('pages.membership.cancelled')
+  } catch (error: unknown) {
+    cancellationMessage.value = (error as { response?: { data?: { message?: string } }; message?: string })
+      .response?.data?.message || (error as Error).message || t('pages.membership.cancelFailed')
+  } finally {
+    cancelLoading.value = false
+  }
+}
+
+onMounted(async () => {
+  try {
+    const res = await api.get('/payments/plans')
+    if (res.data?.success) {
+      paymentAvailable.value = Boolean(res.data.data?.enabled)
+      plans.value = Array.isArray(res.data.data?.plans) ? res.data.data.plans : []
+    }
+  } catch {
+    paymentAvailable.value = false
+  }
+  if (route.query.payment === 'success') {
+    await refreshUser()
+  }
+  await loadSubscription()
+})
 </script>
 
 <template>
-  <div class="relative z-10">
-    <!-- Hero -->
-    <section class="w-full flex flex-col items-center justify-center px-4 pt-24 pb-12 text-center">
-      <div class="animate-fade-in-up">
-        <h1 class="text-4xl sm:text-5xl md:text-6xl font-bold font-serif leading-tight mb-4">
-          <span class="block text-white">{{ t('pages.membership.heroLine1') }}</span>
-          <span class="block mt-2 text-gold-300">{{ t('pages.membership.heroLine2') }}</span>
-        </h1>
-        <p class="text-gray-400 text-lg mt-4">{{ t('pages.membership.heroSub') }}</p>
-        <!-- VIP status -->
-        <div v-if="user?.membership === 'vip'" class="mt-6 px-6 py-3 rounded-full bg-amber-500/20 border border-amber-500/30 inline-flex items-center gap-2">
-          <span class="text-amber-400 font-medium">{{ t('pages.membership.vipBadge') }}</span>
-          <span class="text-amber-300/70 text-sm">{{ vipStatusText }}</span>
+  <div class="membership-page relative z-10">
+    <section class="membership-pricing-intro w-full max-w-6xl mx-auto px-4 pt-5 pb-5 sm:pt-8 sm:pb-6">
+      <div class="animate-fade-in-up membership-pricing-heading">
+        <span class="membership-kicker">{{ t('pages.membership.heroLine1') }}</span>
+        <h1 class="membership-title">{{ t('pages.membership.plansTitle') }}</h1>
+        <p class="membership-subtitle">{{ t('pages.membership.heroSub') }}</p>
+
+        <div class="membership-cycle-control" role="radiogroup" :aria-label="t('pages.membership.billingCycleLabel')">
+          <button
+            type="button"
+            role="radio"
+            class="membership-cycle-option"
+            :class="{ active: !isYearlySelected }"
+            :aria-checked="!isYearlySelected"
+            @click="selectPlan('vip_monthly')"
+          >
+            {{ t('pages.membership.planMonthly') }}
+          </button>
+          <button
+            type="button"
+            role="radio"
+            class="membership-cycle-option membership-cycle-option-yearly"
+            :class="{ active: isYearlySelected }"
+            :aria-checked="isYearlySelected"
+            @click="selectPlan('vip_yearly')"
+          >
+            {{ t('pages.membership.planYearly') }}
+            <span class="membership-saving-badge">{{ t('pages.membership.save25') }}</span>
+          </button>
         </div>
+        <p class="membership-trust-note">{{ t('pages.membership.billingNote') }}</p>
       </div>
     </section>
 
-    <!-- Pricing Cards -->
-    <section class="w-full max-w-6xl mx-auto px-4 py-12 reveal-on-scroll">
-      <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-        <!-- Free -->
-        <div class="price-card">
-          <h3 class="text-lg font-bold font-serif text-white mb-2">{{ t('pages.membership.planFree') }}</h3>
-          <div class="mb-4"><span class="text-3xl font-bold text-white">{{ t('pages.membership.priceFree') }}</span></div>
-          <p class="text-gray-400 text-sm mb-6">{{ t('pages.membership.planFreeSub') }}</p>
-          <ul class="space-y-3 mb-8">
-            <li v-for="f in freeFeatures" :key="f" class="flex items-center gap-2 text-sm text-gray-300">
-              <svg class="w-4 h-4 text-green-400 flex-shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 6L9 17l-5-5"/></svg>{{ f }}
-            </li>
-          </ul>
-          <button class="w-full py-3 rounded-full border border-gold-500/10 text-gray-300 font-semibold hover:bg-white/4 transition-all">{{ t('pages.membership.btnCurrent') }}</button>
+    <section id="membership-plans" class="w-full max-w-6xl mx-auto px-4 pb-10 sm:pb-12 reveal-on-scroll">
+      <div v-if="user?.membership === 'vip' || subscription" class="membership-account-bar" aria-live="polite">
+        <div>
+          <span class="membership-account-label">{{ t('pages.membership.statusLabel') }}</span>
+          <strong>{{ user?.membership === 'vip' ? t('pages.membership.vipBadge') : t('pages.membership.planFree') }}</strong>
+          <span>{{ user?.membership === 'vip' ? vipStatusText : t('pages.membership.freeStatus') }}</span>
         </div>
-
-        <!-- Monthly - Featured -->
-        <div class="price-card featured">
-          <span class="featured-badge">{{ t('pages.membership.featuredBadge') }}</span>
-          <h3 class="text-lg font-bold font-serif text-white mb-2">{{ t('pages.membership.planMonthly') }}</h3>
-          <div class="mb-4"><span class="text-3xl font-bold text-white">{{ t('pages.membership.priceMonthly') }}</span><span class="text-gray-400 text-sm">{{ t('pages.membership.perMonth') }}</span></div>
-          <p class="text-gray-400 text-sm mb-6">{{ t('pages.membership.planMonthlySub') }}</p>
-          <ul class="space-y-3 mb-8">
-            <li v-for="f in monthlyFeatures" :key="f" class="flex items-center gap-2 text-sm text-gray-300">
-              <svg class="w-4 h-4 text-green-400 flex-shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 6L9 17l-5-5"/></svg>{{ f }}
-            </li>
-          </ul>
+        <div v-if="subscription" class="membership-account-action">
           <button
-            disabled
-            class="w-full py-3 rounded-full bg-white/10 text-gray-400 font-semibold cursor-not-allowed"
+            v-if="subscription.canCancel"
+            type="button"
+            class="membership-text-button"
+            :disabled="cancelLoading"
+            @click="cancelRenewal"
           >
-            敬请期待
+            {{ cancelLoading ? t('pages.membership.cancelling') : t('pages.membership.cancelRenewal') }}
           </button>
-        </div>
-
-        <!-- Annual -->
-        <div class="price-card">
-          <div class="flex items-center gap-2 mb-2">
-            <h3 class="text-lg font-bold font-serif text-white">{{ t('pages.membership.planYearly') }}</h3>
-            <span class="px-2 py-0.5 rounded-full bg-green-500/20 text-green-400 text-xs font-semibold">{{ t('pages.membership.save25') }}</span>
-          </div>
-          <div class="mb-1"><span class="text-3xl font-bold text-white">{{ t('pages.membership.priceYearly') }}</span><span class="text-gray-400 text-sm">{{ t('pages.membership.perYear') }}</span></div>
-          <p class="text-gray-500 text-xs mb-4">{{ t('pages.membership.subPriceYearly') }}</p>
-          <p class="text-gray-400 text-sm mb-6">{{ t('pages.membership.planYearlySub') }}</p>
-          <ul class="space-y-3 mb-8">
-            <li v-for="f in yearlyFeatures" :key="f" class="flex items-center gap-2 text-sm text-gray-300">
-              <svg class="w-4 h-4 text-green-400 flex-shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 6L9 17l-5-5"/></svg>{{ f }}
-            </li>
-          </ul>
-          <button
-            disabled
-            class="w-full py-3 rounded-full bg-white/10 text-gray-400 font-semibold cursor-not-allowed"
-          >
-            敬请期待
-          </button>
-        </div>
-
-        <!-- Pay Per Use -->
-        <div class="price-card">
-          <h3 class="text-lg font-bold font-serif text-white mb-2">{{ t('pages.membership.planPayPer') }}</h3>
-          <div class="mb-4"><span class="text-3xl font-bold text-white">{{ totalPrice }}</span><span class="text-gray-400 text-sm"> {{ t('pages.membership.totalLabel') }}</span></div>
-          <p class="text-gray-400 text-sm mb-6">{{ t('pages.membership.planPaySub') }}</p>
-          <ul class="space-y-3 mb-6">
-            <li v-for="f in payPerUseFeatures" :key="f" class="flex items-center gap-2 text-sm text-gray-300">
-              <svg class="w-4 h-4 text-green-400 flex-shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 6L9 17l-5-5"/></svg>{{ f }}
-            </li>
-          </ul>
-          <div class="flex items-center justify-center gap-4 mb-6">
-            <button class="w-8 h-8 rounded-full bg-white/10 text-white flex items-center justify-center hover:bg-white/20 transition-colors" @click="changeQty(-1)">-</button>
-            <span class="text-white font-bold text-lg">{{ qty }}</span>
-            <span class="text-gray-400 text-sm">{{ t('pages.membership.timesUnit') }}</span>
-            <button class="w-8 h-8 rounded-full bg-white/10 text-white flex items-center justify-center hover:bg-white/20 transition-colors" @click="changeQty(1)">+</button>
-          </div>
-          <button
-            disabled
-            class="w-full py-3 rounded-full bg-white/10 text-gray-400 font-semibold cursor-not-allowed"
-          >
-            敬请期待
-          </button>
+          <span v-else-if="subscription.status === 'scheduled_cancel'" class="membership-status-warning">{{ t('pages.membership.renewalCancelled') }}</span>
+          <p v-if="cancellationMessage" class="membership-status-message" :class="subscription?.status === 'scheduled_cancel' ? 'success' : 'error'">{{ cancellationMessage }}</p>
         </div>
       </div>
+
+      <div class="membership-plans-grid">
+        <article class="membership-pricing-card membership-pricing-card-free">
+          <div class="membership-plan-card-header">
+            <span class="membership-plan-label">{{ t('pages.membership.planFree') }}</span>
+            <h2>{{ t('pages.membership.planFreeSub') }}</h2>
+            <p>{{ t('pages.membership.freeStatus') }}</p>
+          </div>
+          <div class="membership-price-row">
+            <strong>{{ t('pages.membership.priceZero') }}</strong>
+            <span>{{ t('pages.membership.perMonth') }}</span>
+          </div>
+          <ul class="membership-feature-list">
+            <li v-for="f in freeFeatures" :key="f"><span class="membership-check" aria-hidden="true">✓</span>{{ f }}</li>
+          </ul>
+          <button type="button" class="membership-plan-secondary" disabled>{{ t('pages.membership.btnCurrent') }}</button>
+        </article>
+
+        <article class="membership-pricing-card membership-pricing-card-vip">
+          <span class="membership-featured-badge">{{ t('pages.membership.featuredBadge') }}</span>
+          <div class="membership-plan-card-header">
+            <span class="membership-plan-label">{{ t('pages.membership.planVip') }}</span>
+            <h2>{{ t('pages.membership.planVipSub') }}</h2>
+            <p>{{ selectedPriceDetail }}</p>
+          </div>
+          <div class="membership-price-row membership-price-row-vip">
+            <strong>{{ selectedPrice }}</strong>
+            <span>{{ t('pages.membership.perMonth') }}</span>
+          </div>
+          <div class="membership-price-context">
+            <span v-if="isYearlySelected">{{ t('pages.membership.save25') }}</span>
+            <span>{{ isYearlySelected ? t('pages.membership.planYearlySub') : t('pages.membership.planMonthlySub') }}</span>
+          </div>
+          <ul class="membership-feature-list membership-feature-list-vip">
+            <li v-for="f in vipFeatures" :key="f"><span class="membership-check" aria-hidden="true">✓</span>{{ f }}</li>
+          </ul>
+          <button
+            v-if="paymentAvailable"
+            type="button"
+            class="membership-primary-cta"
+            :disabled="checkoutLoading !== null"
+            @click="startCheckout(selectedPlanCode)"
+          >
+            {{ checkoutLoading === selectedPlanCode ? t('pages.membership.creatingCheckout') : t('pages.membership.btnSubscribe') }}
+          </button>
+          <button v-else type="button" disabled class="membership-plan-unavailable">{{ t('pages.membership.purchaseUnavailable') }}</button>
+          <p v-if="checkoutError" class="membership-checkout-error">{{ checkoutError }}</p>
+        </article>
+      </div>
+
+      <p class="membership-payment-note">{{ paymentAvailable ? t('pages.membership.paymentNotice') : t('pages.membership.availabilityNotice') }}</p>
     </section>
 
-    <!-- FAQ -->
-    <section class="w-full max-w-4xl mx-auto px-4 py-16 reveal-on-scroll">
-      <div class="text-center mb-12"><h2 class="text-2xl font-bold font-serif text-white mb-4">{{ t('pages.membership.faqTitle') }}</h2></div>
+    <section class="membership-faq-section w-full max-w-4xl mx-auto px-4 py-12 sm:py-16 reveal-on-scroll">
+      <div class="membership-section-heading membership-section-heading-centered">
+        <div>
+          <span class="membership-kicker">{{ t('pages.membership.faqKicker') }}</span>
+          <h2>{{ t('pages.membership.faqTitle') }}</h2>
+        </div>
+      </div>
       <FaqAccordion :items="faqItems" />
     </section>
   </div>

@@ -93,6 +93,7 @@ async function handleSubscribe() {
         <div>
           <h3 class="text-gold-200 font-serif text-sm mb-4 tracking-wide">{{ t('footer.explore') }}</h3>
           <ul class="space-y-2">
+            <li><RouterLink to="/blog" class="text-gray-500 text-sm hover:text-gold-300 transition-colors">{{ t('nav.blog') }}</RouterLink></li>
             <li><RouterLink to="/gallery" class="text-gray-500 text-sm hover:text-gold-300 transition-colors">{{ t('nav.gallery') }}</RouterLink></li>
             <li><RouterLink to="/spreads" class="text-gray-500 text-sm hover:text-gold-300 transition-colors">{{ t('nav.spreads') }}</RouterLink></li>
           </ul>

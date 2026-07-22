@@ -60,10 +60,15 @@ function resolveCanonicalUrl(to: RouteLocationNormalized): string | null {
 }
 
 /** 卡片详情、运势结果等动态标题；与 `applyRouteDocumentMeta` 配合使用 */
-export function applyDynamicDocumentMeta(opts: { title: string; description?: string }) {
+export function applyDynamicDocumentMeta(opts: { title: string; description?: string; image?: string; type?: string }) {
   document.title = opts.title
   setMetaProperty('og:title', opts.title)
   setMetaAttr('twitter:title', opts.title)
+  if (opts.type) setMetaProperty('og:type', opts.type)
+  if (opts.image) {
+    setMetaProperty('og:image', opts.image)
+    setMetaAttr('twitter:image', opts.image)
+  }
   if (opts.description) {
     setMetaAttr('description', opts.description)
     setMetaProperty('og:description', opts.description)

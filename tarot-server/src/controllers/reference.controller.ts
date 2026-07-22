@@ -40,6 +40,10 @@ const CORE_CACHE_TTL_MS = 60_000;
 let coreCache: { expiresAt: number; data: ReferenceCore } | null = null;
 let coreInflight: Promise<ReferenceCore> | null = null;
 
+export function invalidateReferenceCore(): void {
+  coreCache = null;
+}
+
 function preferWebpUploadAsset(assetUrl: string | null): string | null {
   if (!assetUrl || !assetUrl.startsWith('/uploads/') || !/\.(png|jpe?g)$/i.test(assetUrl)) {
     return assetUrl;
@@ -117,7 +121,7 @@ async function getCachedReferenceCore(): Promise<ReferenceCore> {
 
 export async function getReferenceCore(_req: Request, res: Response) {
   const data = await getCachedReferenceCore();
-  res.set('Cache-Control', 'public, max-age=60, stale-while-revalidate=300');
+  res.set('Cache-Control', 'public, max-age=30, must-revalidate');
   res.json(success(data));
 }
 
@@ -128,7 +132,7 @@ export async function getTarotCardDetails(_req: Request, res: Response) {
 
 export async function getReferenceBundle(_req: Request, res: Response) {
   const core = await getCachedReferenceCore();
-  res.set('Cache-Control', 'public, max-age=60, stale-while-revalidate=300');
+  res.set('Cache-Control', 'public, max-age=30, must-revalidate');
   res.json(success({
     ...core,
     cardDetails: tarotCardDetails,

@@ -15,12 +15,16 @@ export const pool = mysql.createPool({
   charset: 'utf8mb4',
 });
 
-export async function testConnection(): Promise<void> {
+export async function checkDatabaseConnection(): Promise<void> {
   const conn = await pool.getConnection();
   try {
     await conn.ping();
-    console.log('✅ MySQL connected');
   } finally {
     conn.release();
   }
+}
+
+export async function testConnection(): Promise<void> {
+  await checkDatabaseConnection();
+  console.log('✅ MySQL connected');
 }

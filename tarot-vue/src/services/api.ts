@@ -1,7 +1,13 @@
 import axios from 'axios'
 
+const configuredApiBaseUrl = import.meta.env.VITE_PUBLIC_API_BASE_URL?.trim().replace(/\/+$/, '')
+const configuredApiOrigin = import.meta.env.VITE_PUBLIC_API_ORIGIN?.trim().replace(/\/+$/, '')
+// Development uses Vite's same-origin proxy. A production build can point at a
+// separate API origin with VITE_PUBLIC_API_ORIGIN, or set an explicit API base URL.
+const apiBaseUrl = configuredApiBaseUrl || (import.meta.env.PROD && configuredApiOrigin ? `${configuredApiOrigin}/api` : '/api')
+
 const api = axios.create({
-  baseURL: '/api',
+  baseURL: apiBaseUrl,
   timeout: 30000,
   withCredentials: true,
 })
@@ -68,7 +74,7 @@ api.interceptors.response.use(
       if (!isRefreshing) {
         isRefreshing = true
         try {
-          const res = await axios.post('/api/auth/refresh', null, { withCredentials: true })
+          const res = await axios.post(`${apiBaseUrl}/auth/refresh`, null, { withCredentials: true })
           const newToken = res.data.data.accessToken
           setAccessToken(newToken)
 

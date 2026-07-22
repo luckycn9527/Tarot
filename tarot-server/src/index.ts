@@ -7,7 +7,7 @@ import helmet from 'helmet';
 import cookieParser from 'cookie-parser';
 import { env } from './config/env.js';
 import { corsOptions } from './config/cors.js';
-import { testConnection } from './config/database.js';
+import { checkDatabaseConnection, testConnection } from './config/database.js';
 import { getRedisHealth } from './config/redis.js';
 import { errorHandler } from './middleware/errorHandler.js';
 import { assignRequestId } from './middleware/requestId.js';
@@ -21,6 +21,7 @@ import feedbackRoutes from './routes/feedback.routes.js';
 import referenceRoutes from './routes/reference.routes.js';
 import adminRoutes from './routes/admin.routes.js';
 import fateRoutes from './routes/fate.routes.js';
+import paymentRoutes from './routes/payment.routes.js';
 import { ensureDefaultUploadAssets } from './utils/ensureDefaultUploadAssets.js';
 import { getUploadsRoot } from './config/uploadsRoot.js';
 import { startHoroscopeScheduler } from './services/horoscope.service.js';
@@ -28,9 +29,9 @@ import { startHoroscopeScheduler } from './services/horoscope.service.js';
 const app = express();
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
-// 反向代理（Nginx）后部署：信任代理，使 req.protocol/secure 反映真实的 https，
-// 保证 Secure Cookie、X-Forwarded-* 等行为正确。
-app.set('trust proxy', 1);
+// 反向代理（Nginx）后部署：信任代理，使 req.protocol/secure 反映真实的 https。
+// 若服务允许绕过代理直连，应将 TRUST_PROXY 配为 0。
+app.set('trust proxy', env.TRUST_PROXY);
 
 // 上传目录（multer 不落盘若目录不存在；与 cwd 无关）
 const uploadsRoot = getUploadsRoot();
@@ -62,6 +63,8 @@ app.use(helmet({
   crossOriginResourcePolicy: { policy: 'cross-origin' },
 }));
 app.use(cors(corsOptions));
+// Creem signature covers the exact byte sequence. This must run before express.json().
+app.use('/api/payments/webhook', express.raw({ type: 'application/json', limit: '512kb' }));
 app.use(express.json({ limit: '1mb' }));
 app.use(cookieParser());
 app.use(assignRequestId);
@@ -78,15 +81,35 @@ app.use('/uploads', express.static(uploadsRoot, {
   },
 }));
 
-// Health check（含 Redis 状态：disabled | ok | error）
+// Liveness check：仅表示 HTTP 进程仍在响应，不依赖外部服务。
 app.get('/health', async (_req, res) => {
   const redis = await getRedisHealth();
   res.json({
     status: 'ok',
     timestamp: new Date().toISOString(),
     redis: redis.status,
-    ...(redis.message ? { redisMessage: redis.message } : {}),
   });
+});
+
+// Readiness check：供部署和监控确认服务可实际处理依赖数据库的请求。
+app.get('/ready', async (_req, res) => {
+  const redis = await getRedisHealth();
+  try {
+    await checkDatabaseConnection();
+    res.json({
+      status: 'ready',
+      timestamp: new Date().toISOString(),
+      database: 'ok',
+      redis: redis.status,
+    });
+  } catch {
+    res.status(503).json({
+      status: 'not_ready',
+      timestamp: new Date().toISOString(),
+      database: 'error',
+      redis: redis.status,
+    });
+  }
 });
 
 // API Routes
@@ -99,6 +122,7 @@ app.use('/api/feedback', feedbackRoutes);
 app.use('/api/reference', referenceRoutes);
 app.use('/api/admin', adminRoutes);
 app.use('/api/fate', fateRoutes);
+app.use('/api/payments', paymentRoutes);
 
 // Production: 可选由本进程托管前端；SERVE_STATIC_FRONTEND=false 时仅提供 API（前后端部署分离）
 const frontendDist = path.resolve(__dirname, '..', '..', 'tarot-vue', 'dist');
@@ -116,14 +140,15 @@ if (env.SERVE_STATIC_FRONTEND && fs.existsSync(frontendDist)) {
     },
   }));
   // SPA fallback：勿吞掉 /assets/*（缺 chunk 时应真实 404，且避免 Nginx 只反代 /api 时误把资源请求落到 SPA）
-  app.get('*', (req, res, next) => {
+  app.get('/{*splat}', (req, res, next) => {
     if (req.method !== 'GET' && req.method !== 'HEAD') return next();
     const p = req.path;
     if (
-      p.startsWith('/api') ||
-      p.startsWith('/uploads') ||
-      p.startsWith('/health') ||
-      p.startsWith('/assets/')
+       p.startsWith('/api') ||
+       p.startsWith('/uploads') ||
+       p.startsWith('/health') ||
+       p.startsWith('/ready') ||
+       p.startsWith('/assets/')
     ) {
       return next();
     }

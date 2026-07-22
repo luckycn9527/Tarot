@@ -10,10 +10,12 @@ import { toDateOnly } from '../utils/dateOnly.js';
 import { signAccessToken, signRefreshToken } from '../utils/jwt.js';
 import { sendPasswordResetEmail, sendRegisterVerificationEmail } from '../utils/mailer.js';
 import { env } from '../config/env.js';
+import { isActiveVip } from '../utils/membership.js';
 import type { PublicUser } from '../types/index.js';
 import type { DbUser } from '../types/index.js';
 
 function toPublicUser(user: DbUser): PublicUser {
+  const activeVip = isActiveVip(user);
   return {
     id: user.id,
     email: user.email,
@@ -25,8 +27,8 @@ function toPublicUser(user: DbUser): PublicUser {
     zodiacSign: user.zodiac_sign,
     location: user.location,
     bio: user.bio,
-    membership: user.membership,
-    membershipExpiresAt: user.membership_expires_at,
+    membership: activeVip ? 'vip' : 'free',
+    membershipExpiresAt: activeVip ? user.membership_expires_at : null,
     remainingFreeQuota: user.remaining_free_quota,
     createdAt: user.created_at,
   };
@@ -178,15 +180,6 @@ export async function register(
   // 标记验证码已使用
   await EmailVerificationModel.markCodeUsed(codeRecord.id);
 
-  // 新用户注册赠送一年 VIP
-  const { pool } = await import('../config/database.js');
-  await pool.execute(
-    `UPDATE users SET
-      membership = 'vip',
-      membership_expires_at = NOW() + INTERVAL 365 DAY
-     WHERE id = ?`,
-    [userId],
-  );
   return issueNewSession(userId);
 }
 
@@ -221,15 +214,6 @@ export async function login(identifier: string, password: string) {
   }
 
   return issueNewSession(user.id);
-}
-
-/**
- * 手机号登录（占位接口）。
- * 当前仅预留：尚未接入短信验证码服务，调用即返回未实现。
- * 待接入后：校验验证码 → UserModel.findByPhone → 无则建号 → issueNewSession。
- */
-export async function loginWithPhone(_phone: string, _code: string): Promise<never> {
-  throw new Error('手机号登录尚未开放，敬请期待');
 }
 
 export async function signInWithGoogleIdToken(idToken: string) {

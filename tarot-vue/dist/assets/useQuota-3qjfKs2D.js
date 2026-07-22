@@ -1,1 +1,0 @@
-import{s as a}from"./pinia-BwSs5cnQ.js";import{k as n}from"./index-YXEYfTrL.js";function f(){const e=n(),{remaining:t,isUnlimited:s,isExhausted:o,isVip:r,quotaState:i}=a(e);return{remaining:t,isUnlimited:s,isExhausted:o,isVip:r,fetchQuota:u=>e.fetchQuota(u),decrement:e.decrement,quotaState:i}}export{f as u};

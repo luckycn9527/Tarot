@@ -60,6 +60,19 @@ export async function changePassword(userId: number, oldPassword: string, newPas
   await UserModel.updatePassword(userId, hash);
 }
 
+export async function deleteAccount(userId: number, password: string) {
+  const user = await UserModel.findById(userId);
+  if (!user) throw new Error('用户不存在');
+  if (!user.password_hash) {
+    throw new Error('请先在个人中心设置密码后再注销账号');
+  }
+  const valid = await bcrypt.compare(password, user.password_hash);
+  if (!valid) throw new Error('当前密码不正确');
+
+  await UserModel.deleteUserAndData(userId);
+  return { avatar: user.avatar };
+}
+
 export async function getQuota(userId: number) {
   const user = await UserModel.findById(userId);
   if (!user) throw new Error('用户不存在');
@@ -168,16 +181,4 @@ export async function updateBirthInfo(
   });
 
   return { birthday, zodiacSign };
-}
-
-export async function activateVip(userId: number, days: number) {
-  const { pool } = await import('../config/database.js');
-  await pool.execute(
-    `UPDATE users SET
-      membership = 'vip',
-      membership_expires_at = GREATEST(COALESCE(membership_expires_at, NOW()), NOW()) + INTERVAL ? DAY
-     WHERE id = ?`,
-    [days, userId]
-  );
-  return getProfile(userId);
 }

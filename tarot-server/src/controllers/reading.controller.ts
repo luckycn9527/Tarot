@@ -184,7 +184,7 @@ export async function readerReading(req: Request, res: Response) {
     res.json(success(result));
   } catch (err: unknown) {
     const msg = getErrMsg(err, '占卜失败');
-    if (msg === '该塔罗师仅限VIP会员使用') {
+    if (msg === '该塔罗师仅限VIP会员使用' || msg === '该牌阵仅限VIP会员使用') {
       res.status(403).json(fail(msg));
       return;
     }

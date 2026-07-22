@@ -8,6 +8,7 @@ import * as ReadingModel from '../models/reading.model.js';
 import * as UserModel from '../models/user.model.js';
 import * as AdminService from './admin.service.js';
 import { isActiveVip } from '../utils/membership.js';
+import { isVipReaderSpread } from '../data/spreadsData.js';
 
 function parseJsonResponse(text: string): Record<string, unknown> {
   let cleaned = text.trim();
@@ -391,16 +392,16 @@ export async function readerReading(
   if (!reader) throw new Error('塔罗师不存在');
   const promptOverride = await AdminService.getReaderPromptOverride(readerId);
 
-  // VIP check for non-free readers
-  if (reader.accessLevel === 'vip') {
-    const user = await UserModel.findById(userId);
-    if (!user || !isActiveVip(user)) {
-      throw new Error('该塔罗师仅限VIP会员使用');
-    }
-  }
-
   const spread = spreadConfigs[spreadType];
   if (!spread) throw new Error('牌阵类型无效');
+
+  // Premium readers and deep spreads are enforced here, not only in the UI.
+  if (reader.accessLevel === 'vip' || isVipReaderSpread(spreadType)) {
+    const user = await UserModel.findById(userId);
+    if (!user || !isActiveVip(user)) {
+      throw new Error(reader.accessLevel === 'vip' ? '该塔罗师仅限VIP会员使用' : '该牌阵仅限VIP会员使用');
+    }
+  }
 
   // Use client-provided cards if valid, otherwise draw randomly
   let cards: { card: TarotCard; isReversed: boolean }[];

@@ -13,7 +13,7 @@ import FaqAccordion from '../components/FaqAccordion.vue'
 
 useScrollReveal()
 
-const { t, tm } = useI18n()
+const { t, tm, locale } = useI18n()
 const { cardBackUrl, loadCardBack } = useCardBack()
 const { drawRandom } = useShuffle()
 
@@ -58,7 +58,26 @@ const methods = computed((): MethodItem[] => {
 
 const exploreLinks = computed((): ExploreLink[] => {
   const m = tm('home.exploreLinks') as unknown
-  return Array.isArray(m) ? (m as ExploreLink[]) : []
+  const links = Array.isArray(m) ? [...(m as ExploreLink[])] : []
+  if (!links.some((item) => item.to === '/oracle-gallery')) {
+    const isZh = String(locale.value).toLowerCase().startsWith('zh')
+    links.push({
+      to: '/oracle-gallery',
+      title: isZh ? '神谕图鉴' : 'Oracle gallery',
+      desc: isZh ? '浏览 36 张雷诺曼牌的关键词与基础牌义。' : 'Browse keywords and core meanings for all 36 Lenormand cards.',
+      variant: 'violet',
+    })
+  }
+  if (!links.some((item) => item.to === '/blog')) {
+    const isZh = String(locale.value).toLowerCase().startsWith('zh')
+    links.push({
+      to: '/blog',
+      title: isZh ? '塔罗师手记' : 'Tarot reader notes',
+      desc: isZh ? '阅读塔罗师关于学习、交流与经验复盘的文章。' : 'Read Tarot readers on learning, discussion, and reflective practice.',
+      variant: 'gold',
+    })
+  }
+  return links
 })
 
 const faqItems = computed((): FaqItem[] => {

@@ -73,8 +73,6 @@ async function migrateAll() {
 
     let applied = 0;
     let skipped = 0;
-    let warned = 0;
-
     for (const file of files) {
       if (done.has(file)) {
         skipped++;
@@ -83,25 +81,16 @@ async function migrateAll() {
 
       const sql = readFileSync(join(migrationsDir, file), 'utf-8');
       console.log(`[·] Executing: ${file}`);
-      try {
-        await connection.query(sql);
-        await connection.query('INSERT INTO migrations (name) VALUES (?)', [file]);
-        console.log(`[✓] ${file} done`);
-        applied++;
-      } catch (e: unknown) {
-        const msg = (e as { message?: string }).message || String(e);
-        console.warn(`[!] ${file} failed: ${msg}`);
-        console.warn('    (可能已执行过，记录后继续)');
-        await connection.query(
-          'INSERT IGNORE INTO migrations (name) VALUES (?)',
-          [file],
-        );
-        warned++;
-      }
+      // DDL migration statements may commit implicitly in MySQL, so a failed
+      // migration must stop here and must never be marked as completed.
+      await connection.query(sql);
+      await connection.query('INSERT INTO migrations (name) VALUES (?)', [file]);
+      console.log(`[✓] ${file} done`);
+      applied++;
     }
 
     console.log(
-      `\nDone. Applied: ${applied}, Skipped: ${skipped}, Warnings: ${warned}, Total: ${files.length}`,
+      `\nDone. Applied: ${applied}, Skipped: ${skipped}, Total: ${files.length}`,
     );
   } finally {
     await connection.end();

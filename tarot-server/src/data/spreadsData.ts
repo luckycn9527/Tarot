@@ -11,6 +11,7 @@ export interface Spread {
   cardCount: number
   description: string
   whenToUse: string
+  accessLevel: 'free' | 'vip'
   positions: SpreadPosition[]
 }
 
@@ -22,6 +23,7 @@ export const spreads: Spread[] = [
     cardCount: 1,
     description: '最简洁直接的塔罗牌阵，抽取一张牌回答你的问题。适合需要快速、明确指引的时刻。',
     whenToUse: '当你需要一个简单的是/否答案，或每日灵感启示时使用。',
+    accessLevel: 'free',
     positions: [
       { index: 1, name: '核心答案', description: '代表对问题的直接回应' },
     ],
@@ -33,6 +35,7 @@ export const spreads: Spread[] = [
     cardCount: 3,
     description: '经典的过去-现在-未来牌阵，通过三张牌揭示事件的发展脉络，帮助你理解当前处境的来龙去脉。',
     whenToUse: '当你想了解某个问题的发展趋势，或需要更深入的洞察时使用。',
+    accessLevel: 'free',
     positions: [
       { index: 1, name: '过去', description: '影响当前情况的过去因素' },
       { index: 2, name: '现在', description: '当前的状况和挑战' },
@@ -46,6 +49,7 @@ export const spreads: Spread[] = [
     cardCount: 10,
     description: '塔罗占卜中最经典、最全面的牌阵。使用十张牌从多个维度分析问题，包括内外因素、希望与恐惧、最终结果。',
     whenToUse: '当你面对复杂的人生抉择，需要全方位深入分析时使用。',
+    accessLevel: 'vip',
     positions: [
       { index: 1, name: '现状', description: '当前的核心状况' },
       { index: 2, name: '挑战', description: '面临的主要障碍' },
@@ -66,6 +70,7 @@ export const spreads: Spread[] = [
     cardCount: 5,
     description: '专为分析两人关系设计的牌阵。分别揭示双方的想法和感受，以及关系的核心动态和发展方向。',
     whenToUse: '当你想了解一段感情关系的现状、双方内心想法，或预测关系走向时使用。',
+    accessLevel: 'vip',
     positions: [
       { index: 1, name: '你的状态', description: '你在关系中的感受和立场' },
       { index: 2, name: '对方状态', description: '对方在关系中的感受和立场' },
@@ -81,6 +86,7 @@ export const spreads: Spread[] = [
     cardCount: 5,
     description: '专注于职业和事业发展的牌阵。分析你的职业现状、优势劣势，以及未来的发展机遇。',
     whenToUse: '当你面临职业转型、求职抉择，或想了解事业发展前景时使用。',
+    accessLevel: 'vip',
     positions: [
       { index: 1, name: '当前职业', description: '目前的工作状况' },
       { index: 2, name: '优势', description: '你的职业优势和资源' },
@@ -96,6 +102,7 @@ export const spreads: Spread[] = [
     cardCount: 7,
     description: '七张牌排列成马蹄铁形状的经典牌阵。从过去到未来全面展开，特别适合分析一个具体问题的各个层面。',
     whenToUse: '当你需要比三张牌更深入，但又不想使用凯尔特十字那么复杂的牌阵时使用。',
+    accessLevel: 'vip',
     positions: [
       { index: 1, name: '过去', description: '影响问题的历史因素' },
       { index: 2, name: '现在', description: '当前的状况' },
@@ -116,7 +123,10 @@ export interface ReaderSpread {
   description: string
   emoji: string
   positions: string[]
+  accessLevel: 'free' | 'vip'
 }
+
+export const FREE_READER_SPREAD_IDS = new Set(['single', 'timeline', 'problem', 'yes-no']);
 
 export const readerSpreads: ReaderSpread[] = [
   // === 通用 ===
@@ -150,7 +160,14 @@ export const readerSpreads: ReaderSpread[] = [
   // === 选择决策 ===
   { id: 'two-choice', name: '二选一牌阵', cardCount: 5, description: '分析两种选择的利弊和最终结果，帮助做出决策', emoji: '⚖️', positions: ['问题的现状', '选择A的短期发展', '选择B的短期发展', '选择A的最终结果', '选择B的最终结果'] },
   { id: 'yes-no', name: '是否牌阵', cardCount: 3, description: '简单直接的是/否占卜，快速获得明确答案', emoji: '❓', positions: ['卡牌一', '卡牌二', '卡牌三'] },
-]
+].map((spread) => ({
+  ...spread,
+  accessLevel: FREE_READER_SPREAD_IDS.has(spread.id) ? 'free' : 'vip',
+}))
+
+export function isVipReaderSpread(id: string): boolean {
+  return !FREE_READER_SPREAD_IDS.has(id);
+}
 
 export function getReaderSpreadById(id: string): ReaderSpread | undefined {
   return readerSpreads.find(s => s.id === id)

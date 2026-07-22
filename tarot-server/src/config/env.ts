@@ -7,6 +7,8 @@ const envSchema = z.object({
   PORT: z.coerce.number().default(5174),
   HOST: z.string().default('0.0.0.0'),
   NODE_ENV: z.enum(['development', 'production', 'test']).default('development'),
+  // 0 means the app is directly reachable; 1 is the normal single-Nginx setup.
+  TRUST_PROXY: z.coerce.number().int().min(0).max(10).default(1),
 
   DB_HOST: z.string().default('localhost'),
   DB_PORT: z.coerce.number().default(3306),
@@ -31,6 +33,18 @@ const envSchema = z.object({
     .string()
     .default('https://api.deepseek.com')
     .transform((s) => s.trim().replace(/\/+$/, '')),
+  AI_RATE_LIMIT_PER_MIN: z.coerce.number().int().min(1).max(60).default(8),
+
+  // Creem payments. Keep disabled until products, API key and webhook secret are configured.
+  CREEM_ENABLED: z.string().optional().transform((value) => value === 'true'),
+  CREEM_API_KEY: z.preprocess((value) => (typeof value === 'string' && value.trim() ? value.trim() : undefined), z.string().optional()),
+  CREEM_WEBHOOK_SECRET: z.preprocess((value) => (typeof value === 'string' && value.trim() ? value.trim() : undefined), z.string().optional()),
+  CREEM_API_BASE_URL: z.string().url().default('https://api.creem.io').transform((value) => value.replace(/\/+$/, '')),
+  CREEM_MONTHLY_PRODUCT_ID: z.preprocess((value) => (typeof value === 'string' && value.trim() ? value.trim() : undefined), z.string().optional()),
+  CREEM_YEARLY_PRODUCT_ID: z.preprocess((value) => (typeof value === 'string' && value.trim() ? value.trim() : undefined), z.string().optional()),
+  CREEM_MONTHLY_PRICE_CENTS: z.coerce.number().int().min(100).max(99999999).default(990),
+  CREEM_YEARLY_PRICE_CENTS: z.coerce.number().int().min(100).max(99999999).default(8990),
+  CREEM_CURRENCY: z.string().regex(/^[A-Z]{3}$/).default('USD'),
 
   CORS_ORIGIN: z
     .string()
@@ -108,6 +122,12 @@ if (data.NODE_ENV === 'production') {
   }
   if (!data.APP_PUBLIC_ORIGIN?.startsWith('https://')) {
     addError('APP_PUBLIC_ORIGIN', 'production APP_PUBLIC_ORIGIN must be an https URL');
+  }
+  if (data.CREEM_ENABLED) {
+    if (!data.CREEM_API_KEY) addError('CREEM_API_KEY', 'CREEM_ENABLED requires an API key');
+    if (!data.CREEM_WEBHOOK_SECRET) addError('CREEM_WEBHOOK_SECRET', 'CREEM_ENABLED requires a webhook secret');
+    if (!data.CREEM_MONTHLY_PRODUCT_ID) addError('CREEM_MONTHLY_PRODUCT_ID', 'CREEM_ENABLED requires a monthly product ID');
+    if (!data.CREEM_YEARLY_PRODUCT_ID) addError('CREEM_YEARLY_PRODUCT_ID', 'CREEM_ENABLED requires a yearly product ID');
   }
 
   if (Object.keys(errors).length > 0) {

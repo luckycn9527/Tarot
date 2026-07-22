@@ -209,8 +209,10 @@ async function main() {
 
   const uploadEntries = Array.isArray(config.upload) ? config.upload : [];
   const files = (await Promise.all(uploadEntries.map((entry) => collectFiles(entry, config)))).flat();
+  const onlyPath = normalizeSlash(argValue('--only', ''));
   const unique = new Map();
   for (const file of files) {
+    if (onlyPath && !file.rel.startsWith(onlyPath)) continue;
     unique.set(`${file.rel}::${file.objectKey}`, file);
   }
   const uploadFiles = [...unique.values()].sort((a, b) => a.objectKey.localeCompare(b.objectKey));
@@ -238,7 +240,7 @@ async function main() {
     });
   }
 
-  const manifestPath = path.resolve(REPO_ROOT, config.manifest || 'oss-upload-manifest.json');
+  const manifestPath = path.resolve(REPO_ROOT, argValue('--manifest', config.manifest || 'oss-upload-manifest.json'));
   await fs.writeFile(manifestPath, `${JSON.stringify({
     generatedAt: new Date().toISOString(),
     dryRun: Boolean(config.dryRun),

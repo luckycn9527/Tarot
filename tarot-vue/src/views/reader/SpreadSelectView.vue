@@ -6,11 +6,13 @@ import { getReaderById } from '../../data/readers'
 import { readerSpreads, type ReaderSpread } from '../../data/spreadsData'
 import { spreadIcon } from '../../utils/uiIcons'
 import { useDynamicSeoTitle } from '../../composables/useDynamicSeoTitle'
+import { useAuth } from '../../composables/useAuth'
 import ReaderAvatarMedia from '../../components/ui/ReaderAvatarMedia.vue'
 
 const route = useRoute()
 const router = useRouter()
 const { t } = useI18n()
+const { user, isLoggedIn } = useAuth()
 
 const readerId = route.params.readerId as string
 const reader = computed(() => getReaderById(readerId))
@@ -41,8 +43,17 @@ useDynamicSeoTitle(computed(() => {
 const selectedSpread = ref<ReaderSpread | null>(null)
 
 const canProceed = computed(() => selectedSpread.value !== null)
+const isVip = computed(() => isLoggedIn.value && user.value?.membership === 'vip')
+
+function isLocked(spread: ReaderSpread) {
+  return spread.accessLevel === 'vip' && !isVip.value
+}
 
 function selectSpread(spread: ReaderSpread) {
+  if (isLocked(spread)) {
+    void router.push({ path: '/membership', query: { source: 'spread' } })
+    return
+  }
   selectedSpread.value = selectedSpread.value?.id === spread.id ? null : spread
 }
 
@@ -92,7 +103,9 @@ function goNext() {
           class="text-left p-4 rounded-xl border transition-all cursor-pointer"
           :class="selectedSpread?.id === spread.id
             ? 'bg-gold-500/10 border-gold-500/40 shadow-lg shadow-gold-500/10'
-            : 'bg-white/[0.03] border-gold-500/10 hover:border-gold-500/20 hover:bg-white/4'"
+            : isLocked(spread)
+              ? 'bg-amber-500/[0.04] border-amber-400/20 hover:border-amber-400/45'
+              : 'bg-white/[0.03] border-gold-500/10 hover:border-gold-500/20 hover:bg-white/4'"
           @click="selectSpread(spread)"
         >
           <div class="flex items-center gap-3 mb-2">
@@ -102,12 +115,14 @@ function goNext() {
             <div>
               <h3 class="text-white font-medium font-serif text-sm">{{ spread.name }}</h3>
               <span class="text-gray-500 text-xs">{{ spread.cardCount }}张牌</span>
+              <span v-if="spread.accessLevel === 'vip'" class="rounded bg-amber-400/15 px-1.5 py-0.5 text-[10px] font-medium text-amber-200">VIP</span>
             </div>
             <div v-if="selectedSpread?.id === spread.id" class="ml-auto text-gold-400">
               <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg>
             </div>
           </div>
           <p class="text-gray-400 text-xs leading-relaxed">{{ spread.description }}</p>
+          <p v-if="isLocked(spread)" class="mt-3 text-xs text-amber-200/80">升级 VIP 后可解锁深度解读</p>
           <div v-if="selectedSpread?.id === spread.id" class="mt-3 flex flex-wrap gap-1.5">
             <span
               v-for="(pos, i) in spread.positions"

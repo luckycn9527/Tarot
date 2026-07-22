@@ -28,6 +28,10 @@ const changePasswordSchema = z.object({
   newPassword: z.string().min(6, '新密码至少6个字符').max(50),
 });
 
+const deleteAccountSchema = z.object({
+  password: z.string().min(1).max(100),
+});
+
 const updateBirthInfoSchema = z.object({
   birthday: z
     .string()
@@ -44,12 +48,12 @@ const updateSettingsSchema = z.object({
 router.get('/profile', auth, UserController.getProfile);
 router.put('/profile', auth, validate(updateProfileSchema), UserController.updateProfile);
 router.put('/password', auth, validate(changePasswordSchema), UserController.changePassword);
+router.delete('/account', auth, validate(deleteAccountSchema), UserController.deleteAccount);
 router.get('/quota', auth, UserController.getQuota);
 router.get('/settings', auth, UserController.getSettings);
 router.put('/settings', auth, validate(updateSettingsSchema), UserController.updateSettings);
 router.get('/birth-info', auth, UserController.getBirthInfo);
 router.put('/birth-info', auth, validate(updateBirthInfoSchema), UserController.updateBirthInfo);
 router.post('/avatar', auth, avatarUpload.single('avatar'), UserController.uploadAvatar);
-router.post('/activate-vip', auth, UserController.activateVip);
 
 export default router;

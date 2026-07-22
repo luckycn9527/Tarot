@@ -7,6 +7,7 @@ import { storeUploadedImage } from '../utils/imageUpload.js';
 import { uploadLocalPublicFileToOss } from '../utils/ossUpload.js';
 import { publicUploadsToFs, writeReaderAvatarThumbFile } from '../utils/readerAvatarThumb.js';
 import { success } from '../utils/response.js';
+import { invalidateReferenceCore } from './reference.controller.js';
 
 export async function login(req: Request, res: Response, next: NextFunction): Promise<void> {
   try {
@@ -55,6 +56,7 @@ export async function getCardBacks(_req: Request, res: Response, next: NextFunct
 export async function putCardBacks(req: Request, res: Response, next: NextFunction): Promise<void> {
   try {
     await AdminService.saveCardBacks(req.body.items);
+    invalidateReferenceCore();
     res.json(success(null, '保存成功'));
   } catch (e) {
     next(new ApiError(400, e instanceof Error ? e.message : '保存失败'));
@@ -69,6 +71,7 @@ export async function deleteCardBack(req: Request, res: Response, next: NextFunc
       return;
     }
     await AdminService.deleteCardBack(id);
+    invalidateReferenceCore();
     res.json(success(null, '删除成功'));
   } catch (e) {
     next(new ApiError(400, e instanceof Error ? e.message : '删除失败'));
@@ -87,6 +90,7 @@ export async function getCards(_req: Request, res: Response, next: NextFunction)
 export async function putCards(req: Request, res: Response, next: NextFunction): Promise<void> {
   try {
     await AdminService.saveCards(req.body.items);
+    invalidateReferenceCore();
     res.json(success(null, '保存成功'));
   } catch (e) {
     next(new ApiError(400, e instanceof Error ? e.message : '保存失败'));
@@ -105,6 +109,7 @@ export async function getReaderPrompts(_req: Request, res: Response, next: NextF
 export async function putReaderPrompts(req: Request, res: Response, next: NextFunction): Promise<void> {
   try {
     await AdminService.saveReaderPrompts(req.body.items);
+    invalidateReferenceCore();
     res.json(success(null, '保存成功'));
   } catch (e) {
     next(new ApiError(400, e instanceof Error ? e.message : '保存失败'));
@@ -123,6 +128,7 @@ export async function getFeaturedReaders(_req: Request, res: Response, next: Nex
 export async function putFeaturedReaders(req: Request, res: Response, next: NextFunction): Promise<void> {
   try {
     await AdminService.saveFeaturedReaders(req.body.items);
+    invalidateReferenceCore();
     res.json(success(null, '保存成功'));
   } catch (e) {
     next(new ApiError(400, e instanceof Error ? e.message : '保存失败'));

@@ -56,6 +56,10 @@ const birthLoading = ref(false)
 const birthSaving = ref(false)
 const birthMsg = ref('')
 const birthMsgType = ref<'success' | 'error'>('success')
+const showDeleteAccount = ref(false)
+const deletePassword = ref('')
+const deleteAccountBusy = ref(false)
+const deleteAccountMsg = ref('')
 
 async function fetchBirthInfo() {
   birthLoading.value = true
@@ -270,6 +274,24 @@ async function redeemInvitation() {
 async function handleLogout() {
   await logout()
   router.push('/')
+}
+
+async function handleDeleteAccount() {
+  if (!deletePassword.value) {
+    deleteAccountMsg.value = locale.value === 'zh-CN' ? '请输入当前密码以确认注销' : 'Enter your current password to confirm deletion'
+    return
+  }
+  deleteAccountBusy.value = true
+  deleteAccountMsg.value = ''
+  try {
+    await api.delete('/user/account', { data: { password: deletePassword.value } })
+    await logout()
+    await router.replace('/')
+  } catch (err: any) {
+    deleteAccountMsg.value = err.response?.data?.message || (locale.value === 'zh-CN' ? '账号注销失败，请稍后重试' : 'Account deletion failed. Please try again.')
+  } finally {
+    deleteAccountBusy.value = false
+  }
 }
 </script>
 
@@ -625,6 +647,44 @@ async function handleLogout() {
               {{ t('pages.profile.backHome') }}
             </RouterLink>
           </div>
+
+          <section class="rounded-xl border border-red-500/20 bg-red-500/[0.035] p-4 sm:p-5">
+            <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+              <div>
+                <h3 class="text-sm font-medium text-red-200">{{ locale === 'zh-CN' ? '账号注销' : 'Delete account' }}</h3>
+                <p class="mt-1 text-xs leading-relaxed text-gray-500">{{ locale === 'zh-CN' ? '注销后将删除账号、占卜记录、命运双盘记录、分享与站内头像，且无法恢复。' : 'Deleting your account permanently removes your profile, readings, fate records, shares, and uploaded avatar.' }}</p>
+              </div>
+              <button
+                type="button"
+                class="shrink-0 rounded-lg border border-red-400/35 px-3 py-2 text-sm text-red-300 transition-colors hover:bg-red-500/10"
+                @click="showDeleteAccount = !showDeleteAccount"
+              >
+                {{ locale === 'zh-CN' ? '注销账号' : 'Delete account' }}
+              </button>
+            </div>
+            <div v-if="showDeleteAccount" class="mt-4 border-t border-red-500/15 pt-4">
+              <label class="mb-1.5 block text-xs text-gray-400" for="delete-account-password">{{ locale === 'zh-CN' ? '输入当前密码确认' : 'Enter current password to confirm' }}</label>
+              <div class="flex flex-col gap-2 sm:flex-row">
+                <input
+                  id="delete-account-password"
+                  v-model="deletePassword"
+                  type="password"
+                  autocomplete="current-password"
+                  class="min-w-0 flex-1 rounded-lg border border-red-500/20 bg-white/5 px-3 py-2 text-sm text-white outline-none focus:border-red-400"
+                  @keyup.enter="handleDeleteAccount"
+                >
+                <button
+                  type="button"
+                  class="rounded-lg bg-red-500/85 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-red-500 disabled:cursor-not-allowed disabled:opacity-60"
+                  :disabled="deleteAccountBusy"
+                  @click="handleDeleteAccount"
+                >
+                  {{ deleteAccountBusy ? (locale === 'zh-CN' ? '注销中...' : 'Deleting...') : (locale === 'zh-CN' ? '确认注销' : 'Confirm deletion') }}
+                </button>
+              </div>
+              <p v-if="deleteAccountMsg" class="mt-2 text-xs text-red-300">{{ deleteAccountMsg }}</p>
+            </div>
+          </section>
         </div>
 
         <!-- Right Sidebar：合并为单卡 + 大屏粘性 -->

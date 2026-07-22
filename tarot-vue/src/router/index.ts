@@ -70,6 +70,8 @@ const router = createRouter({
     { path: '/gallery/card/:slug', name: 'card-detail', component: () => import('../views/CardDetailView.vue') },
     { path: '/spreads', name: 'spreads', component: () => import('../views/SpreadsView.vue') },
     { path: '/oracle-gallery', name: 'oracle-gallery', component: () => import('../views/OracleGalleryView.vue') },
+    { path: '/blog', name: 'blog', component: () => import('../views/BlogView.vue') },
+    { path: '/blog/:slug', name: 'blog-article', component: () => import('../views/BlogArticleView.vue') },
     {
       path: '/history',
       name: 'history',

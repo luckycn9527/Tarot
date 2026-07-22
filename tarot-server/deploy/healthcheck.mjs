@@ -39,28 +39,35 @@ console.log('— 健康自检 —');
   else bad(`后端 /health 异常：${r.error || 'HTTP ' + r.status}（检查 pm2 是否 online）`);
 }
 
-// 2) 经 Nginx 反代到后端
+// 2) 后端就绪（包含数据库连通性）
 {
-  const r = await fetchUrl(`https://${DOMAIN}/health`);
-  if (r.status === 200) ok(`Nginx 反代后端 https://${DOMAIN}/health`);
-  else bad(`Nginx→后端 /health：${r.error || 'HTTP ' + r.status}（检查 Nginx 配置 / 证书 / 后端）`);
+  const r = await fetchUrl(`http://127.0.0.1:${PORT}/ready`);
+  if (r.status === 200) ok(`后端就绪 http://127.0.0.1:${PORT}/ready`);
+  else bad(`后端 /ready 异常：${r.error || 'HTTP ' + r.status}（检查数据库连接和 PM2 环境变量）`);
 }
 
-// 3) 前端首页
+// 3) 经 Nginx 反代到后端
+{
+  const r = await fetchUrl(`https://${DOMAIN}/ready`);
+  if (r.status === 200) ok(`Nginx 反代后端 https://${DOMAIN}/ready`);
+  else bad(`Nginx→后端 /ready：${r.error || 'HTTP ' + r.status}（检查 Nginx 配置 / 证书 / 后端）`);
+}
+
+// 4) 前端首页
 {
   const r = await fetchUrl(`https://${DOMAIN}/`);
   if (r.status === 200 && /<!doctype html/i.test(r.body)) ok('前端首页可访问');
   else bad(`前端首页：${r.error || 'HTTP ' + r.status}（检查 dist 是否发布、Nginx root 路径）`);
 }
 
-// 4) SPA 深链接（重置密码链接能否打开的关键）
+// 5) SPA 深链接（重置密码链接能否打开的关键）
 {
   const r = await fetchUrl(`https://${DOMAIN}/reset-password`);
   if (r.status === 200 && /<!doctype html/i.test(r.body)) ok('深链接 /reset-password 正确回退 index.html');
   else bad(`/reset-password 回退：${r.error || 'HTTP ' + r.status}（缺 try_files 兜底会 404）`);
 }
 
-// 5) SMTP 鉴权
+// 6) SMTP 鉴权
 try {
   const nodemailer = (await import('nodemailer')).default;
   const port = Number(process.env.SMTP_PORT || 465);
@@ -76,7 +83,7 @@ try {
   bad(`SMTP 鉴权失败：${e.message}（确认 SMTP_PASS 是授权码、已开启 SMTP 服务）`);
 }
 
-// 6) 数据库找回密码相关表
+// 7) 数据库找回密码相关表
 try {
   const mysql = await import('mysql2/promise');
   const conn = await mysql.createConnection({

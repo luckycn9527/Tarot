@@ -15,6 +15,7 @@ export default {
     gallery: '塔罗图鉴',
     spreads: '牌阵介绍',
     oracleGallery: '神谕图鉴',
+    blog: '塔罗手记',
   },
   auth: {
     loginFirst: '请先登录',
@@ -163,6 +164,8 @@ export default {
       'card-detail': '塔罗牌详情',
       spreads: '牌阵介绍',
       'oracle-gallery': '神谕图鉴',
+      blog: '塔罗师手记',
+      'blog-article': '塔罗师文章',
       'card-back-settings': '卡背设置',
       'reader-ask': '向塔罗师提问',
       'reader-spread': '选择牌阵',

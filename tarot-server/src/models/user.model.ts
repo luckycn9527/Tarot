@@ -125,6 +125,22 @@ export async function updatePassword(id: number, passwordHash: string): Promise<
   );
 }
 
+export async function deleteUserAndData(id: number): Promise<void> {
+  const connection = await pool.getConnection();
+  try {
+    await connection.beginTransaction();
+    await connection.execute('DELETE FROM feedback WHERE user_id = ?', [id]);
+    const [result] = await connection.execute<ResultSetHeader>('DELETE FROM users WHERE id = ?', [id]);
+    if (result.affectedRows === 0) throw new Error('用户不存在');
+    await connection.commit();
+  } catch (error) {
+    await connection.rollback();
+    throw error;
+  } finally {
+    connection.release();
+  }
+}
+
 /**
  * 原子性检查并扣减用户免费配额。
  * 在同一事务中完成：重置过期配额 → VIP 判断 → 扣减 1 次。

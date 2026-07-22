@@ -182,7 +182,7 @@ async function startReading() {
     }
     const serverMsg = axiosErr.response?.data?.message
     if (axiosErr.response?.status === 403) {
-      toast.error('该塔罗师仅限VIP会员使用')
+      toast.error(serverMsg || '该内容仅限VIP会员使用')
       router.push('/membership')
     } else if (axiosErr.response?.status === 429) {
       toast.error('今日免费次数已用完')

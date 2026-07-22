@@ -10,6 +10,7 @@ import { useAuth } from '../composables/useAuth'
 import { getLoginFormSchema, formatZodFieldErrors } from '@/schemas/auth'
 import { getGoogleClientId, renderGoogleSignInButton, cancelGoogleOneTap } from '@/composables/useGoogleSignIn'
 import { getRememberLogin } from '@/services/api'
+import { safeRedirect } from '@/utils/safeRedirect'
 
 const route = useRoute()
 const router = useRouter()
@@ -46,8 +47,7 @@ async function handleLogin() {
         errors.value.general = result.message
       }
     } else {
-      const r = route.query.redirect
-      const path = typeof r === 'string' && r.startsWith('/') ? r : '/'
+      const path = safeRedirect(route.query.redirect)
       await nextTick()
       await router.push(path)
     }
@@ -71,8 +71,7 @@ onMounted(async () => {
         setTimeout(() => { showToast.value = false }, 4000)
         return
       }
-      const r = route.query.redirect
-      const path = typeof r === 'string' && r.startsWith('/') ? r : '/'
+      const path = safeRedirect(route.query.redirect)
       await router.push(path)
     })
   } catch {

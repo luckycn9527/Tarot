@@ -63,22 +63,6 @@ export async function login(req: Request, res: Response) {
   }
 }
 
-/**
- * 手机号登录（占位）。接口已就位，后端逻辑待接入短信验证码服务。
- * 现阶段返回 501，前端可据此提示「敬请期待」。
- */
-export async function phoneLogin(req: Request, res: Response) {
-  try {
-    const { phone, code } = req.body as { phone?: string; code?: string };
-    await AuthService.loginWithPhone(String(phone ?? ''), String(code ?? ''));
-    // loginWithPhone 目前必定抛错；接入后改为返回会话并下发 cookie
-    res.status(501).json(fail('手机号登录尚未开放，敬请期待', { code: 'phone_login_not_implemented' }));
-  } catch (err: unknown) {
-    const msg = err instanceof Error ? err.message : '手机号登录失败';
-    res.status(501).json(fail(msg, { code: 'phone_login_not_implemented' }));
-  }
-}
-
 export async function refreshToken(req: Request, res: Response) {
   try {
     const token = req.cookies?.refreshToken;

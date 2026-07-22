@@ -129,13 +129,27 @@ export async function insertFateChoice(data: {
   conflictId: number;
   choiceType: string;
   resultPathText: string;
+  guidance: object;
 }): Promise<number> {
   const [r] = await pool.execute<ResultSetHeader>(
-    `INSERT INTO fate_choices (user_id, conflict_id, choice_type, result_path_text)
-     VALUES (?, ?, ?, ?)`,
-    [data.userId, data.conflictId, trunc(data.choiceType, 16), data.resultPathText],
+    `INSERT INTO fate_choices (user_id, conflict_id, choice_type, result_path_text, guidance_json)
+     VALUES (?, ?, ?, ?, ?)`,
+    [
+      data.userId,
+      data.conflictId,
+      trunc(data.choiceType, 16),
+      data.resultPathText,
+      JSON.stringify(data.guidance),
+    ],
   );
   return r.insertId;
+}
+
+export async function updateFateChoiceGuidance(id: number, guidance: object): Promise<void> {
+  await pool.execute(
+    'UPDATE fate_choices SET guidance_json = ? WHERE id = ?',
+    [JSON.stringify(guidance), id],
+  );
 }
 
 export async function findConflictForUser(

@@ -40,12 +40,6 @@ const loginSchema = z
     path: ['identifier'],
   });
 
-// 手机号登录（占位）：接口已预留，后端逻辑待接入短信验证码
-const phoneLoginSchema = z.object({
-  phone: z.string().trim().min(5, '请输入手机号').max(20, '手机号过长'),
-  code: z.string().trim().min(4, '请输入验证码').max(8, '验证码过长'),
-});
-
 const googleSignInSchema = z.object({
   idToken: z.string().min(20, '缺少 Google 凭证'),
 });
@@ -62,7 +56,6 @@ const resetPasswordSchema = z.object({
 router.post('/register', authLimiter, validate(registerSchema), AuthController.register);
 router.post('/send-register-code', authLimiter, validate(sendRegisterCodeSchema), AuthController.sendRegisterCode);
 router.post('/login', authLimiter, validate(loginSchema), AuthController.login);
-router.post('/phone-login', authLimiter, validate(phoneLoginSchema), AuthController.phoneLogin);
 router.post('/google', authLimiter, validate(googleSignInSchema), AuthController.googleSignIn);
 router.post(
   '/forgot-password',

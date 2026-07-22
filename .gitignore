@@ -37,6 +37,7 @@ desktop.ini
 # Local Kiro / agent state
 .claude/
 .playwright-mcp/
+.codex/
 
 # TypeScript build info
 *.tsbuildinfo
@@ -53,8 +54,12 @@ featured-readers*.png
 tarot-server/uploads/admin/reader-avatar-*
 tarot-server/uploads/avatars/*
 
+# Full database snapshots contain personal data, hashes and session records.
+database-backups/
+
 # Local OSS upload credentials / generated upload manifests
 oss-upload.config.local.json
 oss-upload-manifest*.json
+oss-upload-*-manifest.json
 image-optimization-manifest*.json
 image-derivatives-manifest*.json

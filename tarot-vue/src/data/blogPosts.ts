@@ -1,0 +1,309 @@
+export type BlogCategory = 'learning' | 'discussion' | 'experience'
+
+export interface BlogAuthor {
+  slug: string
+  readerId: string
+  name: string
+  nameEn: string
+  role: string
+  roleEn: string
+  bio: string
+  bioEn: string
+  specialties: string[]
+  specialtiesEn: string[]
+  fallbackMark: string
+}
+
+export type BlogContentBlock =
+  | { type: 'heading'; id: string; text: string; textEn: string }
+  | { type: 'paragraph'; text: string; textEn: string }
+  | { type: 'list'; items: string[]; itemsEn: string[] }
+  | { type: 'quote'; text: string; textEn: string }
+  | { type: 'callout'; title: string; titleEn: string; text: string; textEn: string }
+
+export interface BlogPost {
+  slug: string
+  title: string
+  titleEn: string
+  excerpt: string
+  excerptEn: string
+  category: BlogCategory
+  tags: string[]
+  tagsEn: string[]
+  authorSlug: string
+  publishedAt: string
+  updatedAt: string
+  readingMinutes: number
+  coverCardNameEn: string
+  coverAlt: string
+  coverAltEn: string
+  featured?: boolean
+  blocks: BlogContentBlock[]
+  relatedRoutes: { to: string; label: string; labelEn: string; description: string; descriptionEn: string }[]
+}
+
+export const blogAuthors: BlogAuthor[] = [
+  {
+    slug: 'qinghe',
+    readerId: 'qinghe',
+    name: '清和',
+    nameEn: 'Qinghe',
+    role: '直觉与结构派塔罗师',
+    roleEn: 'Intuitive and structured Tarot reader',
+    bio: '擅长把复杂牌义整理成可以练习的方法，关注提问方式、图像观察与读牌边界。',
+    bioEn: 'Turns complex card meanings into practical exercises, with a focus on questions, imagery, and reading boundaries.',
+    specialties: ['塔罗入门', '图像读牌', '提问训练'],
+    specialtiesEn: ['Tarot foundations', 'Visual reading', 'Question practice'],
+    fallbackMark: '清',
+  },
+  {
+    slug: 'yanxi',
+    readerId: 'yanxi',
+    name: '岩溪',
+    nameEn: 'Yanxi',
+    role: '关系议题塔罗师',
+    roleEn: 'Relationship-focused Tarot reader',
+    bio: '重视语境、沟通和现实选择，喜欢讨论同一张牌在不同关系阶段中的变化。',
+    bioEn: 'Focuses on context, communication, and real choices, especially how one card shifts across relationship stages.',
+    specialties: ['关系沟通', '案例讨论', '多视角解牌'],
+    specialtiesEn: ['Relationships', 'Case discussion', 'Multi-angle reading'],
+    fallbackMark: '岩',
+  },
+  {
+    slug: 'xuanyin',
+    readerId: 'xuanyin',
+    name: '玄引',
+    nameEn: 'Xuanyin',
+    role: '复盘与成长型塔罗师',
+    roleEn: 'Reflective Tarot practitioner',
+    bio: '长期记录读牌过程，关注怎样从一次占卜里留下可验证的观察，而不是只记住结论。',
+    bioEn: 'Keeps long-term reading journals and focuses on testable observations rather than memorable conclusions.',
+    specialties: ['读牌复盘', '学习记录', '自我反思'],
+    specialtiesEn: ['Reading review', 'Study journals', 'Self-reflection'],
+    fallbackMark: '玄',
+  },
+]
+
+export const blogPosts: BlogPost[] = [
+  {
+    slug: 'read-tarot-without-memorizing-every-keyword',
+    title: '不靠死记牌义，怎样真正读懂一张塔罗牌',
+    titleEn: 'How to read Tarot without memorizing every keyword',
+    excerpt: '我更建议初学者从图像、问题和牌位开始，再把传统牌义当作校准工具。这里是一套可以每天练习的四步方法。',
+    excerptEn: 'Start with imagery, the question, and the card position, then use traditional meanings as calibration. Here is a four-step daily practice.',
+    category: 'learning',
+    tags: ['塔罗入门', '牌义学习', '图像观察'],
+    tagsEn: ['Tarot foundations', 'Card meanings', 'Visual reading'],
+    authorSlug: 'qinghe',
+    publishedAt: '2026-07-20',
+    updatedAt: '2026-07-20',
+    readingMinutes: 7,
+    coverCardNameEn: 'The High Priestess',
+    coverAlt: '女祭司塔罗牌面',
+    coverAltEn: 'The High Priestess Tarot card',
+    featured: true,
+    blocks: [
+      {
+        type: 'paragraph',
+        text: '刚开始学习塔罗时，我也做过厚厚的关键词笔记。后来真正开始为别人读牌，我才发现：记住“女祭司等于直觉”并不等于会读牌。真正的阅读发生在牌面、问题、牌位和当事人的现实处境相遇时。',
+        textEn: 'When I started Tarot, I filled notebooks with keywords. Later, reading for others showed me that knowing “The High Priestess means intuition” is not the same as reading. A reading happens where image, question, position, and real context meet.',
+      },
+      { type: 'heading', id: 'look-before-label', text: '第一步：先看图，再说牌名', textEn: 'Step one: look before you label' },
+      {
+        type: 'paragraph',
+        text: '抽到一张牌后，先给自己十秒钟，不翻书，也不搜索。观察人物朝向、颜色、距离、天气和最先吸引你的细节。问自己：“如果这是一幅正在发生的画面，下一秒会怎样？”这个答案常常比第一个关键词更接近问题。',
+        textEn: 'After drawing a card, wait ten seconds before opening a guide. Notice direction, color, distance, weather, and the first detail that catches you. Ask: “If this scene were moving, what happens next?” That answer is often closer to the question than your first keyword.',
+      },
+      { type: 'heading', id: 'return-to-question', text: '第二步：让牌义回到问题里', textEn: 'Step two: return the meaning to the question' },
+      {
+        type: 'paragraph',
+        text: '同一张隐士牌，放在“是否该主动联系”与“怎样准备转职”里，重点不会相同。前者可能提醒你先辨认自己的需要，后者可能指向独立研究和暂缓公开。不要问“这张牌是什么意思”，而要问“这张牌正在回答问题的哪一部分”。',
+        textEn: 'The Hermit will not emphasize the same thing in “Should I contact them?” and “How should I prepare for a career change?” Ask not “What does this card mean?” but “Which part of the question is this card answering?”',
+      },
+      { type: 'heading', id: 'position-is-grammar', text: '第三步：把牌位当成语法', textEn: 'Step three: treat the position as grammar' },
+      {
+        type: 'list',
+        items: [
+          '“现状”牌位描述正在发生什么，不急着给建议。',
+          '“阻碍”牌位指出摩擦，不一定代表坏结果。',
+          '“行动”牌位要翻译成当事人可以执行的一步。',
+          '“结果”牌位呈现当前路径的倾向，不是不可改变的判决。',
+        ],
+        itemsEn: [
+          'A situation position describes what is happening before giving advice.',
+          'An obstacle position shows friction, not necessarily a bad outcome.',
+          'An action position should become one executable next step.',
+          'An outcome position shows the current trajectory, not an unchangeable verdict.',
+        ],
+      },
+      { type: 'heading', id: 'calibrate', text: '第四步：最后再用传统牌义校准', textEn: 'Step four: calibrate with tradition' },
+      {
+        type: 'paragraph',
+        text: '完成自己的观察后，再查阅一到两个可靠来源。比较哪些部分吻合、哪些遗漏、哪些只是你当时的投射。长期看，这种“先观察、再校准”的方法，会让牌义从记忆变成理解。',
+        textEn: 'Only after making your own observations, consult one or two reliable sources. Compare what fits, what you missed, and what may have been projection. Over time, observe-then-calibrate turns memory into understanding.',
+      },
+      {
+        type: 'callout',
+        title: '今天的 5 分钟练习',
+        titleEn: 'A five-minute practice',
+        text: '随机抽一张牌，写下三个画面细节、一句正在发生的事和一个可执行动作。最后才对照牌义。连续做七天，比一次背完七十八张牌更有效。',
+        textEn: 'Draw one card. Write three visual details, one sentence about what is happening, and one possible action. Check the guide last. Seven days of this is more useful than memorizing all 78 cards at once.',
+      },
+      {
+        type: 'quote',
+        text: '牌义不是答案库，而是一种帮助你组织观察的语言。',
+        textEn: 'Card meanings are not an answer bank. They are a language for organizing observation.',
+      },
+    ],
+    relatedRoutes: [
+      { to: '/gallery', label: '浏览完整塔罗图鉴', labelEn: 'Browse the Tarot gallery', description: '从真实牌面练习图像观察。', descriptionEn: 'Practice visual reading with the full deck.' },
+      { to: '/tarot', label: '带着方法开始一次占卜', labelEn: 'Start a reading with this method', description: '选择塔罗师并提出一个清晰问题。', descriptionEn: 'Choose a reader and ask one clear question.' },
+    ],
+  },
+  {
+    slug: 'why-two-tarot-readers-see-different-things',
+    title: '同一组牌，为什么两位塔罗师会看到不同的重点',
+    titleEn: 'Why two Tarot readers can see different things in the same spread',
+    excerpt: '解牌出现分歧不一定意味着有人错了。真正需要比较的是依据、语境、边界，以及哪种解释能帮助当事人看清现实选择。',
+    excerptEn: 'Different readings do not automatically mean someone is wrong. Compare evidence, context, boundaries, and which interpretation clarifies real choices.',
+    category: 'discussion',
+    tags: ['解牌交流', '关系议题', '读牌边界'],
+    tagsEn: ['Reading discussion', 'Relationships', 'Reading boundaries'],
+    authorSlug: 'yanxi',
+    publishedAt: '2026-07-19',
+    updatedAt: '2026-07-19',
+    readingMinutes: 6,
+    coverCardNameEn: 'Justice',
+    coverAlt: '正义塔罗牌面',
+    coverAltEn: 'Justice Tarot card',
+    blocks: [
+      {
+        type: 'paragraph',
+        text: '交流解牌时，我经常听到一个问题：“如果两位塔罗师说得不一样，到底该信谁？”我的答案通常不是马上选边，而是先看两种解释分别建立在什么上面。塔罗阅读本来就包含象征、语境和读牌者经验，重点不同并不稀奇。',
+        textEn: 'In reading discussions I often hear: “If two readers disagree, whom should I trust?” I do not choose sides first. I ask what each interpretation is built on. Symbol, context, and practitioner experience naturally create different emphasis.',
+      },
+      { type: 'heading', id: 'layers', text: '分歧通常来自四个层次', textEn: 'Four common sources of difference' },
+      {
+        type: 'list',
+        items: [
+          '流派：有人重视元素和数字，有人更依赖图像与牌阵结构。',
+          '问题：提问过宽时，塔罗师会主动选择不同的切入点。',
+          '语境：当事人提供的信息不同，牌面会被放进不同现实背景。',
+          '经验：塔罗师过去遇到的案例会影响其对风险和机会的敏感度。',
+        ],
+        itemsEn: [
+          'Tradition: some readers prioritize elements and numbers; others use imagery and spread structure.',
+          'Question: a broad prompt forces each reader to choose a different entry point.',
+          'Context: different background information changes the real-world frame.',
+          'Experience: prior cases affect how a reader notices risk and opportunity.',
+        ],
+      },
+      { type: 'heading', id: 'evaluate', text: '判断解释质量，而不是寻找唯一答案', textEn: 'Evaluate quality instead of seeking one answer' },
+      {
+        type: 'paragraph',
+        text: '一段可靠的解读应该能指出牌面依据，说明推理过程，也愿意承认不确定性。如果一个结论只能靠“我感觉就是这样”，或者不断用恐惧催促你行动，它就不值得因为语气坚定而被优先相信。',
+        textEn: 'A reliable reading points to evidence in the cards, explains its reasoning, and admits uncertainty. A conclusion based only on “I just feel it,” or one that pressures you through fear, does not deserve trust merely because it sounds confident.',
+      },
+      {
+        type: 'quote',
+        text: '好的交流不是把不同解释压成一个答案，而是看见每种解释照亮了问题的哪一面。',
+        textEn: 'Good discussion does not flatten interpretations into one answer. It shows which side of the question each one illuminates.',
+      },
+      { type: 'heading', id: 'bring-back-choice', text: '最后要回到现实选择', textEn: 'Bring the reading back to real choices' },
+      {
+        type: 'paragraph',
+        text: '尤其在关系议题里，不要让任何一位塔罗师替你确认他人的内心。更有价值的问题是：两种解释分别提醒了哪些沟通风险？你能验证什么？下一步怎样既保护自己，也尊重对方的边界？',
+        textEn: 'Especially in relationships, do not let any reader certify another person’s inner state. Ask what communication risks each view highlights, what you can verify, and how your next step can protect you while respecting boundaries.',
+      },
+      {
+        type: 'callout',
+        title: '交流解牌时可以问的三个问题',
+        titleEn: 'Three questions for a reading discussion',
+        text: '你的判断来自哪张牌、哪个牌位？还有什么合理解释？这个结论可以怎样在现实中验证？',
+        textEn: 'Which card and position support this? What other reading is reasonable? How could this be tested in real life?',
+      },
+    ],
+    relatedRoutes: [
+      { to: '/spreads', label: '先理解牌阵结构', labelEn: 'Understand spread structure', description: '牌位是解读分歧的重要来源。', descriptionEn: 'Card positions are a major source of different interpretations.' },
+      { to: '/feedback', label: '分享你的读牌问题', labelEn: 'Share your reading question', description: '把使用体验和疑问告诉我们。', descriptionEn: 'Tell us about your experience and questions.' },
+    ],
+  },
+  {
+    slug: 'tarot-reading-journal-that-actually-helps',
+    title: '我怎样用读牌日志，让塔罗经验真正沉淀下来',
+    titleEn: 'How I use a Tarot journal to turn readings into experience',
+    excerpt: '只记录“抽到什么牌”很难形成经验。我现在会同时记录问题、第一反应、现实行动和后续验证，让每次读牌都留下可以复盘的线索。',
+    excerptEn: 'Recording only the cards rarely builds experience. I also track the question, first reaction, real action, and later evidence so each reading leaves something testable.',
+    category: 'experience',
+    tags: ['经验复盘', '读牌日志', '长期学习'],
+    tagsEn: ['Practice review', 'Tarot journal', 'Long-term learning'],
+    authorSlug: 'xuanyin',
+    publishedAt: '2026-07-18',
+    updatedAt: '2026-07-18',
+    readingMinutes: 8,
+    coverCardNameEn: 'The Hermit',
+    coverAlt: '隐士塔罗牌面',
+    coverAltEn: 'The Hermit Tarot card',
+    blocks: [
+      {
+        type: 'paragraph',
+        text: '我最早的塔罗日志只有日期、牌名和一段抄来的牌义。半年后回看，我几乎无法判断自己有没有进步。后来我把日志改成“可复盘记录”：不仅保存当时怎么读，也保存之后发生了什么。经验就是从这两者之间长出来的。',
+        textEn: 'My first journals held only dates, cards, and copied meanings. Six months later, I could not tell whether I had improved. I changed them into reviewable records: not only what I read, but what happened afterward. Experience grows between those two points.',
+      },
+      { type: 'heading', id: 'five-fields', text: '一条有用记录的五个部分', textEn: 'Five parts of a useful entry' },
+      {
+        type: 'list',
+        items: [
+          '问题：写下当时真正想解决的现实困惑。',
+          '牌面：记录牌、正逆位和牌位，不急着美化结论。',
+          '第一反应：保留最初看到的画面、情绪和身体感受。',
+          '行动假设：写出接下来可以做的一件小事。',
+          '回访：约定一个日期，记录后来发生的事实和新的理解。',
+        ],
+        itemsEn: [
+          'Question: state the real-world uncertainty you wanted to address.',
+          'Cards: record cards, orientation, and position before polishing a conclusion.',
+          'First response: keep the first image, emotion, and bodily response.',
+          'Action hypothesis: write one small next action.',
+          'Follow-up: choose a date to record facts and new understanding.',
+        ],
+      },
+      { type: 'heading', id: 'facts-vs-meaning', text: '把事实和解释分开写', textEn: 'Separate facts from interpretation' },
+      {
+        type: 'paragraph',
+        text: '这是我认为最重要的一步。“对方三天没有回复”是事实，“对方已经不在乎我”是解释。日志里把两者分开，会让你看见牌面究竟帮助了观察，还是只是强化了焦虑。',
+        textEn: 'This is the most important step for me. “They have not replied for three days” is a fact. “They no longer care” is an interpretation. Separating them reveals whether the cards supported observation or amplified anxiety.',
+      },
+      {
+        type: 'quote',
+        text: '复盘不是验证塔罗有没有预测准确，而是验证这次阅读有没有帮助你更诚实地看见处境。',
+        textEn: 'Review is not about proving a prediction. It asks whether the reading helped you see the situation more honestly.',
+      },
+      { type: 'heading', id: 'protect-privacy', text: '记录他人案例时先保护隐私', textEn: 'Protect privacy in case notes' },
+      {
+        type: 'paragraph',
+        text: '如果日志涉及咨询对象，我不会保留真实姓名、联系方式、单位或原始聊天截图。需要交流案例时，只留下理解牌面所必需的背景，并再次检查组合信息是否仍能识别当事人。',
+        textEn: 'When notes involve a client, I do not keep real names, contact details, workplaces, or original chat screenshots. For case discussion, I retain only context necessary to understand the cards and check whether combined details could still identify the person.',
+      },
+      {
+        type: 'callout',
+        title: '我的回访节奏',
+        titleEn: 'My follow-up rhythm',
+        text: '日常情绪在 3 天后回看，短期选择在 2 周后回看，关系和职业议题在 1 至 3 个月后回看。时间要和问题尺度匹配。',
+        textEn: 'I revisit daily emotions after three days, short decisions after two weeks, and relationship or career questions after one to three months. Match the review interval to the scale of the question.',
+      },
+    ],
+    relatedRoutes: [
+      { to: '/history', label: '查看你的占卜记录', labelEn: 'Review your reading history', description: '登录后回看问题、牌面与结果。', descriptionEn: 'Revisit questions, cards, and results after signing in.' },
+      { to: '/daily-fortune', label: '从每日一张开始记录', labelEn: 'Start with one daily card', description: '用更轻的节奏建立观察习惯。', descriptionEn: 'Build an observation habit at a lighter pace.' },
+    ],
+  },
+]
+
+export function getBlogPost(slug: string): BlogPost | undefined {
+  return blogPosts.find((post) => post.slug === slug)
+}
+
+export function getBlogAuthor(slug: string): BlogAuthor | undefined {
+  return blogAuthors.find((author) => author.slug === slug)
+}

@@ -12,6 +12,7 @@ export interface Spread {
   cardCount: number
   description: string
   whenToUse: string
+  accessLevel: 'free' | 'vip'
   positions: SpreadPosition[]
 }
 
@@ -24,6 +25,7 @@ export interface ReaderSpread {
   description: string
   emoji: string
   positions: string[]
+  accessLevel: 'free' | 'vip'
 }
 
 export const readerSpreads: ReaderSpread[] = []

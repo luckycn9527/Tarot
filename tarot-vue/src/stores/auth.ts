@@ -218,33 +218,6 @@ export const useAuthStore = defineStore('auth', () => {
     useUserResourcesStore().invalidateAll()
   }
 
-  /**
-   * 手机号登录（预留接口）。后端当前返回 501，待接入短信验证码后启用。
-   * 现阶段直接调用即可拿到后端的「敬请期待」提示。
-   */
-  async function phoneLogin(phone: string, code: string): Promise<AuthError | null> {
-    const phoneTrimmed = phone.trim()
-    if (!phoneTrimmed) return { field: 'phone', message: '请输入手机号' }
-    if (!code.trim()) return { field: 'code', message: '请输入验证码' }
-    try {
-      const res = await api.post('/auth/phone-login', { phone: phoneTrimmed, code: code.trim() })
-      if (res.data.success) {
-        setAccessToken(res.data.data.accessToken)
-        currentUser.value = res.data.data.user
-        isInitialized.value = true
-        const resources = useUserResourcesStore()
-        resources.invalidateAll()
-        void resources.fetchQuota(true)
-        void resources.fetchSettings(true)
-        return null
-      }
-      return { message: res.data.message || '手机号登录失败' }
-    } catch (err: unknown) {
-      const msg = (err as { response?: { data?: { message?: string } } }).response?.data?.message || '手机号登录尚未开放'
-      return { message: msg }
-    }
-  }
-
   async function updateProfile(data: {
     nickname?: string
     avatar?: string
@@ -319,7 +292,6 @@ export const useAuthStore = defineStore('auth', () => {
     register,
     login,
     loginWithGoogle,
-    phoneLogin,
     requestPasswordReset,
     resetPasswordWithToken,
     logout,
