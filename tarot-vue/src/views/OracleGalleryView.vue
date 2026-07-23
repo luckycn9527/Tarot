@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { computed, nextTick, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useScrollReveal } from '../composables/useScrollReveal'
 import { oracleCards, type OracleCard, type OracleCategory } from '../data/oracleCards'
@@ -11,6 +11,9 @@ const { locale } = useI18n()
 const activeCategory = ref<'all' | OracleCategory>('all')
 const query = ref('')
 const selectedCard = ref<OracleCard | null>(null)
+const dialogRef = ref<HTMLElement | null>(null)
+const closeButtonRef = ref<HTMLButtonElement | null>(null)
+let previouslyFocused: HTMLElement | null = null
 
 const isZh = computed(() => String(locale.value).toLowerCase().startsWith('zh'))
 
@@ -98,8 +101,11 @@ function categoryLabel(category: OracleCategory) {
   return categories.value.find((item) => item.key === category)?.label || category
 }
 
-function openCard(card: OracleCard) {
+async function openCard(card: OracleCard) {
+  previouslyFocused = document.activeElement instanceof HTMLElement ? document.activeElement : null
   selectedCard.value = card
+  await nextTick()
+  closeButtonRef.value?.focus()
 }
 
 function drawOracleCard() {
@@ -108,7 +114,36 @@ function drawOracleCard() {
 }
 
 function closeCard() {
+  const focusTarget = previouslyFocused
+  previouslyFocused = null
   selectedCard.value = null
+  void nextTick(() => focusTarget?.focus())
+}
+
+function handleDialogKeydown(event: KeyboardEvent) {
+  if (event.key === 'Escape') {
+    event.preventDefault()
+    closeCard()
+    return
+  }
+  if (event.key !== 'Tab' || !dialogRef.value) return
+  const focusable = Array.from(dialogRef.value.querySelectorAll<HTMLElement>(
+    'button:not([disabled]), a[href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])',
+  )).filter((element) => !element.hasAttribute('hidden'))
+  if (focusable.length === 0) {
+    event.preventDefault()
+    dialogRef.value.focus()
+    return
+  }
+  const first = focusable[0]
+  const last = focusable[focusable.length - 1]
+  if (event.shiftKey && document.activeElement === first) {
+    event.preventDefault()
+    last.focus()
+  } else if (!event.shiftKey && document.activeElement === last) {
+    event.preventDefault()
+    first.focus()
+  }
 }
 
 function hideBrokenImage(event: Event) {
@@ -202,8 +237,17 @@ function hideBrokenImage(event: Event) {
 
     <Teleport to="body">
       <div v-if="selectedCard" class="oracle-detail-backdrop" role="presentation" @click.self="closeCard">
-        <section class="oracle-detail-dialog" role="dialog" aria-modal="true" :aria-label="cardName(selectedCard)">
-          <button type="button" class="oracle-detail-close" :aria-label="copy.close" @click="closeCard">×</button>
+        <section
+          ref="dialogRef"
+          class="oracle-detail-dialog"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="oracle-dialog-title"
+          aria-describedby="oracle-dialog-meaning"
+          tabindex="-1"
+          @keydown="handleDialogKeydown"
+        >
+          <button ref="closeButtonRef" type="button" class="oracle-detail-close" :aria-label="copy.close" @click="closeCard">×</button>
           <div class="oracle-detail-art oracle-card-art">
             <img :src="cardImage(selectedCard)" :alt="`${cardName(selectedCard)} oracle card artwork`" class="oracle-card-art-image" @error="hideBrokenImage">
             <span class="oracle-card-number">{{ String(selectedCard.id).padStart(2, '0') }}</span>
@@ -212,12 +256,12 @@ function hideBrokenImage(event: Event) {
           </div>
           <div class="oracle-detail-content">
             <p class="oracle-gallery-eyebrow">{{ copy.cardNumber }} {{ selectedCard.id }}{{ copy.cardNumberSuffix }}</p>
-            <h2>{{ cardName(selectedCard) }}</h2>
+            <h2 id="oracle-dialog-title">{{ cardName(selectedCard) }}</h2>
             <p class="oracle-detail-en">{{ selectedCard.nameEn }} · {{ categoryLabel(selectedCard.category) }}</p>
             <p class="oracle-detail-label">{{ copy.keywords }}</p>
             <p class="oracle-detail-keywords">{{ cardKeywords(selectedCard) }}</p>
             <p class="oracle-detail-label">{{ copy.interpretation }}</p>
-            <p class="oracle-detail-meaning">{{ cardMeaning(selectedCard) }}</p>
+            <p id="oracle-dialog-meaning" class="oracle-detail-meaning">{{ cardMeaning(selectedCard) }}</p>
           </div>
         </section>
       </div>

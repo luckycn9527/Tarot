@@ -6,8 +6,8 @@
   Include tarot-server/.env in the archive (overwrites server .env — only if you intend to).
 
 Example:
-  .\scripts\sync-to-server.ps1 -RemoteHost 106.75.23.170 -Port 2223 -User ubuntu `
-    -KeyPath "C:\Users\admin\Documents\beiji123.pem" -RemotePath "~/tarot-clone"
+  .\scripts\sync-to-server.ps1 -RemoteHost "<server-ip-or-host>" -Port 22 -User "<ssh-user>" `
+    -KeyPath "C:\path\to\id_ed25519" -RemotePath "~/tarot-clone"
 
   .\scripts\sync-to-server.ps1 ... -SkipBuild  # use existing local dist/build output
   .\scripts\sync-to-server.ps1 ... -IncludeEnv   # 打包本机 .env（会覆盖服务器 DB 等配置，慎用）
@@ -15,7 +15,7 @@ Example:
 param(
   [Parameter(Mandatory = $true)][string]$RemoteHost,
   [int]$Port = 22,
-  [string]$User = "ubuntu",
+  [Parameter(Mandatory = $true)][string]$User,
   [Parameter(Mandatory = $true)][string]$KeyPath,
   [string]$RemotePath = "~/tarot-clone",
   [switch]$SkipBuild,

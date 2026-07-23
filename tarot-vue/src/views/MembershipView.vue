@@ -6,6 +6,7 @@ import { useScrollReveal } from '../composables/useScrollReveal'
 import { useAuth } from '../composables/useAuth'
 import FaqAccordion from '../components/FaqAccordion.vue'
 import api from '../services/api'
+import { isAxiosError } from 'axios'
 
 useScrollReveal()
 
@@ -20,10 +21,14 @@ type Subscription = { planCode: PlanCode; status: string; currentPeriodEndAt: st
 
 const paymentAvailable = ref(false)
 const plans = ref<PaymentPlan[]>([])
+const plansLoading = ref(true)
+const plansError = ref('')
 const selectedPlanCode = ref<PlanCode>('vip_yearly')
 const checkoutLoading = ref<PlanCode | null>(null)
 const checkoutError = ref('')
 const subscription = ref<Subscription | null>(null)
+const subscriptionLoading = ref(false)
+const subscriptionError = ref('')
 const cancelLoading = ref(false)
 const cancellationMessage = ref('')
 
@@ -79,6 +84,28 @@ function selectPlan(planCode: PlanCode) {
   checkoutError.value = ''
 }
 
+function requestErrorMessage(error: unknown, fallback: string) {
+  if (isAxiosError<{ message?: string }>(error)) return error.response?.data?.message || fallback
+  return error instanceof Error && error.message ? error.message : fallback
+}
+
+async function loadPaymentPlans() {
+  plansLoading.value = true
+  plansError.value = ''
+  try {
+    const res = await api.get('/payments/plans')
+    if (!res.data?.success) throw new Error(res.data?.message || t('pages.membership.plansLoadFailed'))
+    paymentAvailable.value = Boolean(res.data.data?.enabled)
+    plans.value = Array.isArray(res.data.data?.plans) ? res.data.data.plans : []
+  } catch (error: unknown) {
+    paymentAvailable.value = false
+    plans.value = []
+    plansError.value = requestErrorMessage(error, t('pages.membership.plansLoadFailed'))
+  } finally {
+    plansLoading.value = false
+  }
+}
+
 async function startCheckout(planCode: PlanCode) {
   checkoutError.value = ''
   if (!isLoggedIn.value) {
@@ -102,12 +129,22 @@ async function startCheckout(planCode: PlanCode) {
 }
 
 async function loadSubscription() {
-  if (!isLoggedIn.value) return
+  if (!isLoggedIn.value) {
+    subscription.value = null
+    subscriptionError.value = ''
+    return
+  }
+  subscriptionLoading.value = true
+  subscriptionError.value = ''
   try {
     const res = await api.get('/payments/subscription')
-    subscription.value = res.data?.success ? res.data.data : null
-  } catch {
+    if (!res.data?.success) throw new Error(res.data?.message || t('pages.membership.subscriptionLoadFailed'))
+    subscription.value = res.data.data
+  } catch (error: unknown) {
     subscription.value = null
+    subscriptionError.value = requestErrorMessage(error, t('pages.membership.subscriptionLoadFailed'))
+  } finally {
+    subscriptionLoading.value = false
   }
 }
 
@@ -130,17 +167,13 @@ async function cancelRenewal() {
 }
 
 onMounted(async () => {
-  try {
-    const res = await api.get('/payments/plans')
-    if (res.data?.success) {
-      paymentAvailable.value = Boolean(res.data.data?.enabled)
-      plans.value = Array.isArray(res.data.data?.plans) ? res.data.data.plans : []
-    }
-  } catch {
-    paymentAvailable.value = false
-  }
+  await loadPaymentPlans()
   if (route.query.payment === 'success') {
-    await refreshUser()
+    try {
+      await refreshUser()
+    } catch {
+      checkoutError.value = t('pages.membership.accountRefreshFailed')
+    }
   }
   await loadSubscription()
 })
@@ -182,6 +215,22 @@ onMounted(async () => {
     </section>
 
     <section id="membership-plans" class="w-full max-w-6xl mx-auto px-4 pb-10 sm:pb-12 reveal-on-scroll">
+      <div v-if="plansLoading" class="membership-load-state" role="status" aria-live="polite">
+        {{ t('pages.membership.plansLoading') }}
+      </div>
+      <div v-else-if="plansError" class="membership-load-state membership-load-state-error" role="alert">
+        <span>{{ plansError }}</span>
+        <button type="button" class="membership-text-button" @click="loadPaymentPlans">{{ t('pages.membership.retry') }}</button>
+      </div>
+
+      <div v-if="subscriptionLoading" class="membership-load-state" role="status" aria-live="polite">
+        {{ t('pages.membership.subscriptionLoading') }}
+      </div>
+      <div v-else-if="subscriptionError" class="membership-load-state membership-load-state-error" role="alert">
+        <span>{{ subscriptionError }}</span>
+        <button type="button" class="membership-text-button" @click="loadSubscription">{{ t('pages.membership.retry') }}</button>
+      </div>
+
       <div v-if="user?.membership === 'vip' || subscription" class="membership-account-bar" aria-live="polite">
         <div>
           <span class="membership-account-label">{{ t('pages.membership.statusLabel') }}</span>
@@ -239,7 +288,15 @@ onMounted(async () => {
             <li v-for="f in vipFeatures" :key="f"><span class="membership-check" aria-hidden="true">✓</span>{{ f }}</li>
           </ul>
           <button
-            v-if="paymentAvailable"
+            v-if="plansLoading"
+            type="button"
+            disabled
+            class="membership-plan-unavailable"
+          >
+            {{ t('pages.membership.plansLoading') }}
+          </button>
+          <button
+            v-else-if="paymentAvailable"
             type="button"
             class="membership-primary-cta"
             :disabled="checkoutLoading !== null"
@@ -252,7 +309,15 @@ onMounted(async () => {
         </article>
       </div>
 
-      <p class="membership-payment-note">{{ paymentAvailable ? t('pages.membership.paymentNotice') : t('pages.membership.availabilityNotice') }}</p>
+      <p class="membership-payment-note" aria-live="polite">
+        {{ plansLoading
+          ? t('pages.membership.plansLoading')
+          : plansError
+            ? t('pages.membership.plansLoadFailed')
+            : paymentAvailable
+              ? t('pages.membership.paymentNotice')
+              : t('pages.membership.availabilityNotice') }}
+      </p>
     </section>
 
     <section class="membership-faq-section w-full max-w-4xl mx-auto px-4 py-12 sm:py-16 reveal-on-scroll">

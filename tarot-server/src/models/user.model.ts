@@ -1,20 +1,23 @@
 import { pool } from '../config/database.js';
 import type { RowDataPacket, ResultSetHeader } from 'mysql2';
+import type { PoolConnection } from 'mysql2/promise';
 import type { DbUser } from '../types/index.js';
 import { ACTIVE_VIP_SQL_CONDITION } from '../utils/membership.js';
 
 export const DAILY_FREE_QUOTA = 3;
 
-export async function findByEmail(email: string): Promise<DbUser | null> {
-  const [rows] = await pool.execute<RowDataPacket[]>(
+export async function findByEmail(email: string, connection?: PoolConnection): Promise<DbUser | null> {
+  const db = connection ?? pool;
+  const [rows] = await db.execute<RowDataPacket[]>(
     'SELECT * FROM users WHERE LOWER(TRIM(email)) = ? LIMIT 1',
     [email]
   );
   return (rows[0] as DbUser) || null;
 }
 
-export async function findByUsername(username: string): Promise<DbUser | null> {
-  const [rows] = await pool.execute<RowDataPacket[]>(
+export async function findByUsername(username: string, connection?: PoolConnection): Promise<DbUser | null> {
+  const db = connection ?? pool;
+  const [rows] = await db.execute<RowDataPacket[]>(
     'SELECT * FROM users WHERE LOWER(TRIM(username)) = ? LIMIT 1',
     [username.trim().toLowerCase()]
   );
@@ -52,8 +55,9 @@ export async function findByGoogleId(googleId: string): Promise<DbUser | null> {
   return (rows[0] as DbUser) || null;
 }
 
-export async function findById(id: number): Promise<DbUser | null> {
-  const [rows] = await pool.execute<RowDataPacket[]>(
+export async function findById(id: number, connection?: PoolConnection): Promise<DbUser | null> {
+  const db = connection ?? pool;
+  const [rows] = await db.execute<RowDataPacket[]>(
     'SELECT * FROM users WHERE id = ?',
     [id]
   );
@@ -68,8 +72,9 @@ export async function create(data: {
   googleId?: string | null;
   username?: string | null;
   phone?: string | null;
-}): Promise<number> {
-  const [result] = await pool.execute<ResultSetHeader>(
+}, connection?: PoolConnection): Promise<number> {
+  const db = connection ?? pool;
+  const [result] = await db.execute<ResultSetHeader>(
     'INSERT INTO users (email, username, phone, nickname, password_hash, avatar, google_id) VALUES (?, ?, ?, ?, ?, ?, ?)',
     [
       data.email.trim().toLowerCase(),

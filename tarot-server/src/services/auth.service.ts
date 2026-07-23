@@ -13,6 +13,22 @@ import { env } from '../config/env.js';
 import { isActiveVip } from '../utils/membership.js';
 import type { PublicUser } from '../types/index.js';
 import type { DbUser } from '../types/index.js';
+import { pool } from '../config/database.js';
+
+function isDuplicateEntryError(error: unknown): boolean {
+  return typeof error === 'object'
+    && error !== null
+    && 'code' in error
+    && (error as { code?: string }).code === 'ER_DUP_ENTRY';
+}
+
+function createSessionTokens(userId: number) {
+  return {
+    accessToken: signAccessToken({ userId }),
+    refreshToken: signRefreshToken({ userId }),
+    expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
+  };
+}
 
 function toPublicUser(user: DbUser): PublicUser {
   const activeVip = isActiveVip(user);
@@ -78,9 +94,7 @@ async function issueNewSession(userId: number): Promise<{
   accessToken: string;
   refreshToken: string;
 }> {
-  const accessToken = signAccessToken({ userId });
-  const refreshToken = signRefreshToken({ userId });
-  const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
+  const { accessToken, refreshToken, expiresAt } = createSessionTokens(userId);
   await TokenModel.saveRefreshToken(userId, refreshToken, expiresAt);
   const user = await UserModel.findById(userId);
   if (!user) {
@@ -154,12 +168,6 @@ export async function register(
     throw new Error('该邮箱已被注册');
   }
 
-  // 校验邮箱验证码
-  const codeRecord = await EmailVerificationModel.findValidCode(emailNorm, emailCode, 'register');
-  if (!codeRecord) {
-    throw new Error('验证码错误或已过期');
-  }
-
   // 用户名可选；提供则校验格式并查重
   const usernameNorm = normalizeUsername(username);
   if (usernameNorm) {
@@ -170,17 +178,61 @@ export async function register(
   }
 
   const passwordHash = await bcrypt.hash(password, 10);
-  const userId = await UserModel.create({
-    email: emailNorm,
-    nickname,
-    passwordHash,
-    username: usernameNorm,
-  });
+  const connection = await pool.getConnection();
+  try {
+    await connection.beginTransaction();
 
-  // 标记验证码已使用
-  await EmailVerificationModel.markCodeUsed(codeRecord.id);
+    const codeRecord = await EmailVerificationModel.findValidCodeForUpdate(
+      connection,
+      emailNorm,
+      emailCode,
+      'register',
+    );
+    if (!codeRecord) {
+      throw new Error('验证码错误或已过期');
+    }
 
-  return issueNewSession(userId);
+    if (await UserModel.findByEmail(emailNorm, connection)) {
+      throw new Error('该邮箱已被注册');
+    }
+    if (usernameNorm && await UserModel.findByUsername(usernameNorm, connection)) {
+      throw new Error('该用户名已被占用');
+    }
+
+    let userId: number;
+    try {
+      userId = await UserModel.create({
+        email: emailNorm,
+        nickname,
+        passwordHash,
+        username: usernameNorm,
+      }, connection);
+    } catch (error) {
+      if (isDuplicateEntryError(error)) {
+        throw new Error('该邮箱或用户名已被使用');
+      }
+      throw error;
+    }
+
+    if (!await EmailVerificationModel.markCodeUsed(connection, codeRecord.id)) {
+      throw new Error('验证码错误或已过期');
+    }
+
+    const { accessToken, refreshToken, expiresAt } = createSessionTokens(userId);
+    await TokenModel.saveRefreshToken(userId, refreshToken, expiresAt, connection);
+    const user = await UserModel.findById(userId, connection);
+    if (!user) {
+      throw new Error('注册用户创建失败');
+    }
+
+    await connection.commit();
+    return { user: toPublicUser(user), accessToken, refreshToken };
+  } catch (error) {
+    await connection.rollback();
+    throw error;
+  } finally {
+    connection.release();
+  }
 }
 
 /**

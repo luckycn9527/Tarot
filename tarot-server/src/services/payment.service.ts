@@ -205,8 +205,6 @@ export async function processWebhook(rawBody: Buffer, signature: string | undefi
   const object = asObject(payload.object);
   if (!eventId || !eventType || !object) throw new PaymentError('Webhook 事件格式无效', 400);
 
-  if (await PaymentModel.hasWebhookEvent(eventId)) return;
-
   const checkoutId = checkoutIdFrom(object, eventType);
   const subscriptionId = subscriptionIdFrom(object, eventType);
   const requestId = asString(object.request_id) ?? metadataOrderId(object);
@@ -224,23 +222,25 @@ export async function processWebhook(rawBody: Buffer, signature: string | undefi
 
   const status = statusForEvent(eventType, object);
   const periodEnd = periodEndFrom(object);
-  await PaymentModel.updateSubscription({
+  const activeEvents = new Set(['checkout.completed', 'subscription.active', 'subscription.paid', 'subscription.trialing']);
+  const membershipAction = activeEvents.has(eventType) && periodEnd
+    ? 'activate'
+    : eventType === 'subscription.expired'
+      ? 'expire'
+      : 'none';
+  await PaymentModel.applyWebhookEvent({
+    providerEventId: eventId,
+    eventType,
+    payloadJson: JSON.stringify(payload),
     orderId: order.id,
+    userId: order.user_id,
     status,
     checkoutId,
     subscriptionId,
     customerId: customerIdFrom(object),
     currentPeriodEndAt: periodEnd,
+    membershipAction,
   });
-
-  const activeEvents = new Set(['checkout.completed', 'subscription.active', 'subscription.paid', 'subscription.trialing']);
-  if (activeEvents.has(eventType) && periodEnd) {
-    await PaymentModel.activateVip(order.user_id, periodEnd);
-  } else if (eventType === 'subscription.expired') {
-    await PaymentModel.clearVipIfExpired(order.user_id);
-  }
-  // Record only after state changes succeed so a provider retry can recover from a transient failure.
-  await PaymentModel.recordWebhookEvent(eventId, eventType);
 }
 
 export async function getSubscription(userId: number) {

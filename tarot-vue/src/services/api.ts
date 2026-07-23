@@ -1,4 +1,4 @@
-import axios from 'axios'
+import axios, { AxiosHeaders, type InternalAxiosRequestConfig } from 'axios'
 
 const configuredApiBaseUrl = import.meta.env.VITE_PUBLIC_API_BASE_URL?.trim().replace(/\/+$/, '')
 const configuredApiOrigin = import.meta.env.VITE_PUBLIC_API_ORIGIN?.trim().replace(/\/+$/, '')
@@ -48,10 +48,17 @@ export function setAccessToken(token: string | null, persist = rememberLogin) {
 // 请求拦截器：添加 Authorization header
 api.interceptors.request.use((config) => {
   if (accessToken) {
-    config.headers.Authorization = `Bearer ${accessToken}`
+    setAuthorizationHeader(config, accessToken)
   }
   return config
 })
+
+type RetryableRequestConfig = InternalAxiosRequestConfig & { _retry?: boolean }
+
+function setAuthorizationHeader(config: InternalAxiosRequestConfig, token: string) {
+  config.headers = AxiosHeaders.from(config.headers)
+  config.headers.set('Authorization', `Bearer ${token}`)
+}
 
 // 响应拦截器：自动刷新 token
 let isRefreshing = false
@@ -64,8 +71,10 @@ let pendingRequests: PendingRequest[] = []
 
 api.interceptors.response.use(
   (response) => response,
-  async (error) => {
-    const originalRequest = error.config
+  async (error: unknown) => {
+    if (!axios.isAxiosError(error)) return Promise.reject(error)
+    const originalRequest = error.config as RetryableRequestConfig | undefined
+    if (!originalRequest) return Promise.reject(error)
 
     // 如果是 401 且不是刷新请求本身
     if (error.response?.status === 401 && !originalRequest._retry && !originalRequest.url?.includes('/auth/refresh')) {
@@ -75,7 +84,10 @@ api.interceptors.response.use(
         isRefreshing = true
         try {
           const res = await axios.post(`${apiBaseUrl}/auth/refresh`, null, { withCredentials: true })
-          const newToken = res.data.data.accessToken
+          const newToken = res.data?.data?.accessToken
+          if (typeof newToken !== 'string' || !newToken.trim()) {
+            throw new Error('刷新登录状态失败')
+          }
           setAccessToken(newToken)
 
           // 重试所有等待的请求
@@ -83,7 +95,7 @@ api.interceptors.response.use(
           pendingRequests = []
 
           // 重试原始请求
-          originalRequest.headers.Authorization = `Bearer ${newToken}`
+          setAuthorizationHeader(originalRequest, newToken)
           return api(originalRequest)
         } catch (refreshErr) {
           // 刷新失败，清除状态并 reject 所有等待中的请求（否则它们会永久挂起）
@@ -102,7 +114,7 @@ api.interceptors.response.use(
       return new Promise((resolve, reject) => {
         pendingRequests.push({
           resolve: (token: string) => {
-            originalRequest.headers.Authorization = `Bearer ${token}`
+            setAuthorizationHeader(originalRequest, token)
             resolve(api(originalRequest))
           },
           reject,

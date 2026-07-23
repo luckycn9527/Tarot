@@ -1,5 +1,6 @@
 import { pool } from '../config/database.js';
 import type { RowDataPacket, ResultSetHeader } from 'mysql2';
+import type { PoolConnection } from 'mysql2/promise';
 
 const CODE_TTL_MINUTES = 10;
 
@@ -15,23 +16,25 @@ export async function createVerificationCode(
   );
 }
 
-export async function findValidCode(
+export async function findValidCodeForUpdate(
+  connection: PoolConnection,
   email: string,
   code: string,
   purpose: 'register' = 'register',
 ): Promise<{ id: number } | null> {
-  const [rows] = await pool.execute<RowDataPacket[]>(
-    'SELECT id FROM email_verification_codes WHERE email = ? AND code = ? AND purpose = ? AND used = FALSE AND expires_at > NOW() LIMIT 1',
+  const [rows] = await connection.execute<RowDataPacket[]>(
+    'SELECT id FROM email_verification_codes WHERE email = ? AND code = ? AND purpose = ? AND used = FALSE AND expires_at > NOW() ORDER BY id DESC LIMIT 1 FOR UPDATE',
     [email, code, purpose],
   );
   return (rows[0] as { id: number }) || null;
 }
 
-export async function markCodeUsed(id: number): Promise<void> {
-  await pool.execute(
-    'UPDATE email_verification_codes SET used = TRUE WHERE id = ?',
+export async function markCodeUsed(connection: PoolConnection, id: number): Promise<boolean> {
+  const [result] = await connection.execute<ResultSetHeader>(
+    'UPDATE email_verification_codes SET used = TRUE WHERE id = ? AND used = FALSE AND expires_at > NOW()',
     [id],
   );
+  return result.affectedRows === 1;
 }
 
 /** 清理该邮箱同一目的下的所有旧验证码 */

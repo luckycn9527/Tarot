@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
 #
-# tarot.zaopic.cn 一键部署 / 自检脚本（方式B：Nginx 托管前端 + 反代后端 API）
+# Tarot 一键部署 / 自检脚本（Nginx 托管前端 + 反代后端 API）
 # 在【服务器】上运行（Linux）。用法：
 #   ./deploy.sh init-env     首次：交互生成生产 .env（自动生成 JWT 密钥，权限 600）
 #   ./deploy.sh check        仅检测：依赖 + DNS + .env 校验 + 运行健康自检
-#   ./deploy.sh backend      仅部署后端（npm ci + build + pm2）
+#   ./deploy.sh backend      仅部署后端（npm ci + build + migrate + pm2）
 #   ./deploy.sh frontend     仅发布已同步的前端 dist（默认不在服务器构建）
 #   ./deploy.sh nginx        安装站点配置 + 首次自动签发证书 + 校验重载
 #   ./deploy.sh              全流程：check → backend → 发布前端 dist → nginx → health
@@ -28,7 +28,7 @@ SERVER_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 REPO_ROOT="$(cd "$SERVER_DIR/.." && pwd)"
 WEB_DIR="${WEB_DIR:-$REPO_ROOT/tarot-vue}"
 ENV_FILE="$SERVER_DIR/.env"
-NGINX_CONF_SRC="$SCRIPT_DIR/nginx-${DOMAIN}.conf"
+NGINX_TEMPLATE="$SCRIPT_DIR/nginx.conf.template"
 NGINX_CONF_DST="${NGINX_CONF_DST:-/etc/nginx/conf.d/${DOMAIN}.conf}"
 
 # ---------------- 日志 ----------------
@@ -37,6 +37,73 @@ info(){ printf '%s\n' "${B}▶ $*${N}"; }
 ok(){   printf '%s\n' "${G}  ✔ $*${N}"; }
 warn(){ printf '%s\n' "${Y}  ⚠ $*${N}"; }
 die(){  printf '%s\n' "${R}  ✘ $*${N}" >&2; exit 1; }
+
+# ---------------- 配置校验 / Nginx 渲染 ----------------
+validate_config(){
+  [[ "$DOMAIN" =~ ^[A-Za-z0-9]([A-Za-z0-9.-]*[A-Za-z0-9])?$ ]] && [[ "$DOMAIN" != *..* ]] \
+    || die "DOMAIN 格式无效：$DOMAIN"
+  [[ "$BACKEND_PORT" =~ ^[0-9]+$ ]] && (( BACKEND_PORT >= 1 && BACKEND_PORT <= 65535 )) \
+    || die "BACKEND_PORT 必须是 1-65535 的整数：$BACKEND_PORT"
+  [[ "$DIST_TARGET" == /* && "$DIST_TARGET" != *$'\n'* ]] \
+    || die "DIST_TARGET 必须是绝对路径：$DIST_TARGET"
+  [ -f "$NGINX_TEMPLATE" ] || die "找不到 Nginx 模板：$NGINX_TEMPLATE"
+}
+
+escape_sed_replacement(){
+  printf '%s' "$1" | sed 's/[&|\\]/\\&/g'
+}
+
+render_nginx_config(){
+  local safe_domain safe_port safe_target
+  safe_domain="$(escape_sed_replacement "$DOMAIN")"
+  safe_port="$(escape_sed_replacement "$BACKEND_PORT")"
+  safe_target="$(escape_sed_replacement "$DIST_TARGET")"
+  sed \
+    -e "s|__DOMAIN__|${safe_domain}|g" \
+    -e "s|__BACKEND_PORT__|${safe_port}|g" \
+    -e "s|__DIST_TARGET__|${safe_target}|g" \
+    "$NGINX_TEMPLATE"
+}
+
+activate_nginx_config(){
+  nginx -t || return 1
+  if command -v systemctl >/dev/null 2>&1; then
+    if systemctl is-active --quiet nginx; then
+      systemctl reload nginx
+    else
+      systemctl restart nginx
+    fi
+  else
+    nginx -s reload
+  fi
+}
+
+install_rendered_nginx_config(){
+  local rendered backup=""
+  rendered="$(mktemp)"
+  render_nginx_config > "$rendered"
+  if [ -f "$NGINX_CONF_DST" ]; then
+    backup="$(mktemp)"
+    cp "$NGINX_CONF_DST" "$backup"
+  fi
+  install -D -m 644 "$rendered" "$NGINX_CONF_DST"
+  if activate_nginx_config; then
+    rm -f "$rendered"
+    [ -z "$backup" ] || rm -f "$backup"
+    ok "Nginx 配置已生效（$NGINX_CONF_DST）"
+    return 0
+  fi
+  warn "新 Nginx 配置未能启用，正在恢复上一份配置"
+  if [ -n "$backup" ]; then
+    install -m 644 "$backup" "$NGINX_CONF_DST"
+    activate_nginx_config || warn "恢复后的 Nginx 配置也未能重载，请立即检查 $NGINX_CONF_DST"
+  else
+    rm -f "$NGINX_CONF_DST"
+  fi
+  rm -f "$rendered"
+  [ -z "$backup" ] || rm -f "$backup"
+  die "Nginx 配置校验或重载失败，已保留上一份可用配置"
+}
 
 # ---------------- 依赖检测 ----------------
 check_deps(){
@@ -216,10 +283,11 @@ NODE
 
 # ---------------- 部署后端 ----------------
 deploy_backend(){
-  info "部署后端（build + pm2）"
+  info "部署后端（build + migrate + pm2）"
   cd "$SERVER_DIR"
   npm ci
   npm run build
+  npm run migrate
   cleanup_legacy_backend_pm2
   if pm2 describe "$PM2_NAME" >/dev/null 2>&1; then
     pm2 reload "$PM2_NAME" --update-env
@@ -264,7 +332,6 @@ deploy_frontend(){
 # ---------------- 配置 Nginx + 证书 ----------------
 deploy_nginx(){
   info "配置 Nginx"
-  [ -f "$NGINX_CONF_SRC" ] || die "找不到 Nginx 模板：$NGINX_CONF_SRC"
   [ "$(id -u)" -eq 0 ] || warn "非 root：写入 $NGINX_CONF_DST / 操作证书可能需要 sudo 重跑"
 
   if [ ! -f "/etc/letsencrypt/live/${DOMAIN}/fullchain.pem" ]; then
@@ -283,7 +350,7 @@ server {
     location /          { try_files \$uri \$uri/ /index.html; }
 }
 EOF
-    nginx -t && { nginx -s reload 2>/dev/null || systemctl reload nginx; }
+    activate_nginx_config || die "临时 Nginx 配置未能生效，无法签发证书"
     certbot --nginx -d "$DOMAIN" --non-interactive --agree-tos --redirect -m "$CERTBOT_EMAIL" \
       || die "certbot 签发失败（检查 80 端口可达、域名已备案、DNS 已生效）"
     ok "证书已签发"
@@ -291,14 +358,7 @@ EOF
     ok "已存在证书：/etc/letsencrypt/live/${DOMAIN}/"
   fi
 
-  # 套用完整配置（把模板里的 root 替换成实际 DIST_TARGET）
-  sed "s#/var/www/${DOMAIN}/dist#${DIST_TARGET}#g" "$NGINX_CONF_SRC" > "$NGINX_CONF_DST"
-  if nginx -t; then
-    nginx -s reload 2>/dev/null || systemctl reload nginx
-    ok "Nginx 配置已生效（$NGINX_CONF_DST）"
-  else
-    die "nginx -t 校验失败，请检查 $NGINX_CONF_DST"
-  fi
+  install_rendered_nginx_config
 }
 
 # ---------------- 健康自检 ----------------
@@ -309,6 +369,8 @@ run_health(){
 }
 
 # ---------------- 主流程 ----------------
+validate_config
+
 case "${1:-all}" in
   init-env)  init_env ;;
   check)     check_deps; check_dns; check_envfile; run_health || warn "健康自检未全通过（服务可能尚未部署）" ;;

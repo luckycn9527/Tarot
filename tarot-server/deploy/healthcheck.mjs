@@ -20,7 +20,8 @@ const bad = (m) => { console.log(`  \x1b[31m✘\x1b[0m ${m}`); fail++; };
 function fetchUrl(url) {
   return new Promise((resolve) => {
     const lib = url.startsWith('https') ? https : http;
-    const req = lib.get(url, { timeout: 8000, rejectUnauthorized: false }, (r) => {
+    const requestOptions = { timeout: 8000 };
+    const req = lib.get(url, requestOptions, (r) => {
       let b = '';
       r.on('data', (c) => (b += c));
       r.on('end', () => resolve({ status: r.statusCode, body: b }));

@@ -87,8 +87,8 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <div class="relative z-10 flex items-center justify-center min-h-[calc(100vh-56px)] px-4 py-12">
-    <div class="login-card animate-fade-in-up">
+  <div class="relative z-10 flex items-center justify-center min-h-[calc(100dvh-56px)] px-4 py-12">
+    <div class="login-card">
       <div class="text-center mb-8">
         <h1 class="text-2xl font-bold font-serif text-white mb-2">{{ t('pages.login.heroTitle') }}</h1>
         <p class="text-gray-400 text-sm">{{ t('pages.login.heroSub') }}</p>
@@ -98,24 +98,39 @@ onBeforeUnmount(() => {
         {{ loginHint }}
       </div>
 
-      <form @submit.prevent="handleLogin">
+      <form :aria-busy="submitting" @submit.prevent="handleLogin">
         <div class="space-y-4">
           <!-- Username or Email -->
           <div>
+            <label for="login-identifier" class="login-field-label">{{ t('pages.login.identifierLabel') }}</label>
             <div class="relative">
               <UserRound class="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-500" :size="16" />
-              <input v-model="identifier" type="text" autocomplete="username" :placeholder="t('pages.login.identifierPh')" class="login-input pl-11">
+              <input
+                id="login-identifier"
+                v-model="identifier"
+                type="text"
+                autocomplete="username"
+                :placeholder="t('pages.login.identifierPh')"
+                :aria-invalid="Boolean(errors.identifier)"
+                :aria-describedby="errors.identifier ? 'login-identifier-error' : undefined"
+                class="login-input pl-11"
+              >
             </div>
-            <p v-if="errors.identifier" class="text-red-400 text-xs mt-1 ml-1">{{ errors.identifier }}</p>
+            <p v-if="errors.identifier" id="login-identifier-error" role="alert" class="text-red-300 text-xs mt-1 ml-1">{{ errors.identifier }}</p>
           </div>
           <!-- Password -->
           <div>
+            <label for="login-password" class="login-field-label">{{ t('pages.login.passwordLabel') }}</label>
             <div class="relative">
               <Lock class="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-500" :size="16" />
               <input
+                id="login-password"
                 v-model="password"
                 :type="showPassword ? 'text' : 'password'"
+                autocomplete="current-password"
                 :placeholder="t('pages.login.passwordPh')"
+                :aria-invalid="Boolean(errors.password)"
+                :aria-describedby="errors.password ? 'login-password-error' : undefined"
                 class="login-input pl-11 pr-11"
               >
               <button
@@ -128,11 +143,11 @@ onBeforeUnmount(() => {
                 <EyeOff v-else class="w-4 h-4" :size="16" aria-hidden="true" />
               </button>
             </div>
-            <p v-if="errors.password" class="text-red-400 text-xs mt-1 ml-1">{{ errors.password }}</p>
+            <p v-if="errors.password" id="login-password-error" role="alert" class="text-red-300 text-xs mt-1 ml-1">{{ errors.password }}</p>
           </div>
         </div>
 
-        <p v-if="errors.general" class="text-red-400 text-xs mt-3 text-center">{{ errors.general }}</p>
+        <p v-if="errors.general" role="alert" aria-live="assertive" class="text-red-300 text-xs mt-3 text-center">{{ errors.general }}</p>
 
         <div class="flex items-center justify-between mt-4">
           <label class="flex items-center gap-2 cursor-pointer">
@@ -144,7 +159,7 @@ onBeforeUnmount(() => {
           </RouterLink>
         </div>
 
-        <button type="submit" :disabled="submitting" class="w-full mt-6 py-3 rounded-xl cta-button text-white font-semibold hover:shadow-lg hover:shadow-gold-500/30 transition-all disabled:opacity-50">
+        <button type="submit" :disabled="submitting" :aria-busy="submitting" class="w-full mt-6 py-3 rounded-xl cta-button text-white font-semibold hover:shadow-lg hover:shadow-gold-500/30 transition-all disabled:opacity-50">
           {{ submitting ? t('pages.login.submitting') : t('pages.login.submit') }}
         </button>
       </form>
@@ -176,7 +191,7 @@ onBeforeUnmount(() => {
 
   <!-- Toast -->
   <Transition name="toast">
-    <div v-if="showToast" class="fixed top-20 left-1/2 -translate-x-1/2 z-50 px-6 py-3 rounded-xl bg-gold-600/90 backdrop-blur-sm text-abyss text-sm font-medium shadow-lg shadow-gold-500/20">
+    <div v-if="showToast" role="status" aria-live="polite" class="fixed top-20 left-1/2 -translate-x-1/2 z-50 px-6 py-3 rounded-xl bg-gold-600/90 backdrop-blur-sm text-abyss text-sm font-medium shadow-lg shadow-gold-500/20">
       {{ toastMessage }}
     </div>
   </Transition>

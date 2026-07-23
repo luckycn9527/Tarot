@@ -403,9 +403,15 @@ export async function readerReading(
     }
   }
 
-  // Use client-provided cards if valid, otherwise draw randomly
+  // Use client-provided cards only when the complete spread is supplied.
+  // Reject partial or mismatched input instead of silently ignoring the user's selection.
   let cards: { card: TarotCard; isReversed: boolean }[];
-  if (clientCardIds && clientOrientations && clientCardIds.length === spread.cardCount && clientOrientations.length === spread.cardCount) {
+  if (clientCardIds || clientOrientations) {
+    if (!clientCardIds || !clientOrientations
+      || clientCardIds.length !== spread.cardCount
+      || clientOrientations.length !== spread.cardCount) {
+      throw new Error(`该牌阵需要提交 ${spread.cardCount} 张牌及对应牌面方向`);
+    }
     cards = clientCardIds.map((id, i) => {
       const card = tarotCards.find(c => c.id === id);
       if (!card) throw new Error('无效的卡牌ID');

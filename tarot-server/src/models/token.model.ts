@@ -1,14 +1,21 @@
 import { createHash } from 'crypto';
 import { pool } from '../config/database.js';
 import type { RowDataPacket, ResultSetHeader } from 'mysql2';
+import type { PoolConnection } from 'mysql2/promise';
 
 function hashToken(token: string): string {
   return createHash('sha256').update(token).digest('hex');
 }
 
-export async function saveRefreshToken(userId: number, token: string, expiresAt: Date): Promise<void> {
+export async function saveRefreshToken(
+  userId: number,
+  token: string,
+  expiresAt: Date,
+  connection?: PoolConnection,
+): Promise<void> {
   const tokenHash = hashToken(token);
-  await pool.execute(
+  const db = connection ?? pool;
+  await db.execute(
     'INSERT INTO refresh_tokens (user_id, token, expires_at) VALUES (?, ?, ?)',
     [userId, tokenHash, expiresAt]
   );

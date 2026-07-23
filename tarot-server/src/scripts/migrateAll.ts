@@ -20,6 +20,18 @@ const USER = process.env.DB_USER || 'root';
 const PASS = process.env.DB_PASSWORD || '';
 const DB = process.env.DB_NAME || 'tarot_qa';
 
+// 005b is a one-off recovery script for databases where 005 stopped midway.
+// It repeats DDL from 005 and must never be part of the normal ordered run.
+const MANUAL_RECOVERY_MIGRATIONS = new Set(['005b_resume_after_partial.sql']);
+
+function prepareMigrationSql(sql: string): string {
+  // migrateAll 已创建并选中 DB_NAME。旧迁移里写死的 CREATE DATABASE/USE tarot_qa
+  // 会让测试库或自定义库名被误切回生产库，因此执行前统一移除。
+  return sql
+    .replace(/^[ \t]*CREATE\s+DATABASE\b[^;]*;[ \t]*\r?$/gim, '')
+    .replace(/^[ \t]*USE\s+[^;]+;[ \t]*\r?$/gim, '');
+}
+
 const baseConfig = {
   host: HOST,
   port: PORT,
@@ -57,7 +69,7 @@ async function migrateAll() {
 
     const migrationsDir = join(__dirname, '../../migrations');
     const files = readdirSync(migrationsDir)
-      .filter((f) => f.endsWith('.sql'))
+      .filter((f) => f.endsWith('.sql') && !MANUAL_RECOVERY_MIGRATIONS.has(f))
       .sort();
 
     if (files.length === 0) {
@@ -79,7 +91,7 @@ async function migrateAll() {
         continue;
       }
 
-      const sql = readFileSync(join(migrationsDir, file), 'utf-8');
+      const sql = prepareMigrationSql(readFileSync(join(migrationsDir, file), 'utf-8'));
       console.log(`[·] Executing: ${file}`);
       // DDL migration statements may commit implicitly in MySQL, so a failed
       // migration must stop here and must never be marked as completed.

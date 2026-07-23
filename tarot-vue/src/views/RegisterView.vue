@@ -14,6 +14,7 @@ import { getRegisterFormSchema, formatZodFieldErrors } from '@/schemas/auth'
 import { getGoogleClientId, renderGoogleSignInButton, cancelGoogleOneTap } from '@/composables/useGoogleSignIn'
 import api from '../services/api'
 import { safeRedirect } from '@/utils/safeRedirect'
+import { isAxiosError } from 'axios'
 
 const route = useRoute()
 const router = useRouter()
@@ -101,8 +102,9 @@ async function sendCode() {
     } else {
       toast.error(res.data.message || '发送失败')
     }
-  } catch (err: any) {
-    toast.error(err.response?.data?.message || '发送失败，请稍后重试')
+  } catch (err: unknown) {
+    const message = isAxiosError<{ message?: string }>(err) ? err.response?.data?.message : undefined
+    toast.error(message || '发送失败，请稍后重试')
   } finally {
     sendCodeLoading.value = false
   }
@@ -144,68 +146,115 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <div class="relative z-10 flex items-center justify-center min-h-[calc(100vh-56px)] px-4 py-12">
-    <div class="login-card animate-fade-in-up">
+  <div class="relative z-10 flex items-center justify-center min-h-[calc(100dvh-56px)] px-4 py-12">
+    <div class="login-card">
       <div class="text-center mb-8">
         <h1 class="text-2xl font-bold font-serif text-white mb-2">{{ t('pages.register.heroTitle') }}</h1>
         <p class="text-gray-400 text-sm">{{ t('pages.register.heroSub') }}</p>
       </div>
 
-      <form @submit.prevent="handleRegister">
+      <form :aria-busy="submitting" @submit.prevent="handleRegister">
         <div class="space-y-4">
           <!-- Nickname -->
           <div>
+            <label for="register-nickname" class="login-field-label">{{ t('pages.register.nicknameLabel') }}</label>
             <div class="relative">
               <UserRound class="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-500" :size="16" />
-              <input v-model="nickname" type="text" :placeholder="t('pages.register.nicknamePh')" class="login-input pl-11">
+              <input
+                id="register-nickname"
+                v-model="nickname"
+                type="text"
+                autocomplete="nickname"
+                :placeholder="t('pages.register.nicknamePh')"
+                :aria-invalid="Boolean(errors.nickname)"
+                :aria-describedby="errors.nickname ? 'register-nickname-error' : undefined"
+                class="login-input pl-11"
+              >
             </div>
-            <p v-if="errors.nickname" class="text-red-400 text-xs mt-1 ml-1">{{ errors.nickname }}</p>
+            <p v-if="errors.nickname" id="register-nickname-error" role="alert" class="text-red-300 text-xs mt-1 ml-1">{{ errors.nickname }}</p>
           </div>
           <!-- Username (optional) -->
           <div>
+            <label for="register-username" class="login-field-label">{{ t('pages.register.usernameLabel') }}</label>
             <div class="relative">
               <AtSign class="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-500" :size="16" />
-              <input v-model="username" type="text" autocomplete="username" :placeholder="t('pages.register.usernamePh')" class="login-input pl-11">
+              <input
+                id="register-username"
+                v-model="username"
+                type="text"
+                autocomplete="username"
+                :placeholder="t('pages.register.usernamePh')"
+                :aria-invalid="Boolean(errors.username)"
+                :aria-describedby="errors.username ? 'register-username-error' : undefined"
+                class="login-input pl-11"
+              >
             </div>
-            <p v-if="errors.username" class="text-red-400 text-xs mt-1 ml-1">{{ errors.username }}</p>
+            <p v-if="errors.username" id="register-username-error" role="alert" class="text-red-300 text-xs mt-1 ml-1">{{ errors.username }}</p>
           </div>
           <!-- Email -->
           <div>
+            <label for="register-email" class="login-field-label">{{ t('pages.register.emailLabel') }}</label>
             <div class="relative">
               <Mail class="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-500" :size="16" />
-              <input v-model="email" type="email" :placeholder="t('pages.register.emailPh')" class="login-input pl-11">
+              <input
+                id="register-email"
+                v-model="email"
+                type="email"
+                autocomplete="email"
+                :placeholder="t('pages.register.emailPh')"
+                :aria-invalid="Boolean(errors.email)"
+                :aria-describedby="errors.email ? 'register-email-error' : undefined"
+                class="login-input pl-11"
+              >
             </div>
-            <p v-if="errors.email" class="text-red-400 text-xs mt-1 ml-1">{{ errors.email }}</p>
+            <p v-if="errors.email" id="register-email-error" role="alert" class="text-red-300 text-xs mt-1 ml-1">{{ errors.email }}</p>
           </div>
           <!-- Email Verification Code -->
           <div>
+            <label for="register-email-code" class="login-field-label">{{ t('pages.register.emailCodeLabel') }}</label>
             <div class="flex gap-2">
-              <div class="relative flex-1">
+              <div class="relative min-w-0 flex-1">
                 <Lock class="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-500" :size="16" />
                 <input
+                  id="register-email-code"
                   v-model="emailCode"
                   type="text"
                   maxlength="6"
+                  inputmode="numeric"
+                  autocomplete="one-time-code"
                   :placeholder="t('pages.register.emailCodePh')"
+                  :aria-invalid="Boolean(errors.emailCode)"
+                  :aria-describedby="errors.emailCode ? 'register-email-code-error' : undefined"
                   class="login-input pl-11 w-full"
                 >
               </div>
               <button
                 type="button"
                 :disabled="countdown > 0 || sendCodeLoading"
-                class="px-4 py-2 rounded-xl bg-gold-600/90 text-abyss text-sm font-semibold whitespace-nowrap hover:bg-gold-500 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                :aria-busy="sendCodeLoading"
+                class="shrink-0 px-3 sm:px-4 py-2 rounded-xl bg-gold-600/90 text-abyss text-sm font-semibold whitespace-nowrap hover:bg-gold-500 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                 @click="sendCode"
               >
                 {{ countdown > 0 ? `${countdown}s` : (sendCodeLoading ? t('pages.register.sending') : t('pages.register.sendCode')) }}
               </button>
             </div>
-            <p v-if="errors.emailCode" class="text-red-400 text-xs mt-1 ml-1">{{ errors.emailCode }}</p>
+            <p v-if="errors.emailCode" id="register-email-code-error" role="alert" class="text-red-300 text-xs mt-1 ml-1">{{ errors.emailCode }}</p>
           </div>
           <!-- Password -->
           <div>
+            <label for="register-password" class="login-field-label">{{ t('pages.register.passwordLabel') }}</label>
             <div class="relative">
               <Lock class="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-500" :size="16" />
-              <input v-model="password" :type="showPassword ? 'text' : 'password'" :placeholder="t('pages.register.passwordPh')" class="login-input pl-11 pr-11">
+              <input
+                id="register-password"
+                v-model="password"
+                :type="showPassword ? 'text' : 'password'"
+                autocomplete="new-password"
+                :placeholder="t('pages.register.passwordPh')"
+                :aria-invalid="Boolean(errors.password)"
+                :aria-describedby="errors.password ? 'register-password-error' : undefined"
+                class="login-input pl-11 pr-11"
+              >
               <button
                 type="button"
                 class="absolute right-3 top-1/2 -translate-y-1/2 rounded-md p-1 text-gray-500 hover:text-gold-300/90 transition-colors"
@@ -216,13 +265,23 @@ onBeforeUnmount(() => {
                 <EyeOff v-else class="w-4 h-4" :size="16" aria-hidden="true" />
               </button>
             </div>
-            <p v-if="errors.password" class="text-red-400 text-xs mt-1 ml-1">{{ errors.password }}</p>
+            <p v-if="errors.password" id="register-password-error" role="alert" class="text-red-300 text-xs mt-1 ml-1">{{ errors.password }}</p>
           </div>
           <!-- Confirm Password -->
           <div>
+            <label for="register-confirm-password" class="login-field-label">{{ t('pages.register.confirmPasswordLabel') }}</label>
             <div class="relative">
               <Lock class="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-500" :size="16" />
-              <input v-model="confirmPassword" :type="showConfirmPassword ? 'text' : 'password'" :placeholder="t('pages.register.confirmPh')" class="login-input pl-11 pr-11">
+              <input
+                id="register-confirm-password"
+                v-model="confirmPassword"
+                :type="showConfirmPassword ? 'text' : 'password'"
+                autocomplete="new-password"
+                :placeholder="t('pages.register.confirmPh')"
+                :aria-invalid="Boolean(errors.confirmPassword)"
+                :aria-describedby="errors.confirmPassword ? 'register-confirm-password-error' : undefined"
+                class="login-input pl-11 pr-11"
+              >
               <button
                 type="button"
                 class="absolute right-3 top-1/2 -translate-y-1/2 rounded-md p-1 text-gray-500 hover:text-gold-300/90 transition-colors"
@@ -233,13 +292,13 @@ onBeforeUnmount(() => {
                 <EyeOff v-else class="w-4 h-4" :size="16" aria-hidden="true" />
               </button>
             </div>
-            <p v-if="errors.confirmPassword" class="text-red-400 text-xs mt-1 ml-1">{{ errors.confirmPassword }}</p>
+            <p v-if="errors.confirmPassword" id="register-confirm-password-error" role="alert" class="text-red-300 text-xs mt-1 ml-1">{{ errors.confirmPassword }}</p>
           </div>
         </div>
 
-        <p v-if="errors.general" class="text-red-400 text-xs mt-3 text-center">{{ errors.general }}</p>
+        <p v-if="errors.general" role="alert" aria-live="assertive" class="text-red-300 text-xs mt-3 text-center">{{ errors.general }}</p>
 
-        <button type="submit" :disabled="submitting" class="w-full mt-6 py-3 rounded-xl cta-button text-white font-semibold hover:shadow-lg hover:shadow-gold-500/30 transition-all disabled:opacity-50">
+        <button type="submit" :disabled="submitting" :aria-busy="submitting" class="w-full mt-6 py-3 rounded-xl cta-button text-white font-semibold hover:shadow-lg hover:shadow-gold-500/30 transition-all disabled:opacity-50">
           {{ submitting ? t('pages.register.submitting') : t('pages.register.submit') }}
         </button>
       </form>
@@ -271,7 +330,7 @@ onBeforeUnmount(() => {
 
   <!-- Toast -->
   <Transition name="toast">
-    <div v-if="showToast" class="fixed top-20 left-1/2 -translate-x-1/2 z-50 px-6 py-3 rounded-xl bg-gold-600/90 backdrop-blur-sm text-abyss text-sm font-medium shadow-lg shadow-gold-500/20">
+    <div v-if="showToast" role="status" aria-live="polite" class="fixed top-20 left-1/2 -translate-x-1/2 z-50 px-6 py-3 rounded-xl bg-gold-600/90 backdrop-blur-sm text-abyss text-sm font-medium shadow-lg shadow-gold-500/20">
       {{ toastMessage }}
     </div>
   </Transition>

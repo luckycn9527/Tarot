@@ -1,4 +1,5 @@
--- 005b: 当 005 在 tombstones 外键处失败后，从本文件续跑（勿在未执行 005 前半段时单独执行）
+-- 005b: 当 005 在 tombstones 外键处失败后，从本文件手动续跑（勿在未执行 005 前半段时单独执行）
+-- migrate:all 会主动排除此文件，因为它会重复执行 005 中的 DDL。
 USE tarot_qa;
 
 SET FOREIGN_KEY_CHECKS = 0;

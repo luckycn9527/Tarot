@@ -74,24 +74,83 @@ export async function findOrder(input: {
   )) ?? null;
 }
 
-export async function recordWebhookEvent(
-  providerEventId: string,
-  eventType: string,
-): Promise<boolean> {
-  const [result] = await pool.execute<ResultSetHeader>(
-    `INSERT IGNORE INTO payment_events (provider_event_id, event_type, payload_json)
-     VALUES (?, ?, ?)`,
-    [providerEventId, eventType, '{}'],
-  );
-  return result.affectedRows === 1;
-}
+/**
+ * Atomically claim and apply a provider event. The primary key on
+ * payment_events is the concurrency gate: only the connection that inserts the
+ * event may mutate the order and membership state.
+ */
+export async function applyWebhookEvent(input: {
+  providerEventId: string;
+  eventType: string;
+  payloadJson: string;
+  orderId: string;
+  userId: number;
+  status: string;
+  checkoutId?: string | null;
+  subscriptionId?: string | null;
+  customerId?: string | null;
+  currentPeriodEndAt?: Date | null;
+  membershipAction: 'activate' | 'expire' | 'none';
+}): Promise<boolean> {
+  const connection = await pool.getConnection();
+  try {
+    await connection.beginTransaction();
+    const [claim] = await connection.execute<ResultSetHeader>(
+      `INSERT IGNORE INTO payment_events (provider_event_id, event_type, payload_json)
+       VALUES (?, ?, ?)`,
+      [input.providerEventId, input.eventType, input.payloadJson],
+    );
+    if (claim.affectedRows !== 1) {
+      await connection.rollback();
+      return false;
+    }
 
-export async function hasWebhookEvent(providerEventId: string): Promise<boolean> {
-  const [rows] = await pool.execute<RowDataPacket[]>(
-    'SELECT 1 FROM payment_events WHERE provider_event_id = ? LIMIT 1',
-    [providerEventId],
-  );
-  return rows.length > 0;
+    await connection.execute(
+      `UPDATE payment_orders
+       SET status = ?,
+           provider_checkout_id = COALESCE(?, provider_checkout_id),
+           provider_subscription_id = COALESCE(?, provider_subscription_id),
+           provider_customer_id = COALESCE(?, provider_customer_id),
+           current_period_end_at = COALESCE(?, current_period_end_at)
+       WHERE id = ?`,
+      [
+        input.status,
+        input.checkoutId ?? null,
+        input.subscriptionId ?? null,
+        input.customerId ?? null,
+        input.currentPeriodEndAt ?? null,
+        input.orderId,
+      ],
+    );
+
+    if (input.membershipAction === 'activate' && input.currentPeriodEndAt) {
+      await connection.execute(
+        `UPDATE users
+         SET membership = 'vip',
+             membership_expires_at = GREATEST(COALESCE(membership_expires_at, NOW()), ?)
+         WHERE id = ?`,
+        [input.currentPeriodEndAt, input.userId],
+      );
+    } else if (input.membershipAction === 'expire') {
+      await connection.execute(
+        `UPDATE users
+         SET membership = 'free'
+         WHERE id = ?
+           AND membership = 'vip'
+           AND membership_expires_at IS NOT NULL
+           AND membership_expires_at <= NOW()`,
+        [input.userId],
+      );
+    }
+
+    await connection.commit();
+    return true;
+  } catch (error) {
+    await connection.rollback();
+    throw error;
+  } finally {
+    connection.release();
+  }
 }
 
 export async function findSubscriptionForUser(userId: number): Promise<PaymentOrder | null> {
@@ -131,27 +190,5 @@ export async function updateSubscription(input: {
       input.currentPeriodEndAt ?? null,
       input.orderId,
     ],
-  );
-}
-
-export async function activateVip(userId: number, periodEnd: Date): Promise<void> {
-  await pool.execute(
-    `UPDATE users
-     SET membership = 'vip',
-         membership_expires_at = GREATEST(COALESCE(membership_expires_at, NOW()), ?)
-     WHERE id = ?`,
-    [periodEnd, userId],
-  );
-}
-
-export async function clearVipIfExpired(userId: number): Promise<void> {
-  await pool.execute(
-    `UPDATE users
-     SET membership = 'free'
-     WHERE id = ?
-       AND membership = 'vip'
-       AND membership_expires_at IS NOT NULL
-       AND membership_expires_at <= NOW()`,
-    [userId],
   );
 }
