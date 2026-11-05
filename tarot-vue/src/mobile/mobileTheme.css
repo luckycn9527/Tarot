@@ -1,0 +1,38 @@
+/* One palette for every native App surface; page styles only consume these tokens. */
+.mobile-shell {
+  --m-bg:#151019;
+  --m-panel:#211b29;
+  --m-panel-raised:#2a2235;
+  --m-input-bg:#1b1522;
+  --m-nav-bg:#17111e;
+  --m-text:#f1ecf4;
+  --m-muted:#b6a8c6;
+  --m-accent:#cbb0ed;
+  --m-accent-ink:#291d35;
+  --m-accent-soft:#cbb0ed12;
+  --m-line:#cbb0ed2b;
+  --m-line-strong:#cbb0ed45;
+  --m-error:#efb9c7;
+  --m-error-bg:#38232f;
+  --m-rating:#d8bd83;
+  --m-overlay:#0a0711cc;
+  --m-shadow:#0005;
+  --m-deep-panel:var(--m-panel);
+  --m-card-surface:var(--m-panel);
+  --m-gold:var(--m-accent);
+  --m-header-height:76px;
+  --m-nav-height:76px;
+  --m-heading-font:"Songti SC","Noto Serif CJK SC","STSong",serif;
+  --m-title-font:var(--m-heading-font);
+  --m-body-font:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif;
+  --m-button-height:48px;
+  --m-tool-height:44px;
+  --m-control-radius:12px;
+  --m-modal-radius:24px;
+  background:var(--m-bg);
+  color:var(--m-text);
+  font-family:var(--m-body-font);
+}
+.mobile-shell :is(button,a,input,textarea,select,summary):focus-visible { outline-color:var(--m-accent); }
+.mobile-close { width:var(--m-tool-height); height:var(--m-tool-height); padding:10px; border-radius:var(--m-control-radius); color:var(--m-text); background:var(--m-panel-raised); }
+.mobile-back,.mobile-redraw { color:var(--m-muted); }

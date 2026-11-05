@@ -18,10 +18,11 @@ import { useCardBack } from '../../composables/useCardBack'
 import { useStripDeckTilt } from '../../composables/usePointerTilt'
 import { useAuth } from '../../composables/useAuth'
 import { publicAssetUrl } from '../../utils/publicAssetUrl'
+import { localizedReader, localizedSpread, normalizeLocale } from '../../utils/readerLocalization'
 
 const route = useRoute()
 const router = useRouter()
-const { t } = useI18n()
+const { t, locale } = useI18n()
 const toast = useToast()
 const { deck, shuffle } = useShuffle()
 const { cardBackUrl, loadCardBack } = useCardBack()
@@ -44,11 +45,20 @@ function onStripPointerMove(e: MouseEvent) {
 }
 
 const readerId = route.params.readerId as string
-const reader = computed(() => getReaderById(readerId))
+const reader = computed(() => {
+  const value = getReaderById(readerId)
+  return value ? localizedReader(value, locale.value) : undefined
+})
 const question = (route.query.q as string) || ''
-const category = (route.query.cat as string) || '综合'
+const category = (route.query.cat as string) || 'general'
 const spreadType = (route.query.spread as string) || 'single'
-const spread = computed(() => getReaderSpreadById(spreadType))
+const spread = computed(() => {
+  const value = getReaderSpreadById(spreadType)
+  return value ? localizedSpread(value, locale.value) : undefined
+})
+const readingLocale = computed(() => normalizeLocale(locale.value))
+const isEnglish = computed(() => readingLocale.value === 'en-US')
+const loaderMessages = computed(() => [0, 1, 2, 3].map(index => t(`pages.reader.loadingMessages.${index}`, { name: reader.value?.name ?? '' })))
 
 watch(
   [reader, spread],
@@ -135,7 +145,7 @@ async function startReading() {
     const cardIds = selectedCards.value.map(sc => sc.card.id)
     const orientations = selectedCards.value.map(sc => sc.isReversed ? 'reversed' : 'upright')
 
-    const data = await generateReaderReading({ readerId, spreadType, question, category, cardIds, orientations })
+    const data = await generateReaderReading({ readerId, spreadType, question, category, cardIds, orientations, locale: readingLocale.value })
     result.value = data
     cards.value = data.cards
     clearInterval(progressTimer)
@@ -182,12 +192,12 @@ async function startReading() {
     }
     const serverMsg = axiosErr.response?.data?.message
     if (axiosErr.response?.status === 403) {
-      toast.error(serverMsg || '该内容仅限VIP会员使用')
+      toast.error(isEnglish.value ? t('pages.reader.errors.vipOnly') : (serverMsg || t('pages.reader.errors.vipOnly')))
       router.push('/membership')
     } else if (axiosErr.response?.status === 429) {
-      toast.error('今日免费次数已用完')
+      toast.error(t('pages.reader.errors.quotaUsed'))
     } else {
-      toast.error(serverMsg || axiosErr.message || '占卜失败，请稍后重试')
+      toast.error(isEnglish.value ? t('pages.reader.errors.readingFailed') : (serverMsg || axiosErr.message || t('pages.reader.errors.readingFailed')))
     }
   }
 }
@@ -195,8 +205,8 @@ async function startReading() {
 async function submitFollowup() {
   const q = followupInput.value.trim()
   if (followupLoading.value) return
-  if (q.length < 2) { toast.error('请输入至少 2 个字的追问'); return }
-  if (q.length > 200) { toast.error('追问不能超过 200 字'); return }
+  if (q.length < 2) { toast.error(t('pages.reader.errors.followupMin')); return }
+  if (q.length > 200) { toast.error(t('pages.reader.errors.followupMax')); return }
   if (!result.value) return
 
   followupLoading.value = true
@@ -210,17 +220,18 @@ async function submitFollowup() {
       readingId: result.value.id,
       question: q,
       priorTurns: followups.value.map((f) => ({ question: f.question, answer: f.answer })),
+      locale: readingLocale.value,
     })
     followups.value.push({ question: q, answer: data.answer })
   } catch (err: unknown) {
     const axiosErr = err as { response?: { status: number; data?: { message?: string } }; message?: string }
     const serverMsg = axiosErr.response?.data?.message
     if (axiosErr.response?.status === 403) {
-      toast.error('该塔罗师仅限VIP会员使用')
+      toast.error(t('pages.reader.errors.readerVipOnly'))
     } else if (axiosErr.response?.status === 429) {
-      toast.error('今日免费次数已用完')
+      toast.error(t('pages.reader.errors.quotaUsed'))
     } else {
-      toast.error(serverMsg || axiosErr.message || '追问失败，请稍后重试')
+      toast.error(isEnglish.value ? t('pages.reader.errors.followupFailed') : (serverMsg || axiosErr.message || t('pages.reader.errors.followupFailed')))
     }
     followupInput.value = q // 失败时回填，方便重试
   } finally {
@@ -233,6 +244,14 @@ async function submitFollowup() {
 
 function goRestart() { router.push({ name: 'reader-ask', params: { readerId } }) }
 function goHome() { router.push('/tarot') }
+
+function cardName(card: { name: string; nameEn: string }) {
+  return isEnglish.value ? card.nameEn : card.name
+}
+
+function cardPosition(card: ReaderReadingCard, index: number) {
+  return spread.value?.positions[index] || card.position
+}
 
 </script>
 
@@ -256,10 +275,10 @@ function goHome() { router.push('/tarot') }
             <span class="text-gold-500/30">·</span>
             <span>{{ spread.name }}</span>
           </div>
-          <h2 class="text-2xl font-serif text-gold-200 mb-3">选择你的塔罗牌</h2>
+          <h2 class="text-2xl font-serif text-gold-200 mb-3">{{ t('pages.reader.chooseCards') }}</h2>
           <p class="text-gray-500 text-base">
-            <template v-if="allSelected">已选好所有牌，点击下方按钮开始解读</template>
-            <template v-else>请从牌堆中选择 <span class="text-gold-400 font-medium">{{ cardCount }}</span> 张牌（已选 {{ selectedIndices.length }}/{{ cardCount }}）</template>
+            <template v-if="allSelected">{{ t('pages.reader.allCardsSelected') }}</template>
+            <template v-else>{{ t('pages.reader.chooseCardCount', { count: cardCount, selected: selectedIndices.length }) }}</template>
           </p>
         </div>
 
@@ -305,18 +324,18 @@ function goHome() { router.push('/tarot') }
               </div>
             </div>
           </div>
-          <p class="text-center text-gray-700 text-xs mt-2">← 滑动浏览牌堆 →</p>
+          <p class="text-center text-gray-700 text-xs mt-2">{{ t('pages.reader.browseDeck') }}</p>
         </div>
 
         <!-- Spread Positions -->
         <div class="mb-10 animate-fade-in-up" style="animation-delay: 0.15s;">
-          <p class="text-center text-gray-600 text-sm mb-5">牌阵位置</p>
+          <p class="text-center text-gray-600 text-sm mb-5">{{ t('pages.reader.spreadPositions') }}</p>
           <div class="flex flex-wrap justify-center gap-5">
             <div v-for="(position, posIndex) in spread.positions" :key="posIndex" class="flex flex-col items-center">
               <div class="position-slot" :class="selectedIndices.length > posIndex ? 'position-filled' : 'position-empty'">
                 <template v-if="selectedIndices.length > posIndex && selectedCards[posIndex]">
                   <div class="w-full h-full rounded-lg overflow-hidden">
-                    <img :src="getCardImageUrl(selectedCards[posIndex].card.nameEn)" :alt="selectedCards[posIndex].card.name" class="w-full h-full object-cover" :class="selectedCards[posIndex].isReversed ? 'rotate-180' : ''" />
+                    <img :src="getCardImageUrl(selectedCards[posIndex].card.nameEn)" :alt="isEnglish ? selectedCards[posIndex].card.nameEn : selectedCards[posIndex].card.name" class="w-full h-full object-cover" :class="selectedCards[posIndex].isReversed ? 'rotate-180' : ''" />
                   </div>
                 </template>
                 <template v-else>
@@ -325,8 +344,8 @@ function goHome() { router.push('/tarot') }
               </div>
               <p class="text-gray-500 text-xs mt-2.5 text-center max-w-[100px]">{{ position }}</p>
               <p v-if="selectedIndices.length > posIndex && selectedCards[posIndex]" class="text-gold-300 text-xs mt-1 text-center max-w-[100px] font-medium">
-                {{ selectedCards[posIndex].card.name }}
-                <span class="text-gray-600">{{ selectedCards[posIndex].isReversed ? '逆位' : '正位' }}</span>
+                {{ isEnglish ? selectedCards[posIndex].card.nameEn : selectedCards[posIndex].card.name }}
+                <span class="text-gray-600">{{ selectedCards[posIndex].isReversed ? t('pages.reader.reversed') : t('pages.reader.upright') }}</span>
               </p>
             </div>
           </div>
@@ -335,10 +354,10 @@ function goHome() { router.push('/tarot') }
         <!-- Action buttons -->
         <div class="text-center space-y-4 animate-fade-in-up" style="animation-delay: 0.25s;">
           <button v-if="allSelected" class="px-12 py-4 rounded-2xl cta-button text-white text-lg font-medium hover:shadow-xl hover:shadow-gold-500/15 transition-all animate-fade-in-up" @click="startReading">
-            请{{ reader.name }}解读
+            {{ t('pages.reader.askReaderToRead', { name: reader.name }) }}
           </button>
           <div v-if="selectedIndices.length > 0 && !allSelected">
-            <button class="px-8 py-2.5 rounded-full bg-white/4 border border-gold-500/10 text-gray-400 text-sm hover:bg-gold-500/5 transition-all" @click="resetSelection">重新选牌</button>
+            <button class="px-8 py-2.5 rounded-full bg-white/4 border border-gold-500/10 text-gray-400 text-sm hover:bg-gold-500/5 transition-all" @click="resetSelection">{{ t('pages.reader.resetCards') }}</button>
           </div>
         </div>
       </template>
@@ -348,17 +367,17 @@ function goHome() { router.push('/tarot') }
         <div class="text-center py-16 animate-fade-in-up">
           <RitualLoader
             :progress="Math.min(loadingProgress, 100)"
-            :messages="['感应牌面能量...', `${reader.name}正在冥想...`, '解读星象密码...', '启示即将降临...']"
+            :messages="loaderMessages"
           />
-          <p class="text-gold-200 text-lg font-serif mt-6">{{ reader.name }}正在解读...</p>
-          <p class="text-gray-600 mt-2">塔罗师正在感应牌面能量，请稍候</p>
+          <p class="text-gold-200 text-lg font-serif mt-6">{{ t('pages.reader.readerIsReading', { name: reader.name }) }}</p>
+          <p class="text-gray-600 mt-2">{{ t('pages.reader.readingWait') }}</p>
         </div>
       </template>
 
       <!-- REVEAL PHASE -->
       <template v-if="phase === 'reveal' && cards.length">
         <div class="text-center mb-8 animate-fade-in-up">
-          <h2 class="text-2xl font-serif text-gold-200 mb-3">牌面揭晓</h2>
+          <h2 class="text-2xl font-serif text-gold-200 mb-3">{{ t('pages.reader.revealTitle') }}</h2>
           <p class="text-gray-500">{{ spread.name }}</p>
         </div>
         <div class="flex flex-wrap justify-center gap-6 mb-8">
@@ -372,9 +391,9 @@ function goHome() { router.push('/tarot') }
               size="sm"
             />
             <div class="mt-3 text-center" :class="revealIndex < revealedCount ? 'opacity-100' : 'opacity-0'" style="transition: opacity 0.5s;">
-              <p class="text-gold-200 text-sm font-medium font-serif">{{ revealCard.name }}</p>
-              <p class="text-gold-400 text-xs">{{ revealCard.isReversed ? '逆位' : '正位' }}</p>
-              <p class="text-gray-600 text-xs mt-0.5">{{ revealCard.position }}</p>
+              <p class="text-gold-200 text-sm font-medium font-serif">{{ cardName(revealCard) }}</p>
+              <p class="text-gold-400 text-xs">{{ revealCard.isReversed ? t('pages.reader.reversed') : t('pages.reader.upright') }}</p>
+              <p class="text-gray-600 text-xs mt-0.5">{{ cardPosition(revealCard, revealIndex) }}</p>
             </div>
           </div>
         </div>
@@ -408,15 +427,15 @@ function goHome() { router.push('/tarot') }
                 <div class="flex gap-4 min-w-max px-12">
                   <div v-for="(chatCard, chatCardIndex) in result.cards" :key="chatCardIndex" class="flex flex-col items-center">
                     <div class="w-24 h-36 sm:w-28 sm:h-40 rounded-xl overflow-hidden border-2 border-gold-500/20 shadow-lg shadow-gold-500/5">
-                      <img v-if="!imgErrors.has(chatCardIndex)" :src="getCardImageUrl(chatCard.nameEn)" :alt="chatCard.name" loading="lazy" decoding="async" class="w-full h-full object-cover" :class="chatCard.isReversed ? 'rotate-180' : ''" @error="onImgError(chatCardIndex)" />
+                      <img v-if="!imgErrors.has(chatCardIndex)" :src="getCardImageUrl(chatCard.nameEn)" :alt="cardName(chatCard)" loading="lazy" decoding="async" class="w-full h-full object-cover" :class="chatCard.isReversed ? 'rotate-180' : ''" @error="onImgError(chatCardIndex)" />
                       <div v-else class="w-full h-full bg-gradient-to-br from-obsidian to-void flex flex-col items-center justify-center p-2">
-                        <span class="text-gold-300 text-sm font-medium text-center">{{ chatCard.name }}</span>
-                        <span class="text-gold-400/60 text-xs mt-1">{{ chatCard.isReversed ? '逆位' : '正位' }}</span>
+                        <span class="text-gold-300 text-sm font-medium text-center">{{ cardName(chatCard) }}</span>
+                        <span class="text-gold-400/60 text-xs mt-1">{{ chatCard.isReversed ? t('pages.reader.reversed') : t('pages.reader.upright') }}</span>
                       </div>
                     </div>
-                    <p class="text-gold-300 text-sm mt-2 text-center max-w-[100px] font-medium">{{ chatCard.name }}</p>
-                    <p class="text-gray-500 text-xs">{{ chatCard.isReversed ? '逆位' : '正位' }}</p>
-                    <p class="text-gray-700 text-xs">{{ chatCard.position }}</p>
+                    <p class="text-gold-300 text-sm mt-2 text-center max-w-[100px] font-medium">{{ cardName(chatCard) }}</p>
+                    <p class="text-gray-500 text-xs">{{ chatCard.isReversed ? t('pages.reader.reversed') : t('pages.reader.upright') }}</p>
+                    <p class="text-gray-700 text-xs">{{ cardPosition(chatCard, chatCardIndex) }}</p>
                   </div>
                 </div>
               </div>
@@ -476,7 +495,7 @@ function goHome() { router.push('/tarot') }
                 v-model="followupInput"
                 rows="1"
                 maxlength="200"
-                placeholder="继续追问这次占卜…（例如：那我该如何把握这个机会？）"
+                :placeholder="t('pages.reader.followupPlaceholder')"
                 class="flex-1 resize-none bg-transparent px-2 py-1.5 text-sm text-gray-200 placeholder:text-gray-600 outline-none"
                 :disabled="followupLoading"
                 @keydown.enter.exact.prevent="submitFollowup"
@@ -485,18 +504,18 @@ function goHome() { router.push('/tarot') }
                 type="button"
                 class="cursor-pointer shrink-0 w-9 h-9 rounded-full flex items-center justify-center bg-gold-500/30 border border-gold-500/30 text-gold-100 hover:bg-gold-500/45 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
                 :disabled="followupLoading || followupInput.trim().length < 2"
-                aria-label="发送追问"
+                :aria-label="t('pages.reader.sendFollowup')"
                 @click="submitFollowup"
               >
                 <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M22 2L11 13M22 2l-7 20-4-9-9-4 20-7z" stroke-linecap="round" stroke-linejoin="round"/></svg>
               </button>
             </div>
-            <p class="mt-1.5 px-1 text-xs text-gray-600">每次追问消耗一次占卜次数 · 回车发送</p>
+            <p class="mt-1.5 px-1 text-xs text-gray-600">{{ t('pages.reader.followupNote') }}</p>
           </div>
 
           <div v-if="showActions" class="flex flex-col sm:flex-row gap-3 pt-6 chat-bubble-enter">
-            <button class="flex-1 py-3.5 rounded-xl cta-button text-white font-medium hover:shadow-lg transition-all" @click="goRestart">重新占卜</button>
-            <button class="flex-1 py-3.5 rounded-xl bg-white/4 border border-gold-500/10 text-gray-300 hover:bg-gold-500/5 transition-all" @click="goHome">返回塔罗师选择</button>
+            <button class="flex-1 py-3.5 rounded-xl cta-button text-white font-medium hover:shadow-lg transition-all" @click="goRestart">{{ t('pages.reader.restart') }}</button>
+            <button class="flex-1 py-3.5 rounded-xl bg-white/4 border border-gold-500/10 text-gray-300 hover:bg-gold-500/5 transition-all" @click="goHome">{{ t('pages.reader.returnToReaders') }}</button>
           </div>
         </div>
       </template>

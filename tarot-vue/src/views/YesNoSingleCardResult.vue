@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, onMounted, computed } from 'vue'
+import { ref, onMounted, onUnmounted, computed } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { useToast } from '../composables/useToast'
@@ -9,7 +9,8 @@ import { generateAiSingleCardReading } from '../services/tarotAiReading'
 import { useCardBack } from '../composables/useCardBack'
 import { useShuffle } from '../composables/useShuffle'
 import { sanitizeStoredInput } from '../utils/sanitize'
-import { StorageKeys, storageGetRaw, storageRemoveRawAndLegacy, storageSet } from '@/utils/storage'
+import { StorageKeys, storageGetRaw, storageGetJson, storageSetJson, storageRemoveRawAndLegacy, storageSet } from '@/utils/storage'
+import { getSessionScope, isCurrentSession } from '@/utils/sessionScope'
 import TarotCard3D from '../components/TarotCard3D.vue'
 import RitualLoader from '../components/RitualLoader.vue'
 
@@ -28,6 +29,14 @@ const isLoading = ref(false)
 const loadingProgress = ref(0)
 const readingResult = ref<ReadingResult | null>(null)
 const showResult = ref(false)
+const readingError = ref('')
+let requestId: string | undefined
+let disposed = false
+let progressTimer: ReturnType<typeof setInterval> | undefined
+onUnmounted(() => {
+  disposed = true
+  if (progressTimer) clearInterval(progressTimer)
+})
 
 const cardData = computed(() =>
   selectedCard.value !== null ? tarotCards[selectedCard.value] : null
@@ -63,12 +72,31 @@ onMounted(() => {
   const cachedCard = storageGetRaw(StorageKeys.YES_NO_SINGLE_CARD, 'singleCardSelectedCard')
   const cachedOrientation = storageGetRaw(StorageKeys.YES_NO_SINGLE_ORIENT, 'singleCardOrientation')
 
-  if (cachedResult && cachedCard) {
-    selectedCard.value = parseInt(cachedCard)
-    isReversed.value = cachedOrientation === 'true'
-    isFlipped.value = true
-    readingResult.value = JSON.parse(cachedResult)
-    showResult.value = true
+  try {
+    if (cachedResult && cachedCard && tarotCards[Number(cachedCard)]) {
+      const result = JSON.parse(cachedResult) as ReadingResult
+      if (![result.answer, result.interpretation, result.advice, result.conclusion].every(value => typeof value === 'string')) throw new Error('Invalid cached reading')
+      selectedCard.value = Number(cachedCard)
+      isReversed.value = cachedOrientation === 'true'
+      isFlipped.value = true
+      readingResult.value = result
+      showResult.value = true
+      return
+    }
+  } catch {
+    storageRemoveRawAndLegacy(StorageKeys.YES_NO_SINGLE_RESULT, 'singleCardReadingResult')
+  }
+  const pending = storageGetJson<{ requestId: string; question: string; cardId: number; isReversed: boolean }>(StorageKeys.YES_NO_SINGLE_REQUEST)
+  if (pending?.question === question.value && typeof pending.requestId === 'string'
+    && /^[0-9a-f-]{36}$/i.test(pending.requestId) && typeof pending.isReversed === 'boolean') {
+    const index = tarotCards.findIndex(card => card.id === pending.cardId)
+    if (index >= 0) {
+      requestId = pending.requestId
+      selectedCard.value = index
+      isReversed.value = pending.isReversed
+      isFlipped.value = true
+      readingError.value = t('pages.yesNoSingleResult.interrupted')
+    }
   }
 })
 
@@ -82,23 +110,31 @@ function handleFlip() {
 }
 
 function startReading() {
+  if (isLoading.value || !cardData.value) return
+  requestId ??= crypto.randomUUID()
+  storageSetJson(StorageKeys.YES_NO_SINGLE_REQUEST, {
+    requestId, question: question.value, cardId: cardData.value.id, isReversed: isReversed.value,
+  })
+  readingError.value = ''
   isLoading.value = true
   loadingProgress.value = 0
 
-  const timer = setInterval(() => {
+  progressTimer = setInterval(() => {
     if (loadingProgress.value < 85) {
       loadingProgress.value += Math.random() * 10
     }
   }, 500)
 
-  finishReading().finally(() => clearInterval(timer))
+  void finishReading().finally(() => { if (progressTimer) clearInterval(progressTimer) })
 }
 
 async function finishReading() {
   if (!cardData.value) return
+  const scope = getSessionScope()
 
   try {
-    const result = await generateAiSingleCardReading(cardData.value, isReversed.value, question.value)
+    const result = await generateAiSingleCardReading(cardData.value, isReversed.value, question.value, requestId)
+    if (disposed || !isCurrentSession(scope)) return
     loadingProgress.value = 100
     readingResult.value = result
 
@@ -107,16 +143,20 @@ async function finishReading() {
     storageSet(StorageKeys.YES_NO_SINGLE_ORIENT, String(isReversed.value))
 
     await new Promise(resolve => setTimeout(resolve, 400))
-    showResult.value = true
+    if (!disposed && isCurrentSession(scope)) showResult.value = true
   } catch (err: unknown) {
+    if (disposed || !isCurrentSession(scope)) return
+    readingError.value = t('pages.yesNoSingleResult.toastFailed')
     const ax = err as { response?: { status: number; data?: { message?: string } }; message?: string }
     if (ax.response?.status === 401) {
       toast.error(t('pages.yesNoSingleResult.toastLoginRequired'))
       void router.replace({ path: '/login', query: { redirect: route.fullPath } })
     } else if (ax.response?.status === 429) {
-      toast.error(t('pages.yesNoSingleResult.toastQuota'))
+      readingError.value = ax.response.data?.message || t('pages.yesNoSingleResult.toastQuota')
+      toast.error(readingError.value)
     } else {
-      toast.error(ax.response?.data?.message || ax.message || t('pages.yesNoSingleResult.toastFailed'))
+      readingError.value = ax.response?.data?.message || t('pages.yesNoSingleResult.toastFailed')
+      toast.error(readingError.value)
     }
   } finally {
     isLoading.value = false
@@ -127,6 +167,7 @@ function startOver() {
   storageRemoveRawAndLegacy(StorageKeys.YES_NO_SINGLE_RESULT, 'singleCardReadingResult')
   storageRemoveRawAndLegacy(StorageKeys.YES_NO_SINGLE_CARD, 'singleCardSelectedCard')
   storageRemoveRawAndLegacy(StorageKeys.YES_NO_SINGLE_ORIENT, 'singleCardOrientation')
+  storageRemoveRawAndLegacy(StorageKeys.YES_NO_SINGLE_REQUEST)
   storageRemoveRawAndLegacy(StorageKeys.YES_NO_USER_Q, 'userQuestion')
   router.push('/yes-no-tarot/single-card')
 }
@@ -176,6 +217,20 @@ function startOver() {
     </section>
 
     <!-- Reading Result -->
+    <section v-if="readingError && !isLoading" class="w-full max-w-2xl mx-auto px-4 py-6">
+      <div class="card-glass p-6 text-center" role="alert">
+        <h2 class="text-gold-200 font-serif text-lg mb-2">{{ t('pages.yesNoSingleResult.errorTitle') }}</h2>
+        <p class="text-gray-400 text-sm mb-5">{{ readingError }}</p>
+        <div class="flex flex-wrap justify-center gap-3">
+          <button type="button" :disabled="isLoading" class="px-6 py-3 rounded-full cta-button text-white" @click="startReading">
+            {{ t('pages.yesNoSingleResult.retry') }}
+          </button>
+          <RouterLink to="/history" class="px-6 py-3 rounded-full border border-gold-500/20 text-gold-200">{{ t('pages.yesNoSingleResult.viewHistory') }}</RouterLink>
+          <button type="button" class="px-6 py-3 text-gray-400" @click="startOver">{{ t('pages.yesNoSingleResult.again') }}</button>
+        </div>
+      </div>
+    </section>
+
     <section v-if="showResult && readingResult" class="w-full max-w-2xl mx-auto px-4 py-8 animate-fade-in-up">
       <div class="card-glass p-6 sm:p-8 space-y-6">
         <!-- Answer -->

@@ -1,5 +1,5 @@
 import { ref, type Ref } from 'vue'
-import api from './api'
+import { publicApi as api } from './api'
 import type { TarotCard } from '../data/tarotCards'
 import { applyTarotCardsFromApi } from '../data/tarotCards'
 import type { TarotCardDetail } from '../data/tarotCardDetails'
@@ -48,9 +48,9 @@ function applyReferenceCore(b: ReferenceCore) {
 }
 
 async function fetchReferenceCore(): Promise<ReferenceCore> {
-  const res = await api.get('/reference/bundle')
-  if (!res.data?.success) throw new Error(res.data?.message || 'reference bundle failed')
-  return res.data.data as ReferenceBundle
+  const res = await api.get('/reference/core')
+  if (!res.data?.success) throw new Error(res.data?.message || 'reference core failed')
+  return res.data.data as ReferenceCore
 }
 
 export async function loadReferenceCore(force = false): Promise<void> {

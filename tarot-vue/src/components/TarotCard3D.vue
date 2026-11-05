@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, watch, computed } from 'vue'
+import { ref, watch, computed, onBeforeUnmount } from 'vue'
 
 const props = withDefaults(defineProps<{
   cardImageUrl?: string
@@ -26,6 +26,9 @@ const tiltX = ref(0)
 const tiltY = ref(0)
 const shineX = ref(50)
 const shineY = ref(50)
+let flipTimers: ReturnType<typeof setTimeout>[] = []
+function clearFlipTimers() { flipTimers.forEach(timer => clearTimeout(timer)); flipTimers = [] }
+onBeforeUnmount(clearFlipTimers)
 
 const sizeClasses = computed(() => {
   switch (props.size) {
@@ -59,12 +62,17 @@ const glowVars = computed(() => ({
 }))
 
 watch(() => props.isFlipped, (flipped) => {
+  clearFlipTimers()
+  showBurst.value = false
+  isAnimating.value = false
   if (flipped) {
     isHovering.value = false
     isAnimating.value = true
-    setTimeout(() => { showBurst.value = true }, 400)
-    setTimeout(() => { showBurst.value = false }, 1200)
-    setTimeout(() => { isAnimating.value = false }, 900)
+    flipTimers = [
+      setTimeout(() => { showBurst.value = true }, 400),
+      setTimeout(() => { showBurst.value = false }, 1200),
+      setTimeout(() => { isAnimating.value = false }, 900),
+    ]
   }
 })
 

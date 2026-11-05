@@ -22,8 +22,17 @@ export const adminListUsersQuerySchema = z.object({
   page: pageQ,
   pageSize: pageSizeQ,
   keyword: keywordQ,
+  sort: z.enum(['newest', 'last-login']).default('newest'),
 });
 export type AdminListUsersQuery = z.infer<typeof adminListUsersQuerySchema>;
+
+export const adminUserQuestionsQuerySchema = z.object({
+  page: pageQ,
+  pageSize: pageSizeQ,
+  keyword: keywordQ,
+  type: z.enum(['single', 'three-card', 'reader-reading', 'fate-dual']).optional(),
+});
+export type AdminUserQuestionsQuery = z.infer<typeof adminUserQuestionsQuerySchema>;
 
 const feedbackStatusQ = z.preprocess(
   (v) => parseFeedbackListStatus(v),

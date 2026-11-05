@@ -53,6 +53,9 @@ export async function analyze(req: Request, res: Response) {
     }
 
     const body = req.body as Record<string, unknown>;
+    const locale: 'zh-CN' | 'en-US' = typeof body.locale === 'string' && body.locale.toLowerCase().startsWith('en')
+      ? 'en-US'
+      : 'zh-CN';
     const birthPlace = typeof body.birth_place === 'string' ? body.birth_place.trim().slice(0, 120) : null;
     const gender = body.gender === 'female' ? 'female' : body.gender === 'male' ? 'male' : null;
     const solarCorrection = body.solar_correction === true;
@@ -139,6 +142,7 @@ export async function analyze(req: Request, res: Response) {
       orientations,
       chartType,
       ziwei,
+      locale,
     });
     res.json(success(data));
   } catch (err: unknown) {
@@ -177,7 +181,10 @@ export async function choose(req: Request, res: Response) {
       return;
     }
 
-    const data = await FateService.chooseFatePath(req.userId!, conflictId, choice);
+    const locale: 'zh-CN' | 'en-US' = typeof req.body.locale === 'string' && req.body.locale.toLowerCase().startsWith('en')
+      ? 'en-US'
+      : 'zh-CN';
+    const data = await FateService.chooseFatePath(req.userId!, conflictId, choice, locale);
     res.json(success(data));
   } catch (err: unknown) {
     const hint = mysqlHint(err);
@@ -198,7 +205,10 @@ export async function history(req: Request, res: Response) {
   try {
     const raw = Number(req.query.limit);
     const lim = Number.isFinite(raw) ? Math.min(Math.max(Math.trunc(raw), 1), 50) : 20;
-    const data = await FateService.getFateHistory(req.userId!, lim);
+    const locale: 'zh-CN' | 'en-US' = typeof req.query.locale === 'string' && req.query.locale.toLowerCase().startsWith('en')
+      ? 'en-US'
+      : 'zh-CN';
+    const data = await FateService.getFateHistory(req.userId!, lim, locale);
     res.json(success(data));
   } catch (err: unknown) {
     const hint = mysqlHint(err);

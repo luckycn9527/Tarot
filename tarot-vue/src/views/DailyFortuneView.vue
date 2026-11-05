@@ -1,27 +1,31 @@
 <script setup lang="ts">
-import { ref, computed, onMounted, watch } from 'vue'
+import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { useToast } from '../composables/useToast'
 import { useScrollReveal } from '../composables/useScrollReveal'
 import { tarotCards, getCardImageUrl } from '../data/tarotCards'
-import { generateAiDailyFortune } from '../services/tarotAiReading'
+import { generateAiDailyFortune, fetchDailyFortuneCache } from '../services/tarotAiReading'
 import { useCardBack } from '../composables/useCardBack'
 import { useZodiac } from '../composables/useZodiac'
 import { useAuth } from '../composables/useAuth'
+import { useQuota } from '../composables/useQuota'
 import { useDailyCache } from '../composables/useDailyCache'
 import { useShuffle } from '../composables/useShuffle'
 import TarotCard3D from '../components/TarotCard3D.vue'
 import RitualLoader from '../components/RitualLoader.vue'
 import FaqAccordion from '../components/FaqAccordion.vue'
-import { StorageKeys, storageSet } from '@/utils/storage'
+import { useUserResourcesStore } from '@/stores/userResources'
+import { getSessionScope, isCurrentSession } from '@/utils/sessionScope'
 
 useScrollReveal()
 const { loadCardBack, cardBackUrl } = useCardBack()
 const { birthYear, birthMonth, birthDay, zodiacSign, loadFromStorage, onBirthdayChange, setFromDate, clearBirthday } = useZodiac()
-const { hasDrawnToday, hasCachedResult, countdown, loadCache, saveDraw, saveFortune } = useDailyCache()
+const { hasDrawnToday, hasCachedResult, countdown, businessDate, loadCache, saveDraw, saveFortune } = useDailyCache()
 const { drawRandom } = useShuffle()
 const { isInitialized, isLoggedIn, user } = useAuth()
+const { fetchQuota } = useQuota()
+const resources = useUserResourcesStore()
 
 const route = useRoute()
 const router = useRouter()
@@ -30,6 +34,9 @@ const toast = useToast()
 const flipped = ref(false)
 const loading = ref(false)
 const loadingProgress = ref(0)
+const restoring = ref(false)
+let disposed = false
+onUnmounted(() => { disposed = true })
 const showBirthdayPanel = ref(false)
 const selectedCard = ref<typeof tarotCards[0] | null>(null)
 const isReversed = ref(false)
@@ -38,10 +45,10 @@ const currentYear = new Date().getFullYear()
 const yearOptions = Array.from({ length: 100 }, (_, idx) => currentYear - idx)
 const monthOptions = Array.from({ length: 12 }, (_, i) => i + 1)
 const dayOptions = Array.from({ length: 31 }, (_, i) => i + 1)
-const canFlip = computed(() => !flipped.value && !loading.value)
+const canFlip = computed(() => !flipped.value && !loading.value && !restoring.value)
 
 function handleCardFlip() {
-  if (flipped.value || loading.value) return
+  if (!canFlip.value) return
   const drawn = drawRandom()
   selectedCard.value = drawn.card
   isReversed.value = drawn.isReversed
@@ -56,12 +63,18 @@ function confirmBirthday() {
 }
 
 async function handleViewFortune() {
-  if (!selectedCard.value) return
+  if (!selectedCard.value || loading.value || restoring.value) return
+  const scope = getSessionScope()
 
   const cache = loadCache()
   if (cache?.fortune) {
-    storageSet(StorageKeys.DAILY_FORTUNE_RESULT, cache.fortune)
     router.push('/daily-fortune/result')
+    return
+  }
+
+  if (!isLoggedIn.value) {
+    toast.error(t('pages.dailyFortune.toastViewLogin'))
+    void router.replace({ path: '/login', query: { redirect: route.fullPath } })
     return
   }
 
@@ -79,18 +92,29 @@ async function handleViewFortune() {
       isReversed.value,
       zodiacSign.value || undefined
     )
+    if (disposed || !isCurrentSession(scope)) return
+    resources.applyQuotaWindow(result)
+    if (!result.result || !result.card || Date.parse(result.resetsAt) <= Date.now()) {
+      await restoreFortune()
+      return
+    }
+    selectedCard.value = tarotCards.find(card => card.id === result.card!.id) ?? null
+    isReversed.value = result.card.isReversed
     loadingProgress.value = 100
-    const resultJson = JSON.stringify(result)
-    saveFortune(selectedCard.value.id, isReversed.value, resultJson)
-    storageSet(StorageKeys.DAILY_FORTUNE_RESULT, resultJson)
-    setTimeout(() => { router.push('/daily-fortune/result') }, 300)
+    saveFortune(result.card.id, result.card.isReversed, JSON.stringify(result.result))
+    void fetchQuota(true)
+    setTimeout(() => {
+      if (!disposed && isCurrentSession(scope)) void router.push('/daily-fortune/result')
+    }, 300)
   } catch (err: unknown) {
+    if (disposed || !isCurrentSession(scope)) return
     const ax = err as { response?: { status: number; data?: { message?: string } }; message?: string }
     if (ax.response?.status === 401) {
       toast.error(t('pages.dailyFortune.toastViewLogin'))
       void router.replace({ path: '/login', query: { redirect: route.fullPath } })
     } else if (ax.response?.status === 429) {
-      toast.error(ax.response?.data?.message || t('pages.dailyFortune.toastQuota'))
+      await fetchQuota(true)
+      toast.error(t('pages.dailyFortune.toastQuota'))
     } else {
       toast.error(ax.response?.data?.message || ax.message || t('pages.dailyFortune.toastFailed'))
     }
@@ -100,18 +124,53 @@ async function handleViewFortune() {
   }
 }
 
+function applyLocalCache() {
+  const cache = loadCache()
+  hasDrawnToday.value = !!cache
+  hasCachedResult.value = !!cache?.fortune
+  selectedCard.value = cache ? tarotCards.find(card => card.id === cache.cardId) ?? null : null
+  isReversed.value = cache?.isReversed ?? false
+  flipped.value = !!selectedCard.value
+}
+
+async function restoreFortune() {
+  if (!isLoggedIn.value || disposed) return
+  restoring.value = true
+  const scope = getSessionScope()
+  try {
+    await fetchQuota(true)
+    if (disposed || !isCurrentSession(scope)) return
+    applyLocalCache()
+    const response = await fetchDailyFortuneCache()
+    if (disposed || !isCurrentSession(scope)) return
+    resources.applyQuotaWindow(response)
+    if (response.result && response.card && Date.parse(response.resetsAt) > Date.now()) {
+      saveFortune(response.card.id, response.card.isReversed, JSON.stringify(response.result))
+    }
+    applyLocalCache()
+  } catch {
+    // A valid account-scoped local result remains usable during a network outage.
+  } finally {
+    if (!disposed && isCurrentSession(scope)) restoring.value = false
+  }
+}
+
+watch(businessDate, (date, previous) => {
+  if (date && previous && date !== previous) {
+    applyLocalCache()
+    if (!loading.value && !restoring.value) void restoreFortune()
+  }
+})
+
+watch(countdown, (value) => {
+  if (value === '00:00:00' && !loading.value) applyLocalCache()
+})
+
 onMounted(() => {
   void loadCardBack(true)
   loadFromStorage()
   applyProfileBirthday()
-  const cache = loadCache()
-  if (cache) {
-    hasDrawnToday.value = true
-    selectedCard.value = tarotCards.find(card => card.id === cache.cardId) || tarotCards[cache.cardId]
-    isReversed.value = cache.isReversed
-    flipped.value = true
-    hasCachedResult.value = !!cache.fortune
-  }
+  void restoreFortune()
 })
 
 /** 个人中心已填生日时，自动带入星座，免去用户在此页重复输入 */
@@ -223,6 +282,7 @@ const faqItems = computed(() => tm('pages.dailyFortune.faq') as { question: stri
       <div class="animate-fade-in-up anim-delay-2">
         <button
           v-if="!flipped"
+          :disabled="!canFlip"
           class="px-8 py-3 rounded-full text-white font-medium transition-all"
           :class="canFlip ? 'cta-button cursor-pointer' : 'bg-gray-800 text-gray-500 cursor-not-allowed'"
           @click="handleCardFlip"
@@ -236,6 +296,7 @@ const faqItems = computed(() => tm('pages.dailyFortune.faq') as { question: stri
 
         <button
           v-else
+          :disabled="restoring"
           class="px-8 py-3 rounded-full cta-button text-white font-medium transition-all"
           @click="handleViewFortune"
         >

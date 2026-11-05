@@ -1,26 +1,23 @@
 <script setup lang="ts">
 import { ref, onMounted, onUnmounted, computed } from 'vue'
+import { useI18n } from 'vue-i18n'
 
 const props = withDefaults(defineProps<{
   progress?: number
   messages?: string[]
 }>(), {
   progress: 0,
-  messages: () => [
-    '通灵中...',
-    '感应牌面能量...',
-    '解读星象密码...',
-    '凝聚宇宙智慧...',
-    '启示即将降临...',
-  ],
+  messages: () => [],
 })
+
+const { t } = useI18n()
 
 const currentMessageIndex = ref(0)
 let messageTimer: ReturnType<typeof setInterval> | undefined
 
-const currentMessage = computed(() =>
-  props.messages[currentMessageIndex.value % props.messages.length]
-)
+const defaultMessages = computed(() => [0, 1, 2, 3].map(index => t(`pages.reader.loadingMessages.${index}`)))
+const activeMessages = computed(() => props.messages.length ? props.messages : defaultMessages.value)
+const currentMessage = computed(() => activeMessages.value[currentMessageIndex.value % activeMessages.value.length])
 
 onMounted(() => {
   messageTimer = setInterval(() => {

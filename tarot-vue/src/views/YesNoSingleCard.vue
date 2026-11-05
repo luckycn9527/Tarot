@@ -17,6 +17,7 @@ function handleSubmit(question: string) {
   storageRemoveRawAndLegacy(StorageKeys.YES_NO_SINGLE_RESULT, 'singleCardReadingResult')
   storageRemoveRawAndLegacy(StorageKeys.YES_NO_SINGLE_CARD, 'singleCardSelectedCard')
   storageRemoveRawAndLegacy(StorageKeys.YES_NO_SINGLE_ORIENT, 'singleCardOrientation')
+  storageRemoveRawAndLegacy(StorageKeys.YES_NO_SINGLE_REQUEST)
   try {
     localStorage.removeItem('userQuestion')
   } catch {

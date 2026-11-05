@@ -1,7 +1,8 @@
-import api from './api'
+import api, { API_TIMEOUT_MS } from './api'
 import type { TarotCard } from '../data/tarotCards'
 import type { ReadingResult, ThreeCardReadingResult, DailyFortuneResult } from '../data/tarotReadings'
 import { useReadingHistoryStore } from '../stores/readingHistory'
+import type { QuotaWindow } from '../stores/userResources'
 
 /**
  * 占卜成功后失效历史记录分页缓存，确保历史页能立即看到最新记录。
@@ -23,13 +24,19 @@ function invalidateHistoryCache() {
 export async function generateAiSingleCardReading(
   card: TarotCard,
   isReversed: boolean,
-  question: string
+  question: string,
+  requestId?: string,
 ): Promise<ReadingResult> {
-  const res = await api.post('/readings/single-card', {
-    question,
-    cardId: card.id,
-    orientation: isReversed ? 'reversed' : 'upright',
-  })
+  const res = await api.post(
+    '/readings/single-card',
+    {
+      question,
+      cardId: card.id,
+      orientation: isReversed ? 'reversed' : 'upright',
+      requestId,
+    },
+    { timeout: API_TIMEOUT_MS.standardAi },
+  )
   if (res.data.success) {
     invalidateHistoryCache()
     return res.data.data.result
@@ -44,11 +51,15 @@ export async function generateAiThreeCardReading(
   cards: { card: TarotCard; isReversed: boolean }[],
   question: string
 ): Promise<ThreeCardReadingResult> {
-  const res = await api.post('/readings/three-card', {
-    question,
-    cardIds: cards.map(c => c.card.id),
-    orientations: cards.map(c => c.isReversed ? 'reversed' : 'upright'),
-  })
+  const res = await api.post(
+    '/readings/three-card',
+    {
+      question,
+      cardIds: cards.map(c => c.card.id),
+      orientations: cards.map(c => c.isReversed ? 'reversed' : 'upright'),
+    },
+    { timeout: API_TIMEOUT_MS.standardAi },
+  )
   if (res.data.success) {
     invalidateHistoryCache()
     return res.data.data.result
@@ -59,19 +70,35 @@ export async function generateAiThreeCardReading(
 /**
  * 每日运势 - 调用后端 API
  */
+export interface DailyFortuneResponse extends QuotaWindow {
+  cached: boolean
+  card: { id: number; name: string; nameEn: string; isReversed: boolean } | null
+  result: DailyFortuneResult | null
+}
+
+export async function fetchDailyFortuneCache(): Promise<DailyFortuneResponse> {
+  const res = await api.get('/readings/daily-fortune')
+  if (res.data.success) return res.data.data
+  throw new Error(res.data.message || '运势获取失败')
+}
+
 export async function generateAiDailyFortune(
   card: TarotCard,
   isReversed: boolean,
   zodiacSign?: string
-): Promise<DailyFortuneResult> {
-  const res = await api.post('/readings/daily-fortune', {
-    zodiacSign,
-    cardId: card.id,
-    isReversed,
-  })
+): Promise<DailyFortuneResponse> {
+  const res = await api.post(
+    '/readings/daily-fortune',
+    {
+      zodiacSign,
+      cardId: card.id,
+      isReversed,
+    },
+    { timeout: API_TIMEOUT_MS.standardAi },
+  )
   if (res.data.success) {
     invalidateHistoryCache()
-    return res.data.data.result
+    return res.data.data
   }
   throw new Error(res.data.message || '运势生成失败')
 }
@@ -97,8 +124,15 @@ export interface HoroscopeResult {
 /**
  * 星座今日运势 - 调用后端 API（按星座+日期服务端缓存，公开接口、不消耗配额）
  */
-export async function getHoroscope(sign: string, period: HoroscopePeriod = 'today'): Promise<HoroscopeResult> {
-  const res = await api.get(`/readings/horoscope?sign=${encodeURIComponent(sign)}&period=${encodeURIComponent(period)}`)
+export async function getHoroscope(
+  sign: string,
+  period: HoroscopePeriod = 'today',
+  locale: 'zh-CN' | 'en-US' = 'zh-CN',
+): Promise<HoroscopeResult> {
+  const res = await api.get(
+    `/readings/horoscope?sign=${encodeURIComponent(sign)}&period=${encodeURIComponent(period)}&locale=${encodeURIComponent(locale)}`,
+    { timeout: API_TIMEOUT_MS.standardAi },
+  )
   if (res.data.success) {
     return res.data.data as HoroscopeResult
   }
@@ -130,6 +164,8 @@ export interface ReaderReadingResult {
   }
 }
 
+export type ReaderReadingLocale = 'zh-CN' | 'en-US'
+
 export async function generateReaderReading(params: {
   readerId: string
   spreadType: string
@@ -137,8 +173,11 @@ export async function generateReaderReading(params: {
   category: string
   cardIds?: number[]
   orientations?: string[]
+  locale?: ReaderReadingLocale
 }): Promise<ReaderReadingResult> {
-  const res = await api.post('/readings/reader-reading', params)
+  const res = await api.post('/readings/reader-reading', params, {
+    timeout: API_TIMEOUT_MS.readerReading,
+  })
   if (res.data.success) {
     invalidateHistoryCache()
     return res.data.data
@@ -146,7 +185,7 @@ export async function generateReaderReading(params: {
   throw new Error(res.data.message || '占卜失败')
 }
 
-/** 一轮追问对话（前端维护，未持久化） */
+/** One saved followup turn. */
 export interface ReaderFollowupTurn {
   question: string
   answer: string
@@ -161,15 +200,21 @@ export interface ReaderFollowupResult {
 /**
  * 塔罗师追问 - 基于已完成的某次占卜继续提问
  * 后端按 readingId 还原占卜上下文（问题/牌面/原解读），扣减一次配额
- * priorTurns 为本会话此前的追问轮次，作为多轮对话上下文
+ * 服务端从已保存记录恢复最近对话，避免回传长历史导致请求被拒绝。
  */
 export async function askReaderFollowUp(params: {
   readingId: number
   question: string
   priorTurns?: ReaderFollowupTurn[]
+  locale?: ReaderReadingLocale
 }): Promise<ReaderFollowupResult> {
-  const res = await api.post('/readings/reader-followup', params)
+  const res = await api.post('/readings/reader-followup', {
+    readingId: params.readingId, question: params.question, locale: params.locale,
+  }, {
+    timeout: API_TIMEOUT_MS.readerFollowup,
+  })
   if (res.data.success) {
+    invalidateHistoryCache()
     return res.data.data
   }
   throw new Error(res.data.message || '追问失败')

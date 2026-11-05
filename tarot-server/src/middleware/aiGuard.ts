@@ -9,7 +9,8 @@ type LocalLock = { token: string; expiresAt: number };
 
 const localCounters = new Map<string, LocalCounter>();
 const localLocks = new Map<number, LocalLock>();
-const LOCK_TTL_MS = 90_000;
+// Fate Dual can perform several bounded upstream calls in sequence.
+const LOCK_TTL_MS = 150_000;
 
 function minuteBucket(): number {
   return Math.floor(Date.now() / 60_000);
@@ -71,6 +72,12 @@ async function acquireLock(userId: number, token: string): Promise<(() => Promis
   return async () => {
     if (localLocks.get(userId)?.token === token) localLocks.delete(userId);
   };
+}
+
+/** Non-HTTP task owners release explicitly after durable completion, never on socket close. */
+export async function acquireAiTaskLease(userId: number): Promise<(() => Promise<void>) | null> {
+  if (!(await rateAllowed(userId))) return null;
+  return acquireLock(userId, randomUUID());
 }
 
 /** Bounds AI spend per user and prevents overlapping generation requests. */

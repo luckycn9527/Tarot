@@ -5,8 +5,14 @@ node_modules/
 # Build output
 dist/
 **/dist/
-!tarot-vue/dist/
-!tarot-vue/dist/**
+dist-mobile/
+*.apk
+*.aab
+*.ipa
+*.xcarchive/
+*.p12
+*.pfx
+*.mobileprovision
 
 # Environment variables (sensitive!)
 .env
@@ -37,7 +43,17 @@ desktop.ini
 # Local Kiro / agent state
 .claude/
 .playwright-mcp/
+.playwright-cli/
+/output/
 .codex/
+.codex-deploy/
+/.codex-*
+**/.codex-*
+/*.tar
+/*.tgz
+/*.zip
+/!!(h.compareDocumentPosition(v)
+/h.compareDocumentPosition(v)
 
 # TypeScript build info
 *.tsbuildinfo

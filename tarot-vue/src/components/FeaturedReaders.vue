@@ -8,6 +8,7 @@ import Flame from '@icons/flame.vue'
 import ChevronRight from '@icons/chevron-right.vue'
 import Star from '@icons/star.vue'
 import Crown from '@icons/crown.vue'
+import { localizedReader, normalizeLocale } from '../utils/readerLocalization'
 
 const props = defineProps<{
   readers: ReaderInfo[]
@@ -17,29 +18,33 @@ const emit = defineEmits<{
   (e: 'select', reader: ReaderInfo): void
 }>()
 
-const { t } = useI18n()
+const { t, locale } = useI18n()
 const router = useRouter()
 
-const topReaders = computed(() => props.readers.slice(0, 3))
+const topReaders = computed(() => props.readers.slice(0, 3).map(reader => localizedReader(reader, locale.value)))
 const mainReader = computed(() => topReaders.value[0])
 const sideReaders = computed(() => topReaders.value.slice(1, 3))
 
 function getTags(reader: ReaderInfo): string[] {
-  const tagMap: Record<string, string[]> = {
-    '易理·五行': ['恋爱复合', '灵魂伴侣', '情绪疗愈'],
-    '冷静派': ['事业决策', '未来规划', '问题解析'],
-    '神道·花鸟风月': ['事业财运', '能量净化', '心灵成长'],
-    '奇门·紫微': ['命运格局', '事业财运', '情感走向'],
-    '月相占卜 · 法国': ['情感疗愈', '亲密关系', '自我探索'],
-    '符箓·直觉': ['灵性成长', '能量净化', '破除迷障'],
-    '学院派 · 德国': ['事业决策', '理性分析', '未来规划'],
-    '伊法占卜 · 西非': ['家族业力', '灵性成长', '祖先智慧'],
-    '吠陀·脉轮 · 印度': ['能量疗愈', '冥想指引', '身心平衡'],
-    '吉普赛传承 · 西班牙': ['恋爱复合', '情感疗愈', '关系抉择'],
-    '逻辑派 · 日本': ['事业决策', '问题解析', '理性分析'],
-    '卢恩符文 · 挪威': ['命运趋势', '灵性成长', '能量净化'],
+  const tagMap: Record<string, { zh: string[]; en: string[] }> = {
+    qinghe: { zh: ['恋爱复合', '灵魂伴侣', '情绪疗愈'], en: ['Reconnection', 'Soulmates', 'Emotional healing'] },
+    yanxi: { zh: ['事业决策', '未来规划', '问题解析'], en: ['Career choices', 'Future planning', 'Problem solving'] },
+    haruka: { zh: ['事业财运', '能量净化', '心灵成长'], en: ['Career and money', 'Energy clearing', 'Inner growth'] },
+    xuanyin: { zh: ['命运格局', '事业财运', '情感走向'], en: ['Life patterns', 'Career and money', 'Love direction'] },
+    mirelle: { zh: ['情感疗愈', '亲密关系', '自我探索'], en: ['Emotional healing', 'Intimacy', 'Self-discovery'] },
+    lingsha: { zh: ['灵性成长', '能量净化', '破除迷障'], en: ['Spiritual growth', 'Energy clearing', 'Breaking illusions'] },
+    norick: { zh: ['事业决策', '理性分析', '未来规划'], en: ['Career choices', 'Clear analysis', 'Future planning'] },
+    amara: { zh: ['家族业力', '灵性成长', '祖先智慧'], en: ['Family patterns', 'Spiritual growth', 'Ancestral wisdom'] },
+    vikram: { zh: ['能量疗愈', '冥想指引', '身心平衡'], en: ['Energy healing', 'Meditation', 'Mind-body balance'] },
+    catalina: { zh: ['恋爱复合', '情感疗愈', '关系抉择'], en: ['Reconnection', 'Emotional healing', 'Relationship choices'] },
+    kazuki: { zh: ['事业决策', '问题解析', '理性分析'], en: ['Career choices', 'Problem solving', 'Clear analysis'] },
+    solveig: { zh: ['命运趋势', '灵性成长', '能量净化'], en: ['Life direction', 'Spiritual growth', 'Energy clearing'] },
   }
-  return tagMap[reader.badge] || [reader.badge, '塔罗解读', '能量指引']
+  const tags = tagMap[reader.id]
+  if (tags) return normalizeLocale(locale.value) === 'en-US' ? tags.en : tags.zh
+  return normalizeLocale(locale.value) === 'en-US'
+    ? [reader.badge, 'Tarot guidance', 'Energy insight']
+    : [reader.badge, '塔罗解读', '能量指引']
 }
 
 function getRating(reader: ReaderInfo): number {
@@ -61,7 +66,7 @@ function getRating(reader: ReaderInfo): number {
 }
 
 function getReads(reader: ReaderInfo): string {
-  return `${reader.likes} 次解读`
+  return t('pages.tarot.featuredReads', { count: reader.likes })
 }
 
 function onSelect(reader: ReaderInfo) {
@@ -118,7 +123,7 @@ function viewAll() {
               <div>
                 <div class="flex items-center gap-2 flex-wrap mb-2">
                   <h3 class="text-xl font-serif text-gold-50">{{ mainReader.name }}</h3>
-                  <span class="featured-chip featured-chip--gold">首席塔罗师</span>
+                  <span class="featured-chip featured-chip--gold">{{ t('pages.tarot.featuredLead') }}</span>
                   <span
                     class="featured-chip"
                     :class="mainReader.accessLevel === 'free' ? 'featured-chip--free' : 'featured-chip--vip'"
@@ -139,13 +144,13 @@ function viewAll() {
                     <Star class="w-4 h-4 text-amber-400 fill-amber-400" :size="16" />
                     <span class="text-sm font-medium text-gold-100">{{ getRating(mainReader) }}</span>
                   </div>
-                  <span class="text-xs text-gray-500">98% 满意度</span>
+                  <span class="text-xs text-gray-500">{{ t('pages.tarot.featuredSatisfaction') }}</span>
                 </div>
                 <div class="flex items-center gap-4 text-xs text-gray-500"
                 >
                   <span>{{ getReads(mainReader) }}</span>
                   <span v-if="mainReader.accessLevel === 'vip'" class="flex items-center gap-1 text-amber-300/80">
-                    <Crown class="w-3 h-3" :size="12" /> VIP 专属顾问
+                    <Crown class="w-3 h-3" :size="12" /> {{ t('pages.tarot.featuredVipAdvisor') }}
                   </span>
                 </div>
               </div>

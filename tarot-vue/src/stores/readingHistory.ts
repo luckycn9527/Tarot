@@ -1,7 +1,8 @@
 import { defineStore } from 'pinia'
 import { ref } from 'vue'
-import api from '@/services/api'
+import api, { API_TIMEOUT_MS } from '@/services/api'
 import { CACHE_TTL_MS, isFresh } from '@/stores/cacheTtl'
+import { getSessionScope, isCurrentSession, SessionChangedError } from '@/utils/sessionScope'
 
 export interface ReadingHistoryEntry {
   id: number
@@ -67,6 +68,11 @@ export const useReadingHistoryStore = defineStore('readingHistory', () => {
     pageCache.value = {}
   }
 
+  function resetSession() {
+    history.value = []
+    clearPageCache()
+  }
+
   async function fetchHistory(options?: {
     page?: number
     limit?: number
@@ -75,7 +81,8 @@ export const useReadingHistoryStore = defineStore('readingHistory', () => {
     dateFrom?: string
     dateTo?: string
   }, force = false): Promise<HistoryPage> {
-    const key = historyCacheKey(options)
+    const scope = getSessionScope()
+    const key = `${scope.owner}:${historyCacheKey(options)}`
     const hit = pageCache.value[key]
     if (!force && hit && isFresh(hit.at, CACHE_TTL_MS.readingHistory)) {
       history.value = hit.data.items
@@ -83,6 +90,7 @@ export const useReadingHistoryStore = defineStore('readingHistory', () => {
     }
     const params = buildHistoryParams(options)
     const res = await api.get(`/readings/history?${params.toString()}`)
+    if (!isCurrentSession(scope)) throw new SessionChangedError()
     if (res.data.success) {
       const data = res.data.data as HistoryPage
       history.value = data.items
@@ -104,8 +112,8 @@ export const useReadingHistoryStore = defineStore('readingHistory', () => {
     clearPageCache()
   }
 
-  async function fetchInsights(): Promise<InsightSummary> {
-    const res = await api.get('/readings/insights')
+  async function fetchInsights(locale: 'zh-CN' | 'en-US' = 'zh-CN'): Promise<InsightSummary> {
+    const res = await api.get('/readings/insights', { params: { locale }, timeout: API_TIMEOUT_MS.insights })
     if (res.data.success) return res.data.data as InsightSummary
     throw new Error(res.data.message || '分析失败')
   }
@@ -118,5 +126,5 @@ export const useReadingHistoryStore = defineStore('readingHistory', () => {
     clearPageCache()
   }
 
-  return { history, fetchHistory, deleteReading, setOutcome, fetchInsights, clearHistory, clearPageCache }
+  return { history, fetchHistory, deleteReading, setOutcome, fetchInsights, clearHistory, clearPageCache, resetSession }
 })

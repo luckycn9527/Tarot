@@ -1,16 +1,32 @@
 import axios, { AxiosHeaders, type InternalAxiosRequestConfig } from 'axios'
+import { getSessionScope, isCurrentSession, SessionChangedError } from '@/utils/sessionScope'
 
-const configuredApiBaseUrl = import.meta.env.VITE_PUBLIC_API_BASE_URL?.trim().replace(/\/+$/, '')
-const configuredApiOrigin = import.meta.env.VITE_PUBLIC_API_ORIGIN?.trim().replace(/\/+$/, '')
+const buildEnv = import.meta.env ?? {}
+const configuredApiBaseUrl = buildEnv.VITE_PUBLIC_API_BASE_URL?.trim().replace(/\/+$/, '')
+const configuredApiOrigin = buildEnv.VITE_PUBLIC_API_ORIGIN?.trim().replace(/\/+$/, '')
 // Development uses Vite's same-origin proxy. A production build can point at a
 // separate API origin with VITE_PUBLIC_API_ORIGIN, or set an explicit API base URL.
-const apiBaseUrl = configuredApiBaseUrl || (import.meta.env.PROD && configuredApiOrigin ? `${configuredApiOrigin}/api` : '/api')
+const apiBaseUrl = configuredApiBaseUrl || (buildEnv.PROD && configuredApiOrigin ? `${configuredApiOrigin}/api` : '/api')
 
 const api = axios.create({
   baseURL: apiBaseUrl,
   timeout: 30000,
   withCredentials: true,
 })
+
+// Reference data and public share pages have no account owner. Their responses
+// remain valid while a login is restored, and never refresh a user's session.
+export const publicApi = axios.create({ baseURL: apiBaseUrl, timeout: 30000, withCredentials: false })
+
+/** Long-running AI endpoints need a browser deadline above the backend/proxy deadline. */
+export const API_TIMEOUT_MS = {
+  standardAi: 45_000,
+  readerReading: 105_000,
+  readerFollowup: 75_000,
+  insights: 60_000,
+  fateAnalyze: 125_000,
+  fateChoose: 75_000,
+} as const
 
 const ACCESS_TOKEN_KEY = 'tarot_access_token'
 const REMEMBER_LOGIN_KEY = 'tarot_remember_login'
@@ -47,13 +63,14 @@ export function setAccessToken(token: string | null, persist = rememberLogin) {
 
 // 请求拦截器：添加 Authorization header
 api.interceptors.request.use((config) => {
+  ;(config as RetryableRequestConfig)._scope = getSessionScope()
   if (accessToken) {
     setAuthorizationHeader(config, accessToken)
   }
   return config
 })
 
-type RetryableRequestConfig = InternalAxiosRequestConfig & { _retry?: boolean }
+type RetryableRequestConfig = InternalAxiosRequestConfig & { _retry?: boolean; _scope?: ReturnType<typeof getSessionScope> }
 
 function setAuthorizationHeader(config: InternalAxiosRequestConfig, token: string) {
   config.headers = AxiosHeaders.from(config.headers)
@@ -70,20 +87,36 @@ interface PendingRequest {
 let pendingRequests: PendingRequest[] = []
 
 api.interceptors.response.use(
-  (response) => response,
+  (response) => {
+    const scope = (response.config as RetryableRequestConfig)._scope
+    if (scope && !isCurrentSession(scope)) throw new SessionChangedError()
+    return response
+  },
   async (error: unknown) => {
     if (!axios.isAxiosError(error)) return Promise.reject(error)
     const originalRequest = error.config as RetryableRequestConfig | undefined
     if (!originalRequest) return Promise.reject(error)
+    const scope = originalRequest._scope ?? getSessionScope()
+    if (!isCurrentSession(scope)) return Promise.reject(new SessionChangedError())
 
-    // 如果是 401 且不是刷新请求本身
-    if (error.response?.status === 401 && !originalRequest._retry && !originalRequest.url?.includes('/auth/refresh')) {
+    const requestPath = originalRequest.url?.split('?')[0] ?? ''
+    const isPublicAuth = requestPath.includes('/auth/') && !requestPath.endsWith('/auth/logout')
+    const hadAccessToken = String(AxiosHeaders.from(originalRequest.headers).get('Authorization') ?? '').startsWith('Bearer ')
+    // Only renew an authenticated request. A wrong password or an anonymous
+    // request must never use a refresh cookie to sign in implicitly.
+    if (error.response?.status === 401 && hadAccessToken && !isPublicAuth && !originalRequest._retry) {
       originalRequest._retry = true
 
       if (!isRefreshing) {
         isRefreshing = true
         try {
-          const res = await axios.post(`${apiBaseUrl}/auth/refresh`, null, { withCredentials: true })
+          const res = await axios.post(`${apiBaseUrl}/auth/refresh`, null, { withCredentials: true, timeout: 15_000 })
+          if (!isCurrentSession(scope)) throw new SessionChangedError()
+          // Refresh cookies are shared across tabs. Never attach another
+          // account's refreshed token to requests made by the current account.
+          if (scope.owner !== null && res.data?.data?.user?.id !== scope.owner) {
+            throw new SessionChangedError()
+          }
           const newToken = res.data?.data?.accessToken
           if (typeof newToken !== 'string' || !newToken.trim()) {
             throw new Error('刷新登录状态失败')
@@ -99,11 +132,11 @@ api.interceptors.response.use(
           return api(originalRequest)
         } catch (refreshErr) {
           // 刷新失败，清除状态并 reject 所有等待中的请求（否则它们会永久挂起）
-          setAccessToken(null)
+          if (isCurrentSession(scope)) setAccessToken(null)
           pendingRequests.forEach(({ reject }) => reject(refreshErr))
           pendingRequests = []
           // 触发全局登出事件
-          window.dispatchEvent(new CustomEvent('auth:logout'))
+          if (isCurrentSession(scope)) window.dispatchEvent(new CustomEvent('auth:logout'))
           return Promise.reject(error)
         } finally {
           isRefreshing = false
@@ -114,6 +147,10 @@ api.interceptors.response.use(
       return new Promise((resolve, reject) => {
         pendingRequests.push({
           resolve: (token: string) => {
+            if (!isCurrentSession(scope)) {
+              reject(new SessionChangedError())
+              return
+            }
             setAuthorizationHeader(originalRequest, token)
             resolve(api(originalRequest))
           },

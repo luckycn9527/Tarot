@@ -2,8 +2,9 @@
 import { ref, watch, computed, nextTick, onMounted, onUnmounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
-import api from '@/services/api'
+import api, { API_TIMEOUT_MS } from '@/services/api'
 import { useAuth } from '@/composables/useAuth'
+import { useQuota } from '@/composables/useQuota'
 import { useToast } from '@/composables/useToast'
 import { getCardImageUrl } from '@/data/tarotCards'
 import { useShuffle } from '@/composables/useShuffle'
@@ -18,9 +19,65 @@ void FateSacredDatetime
 
 const route = useRoute()
 const router = useRouter()
-const { t } = useI18n()
+const { t, locale } = useI18n()
+const isEnglish = computed(() => String(locale.value).toLowerCase().startsWith('en'))
 const toast = useToast()
 const { isLoggedIn, isInitialized, user } = useAuth()
+const { fateDualRemaining, isUnlimited, isFateDualExhausted, fetchQuota, decrementFateDual } = useQuota()
+
+const ui = computed(() => isEnglish.value ? {
+  heroTitle: 'Fate Dual',
+  heroSub: 'Let your birth-chart baseline and three Tarot variables examine one uncertain thought together.',
+  flowAria: 'Reading steps', theaterAria: 'Fate fork prologue', cluesAria: 'Current story clues', currentScript: 'Current question',
+  calibrationTitle: 'Chart calibration', calibrationSub: 'Prefilled from your profile when possible; expand to adjust', currentAnchor: 'Current anchor',
+  birthPlacePending: 'Birthplace pending', collapseCalibration: 'Collapse', expandCalibration: 'Adjust details',
+  gregorianBirth: 'Gregorian birth date', year: 'Year', month: 'Month', day: 'Day', birthTime: 'Birth time', hour: 'Hour', minute: 'Minute',
+  birthPlace: 'Birthplace', birthPlacePlaceholder: 'City, country', gender: 'Gender', male: 'Male', female: 'Female',
+  solarCorrection: 'True solar time correction', birthLongitude: 'Birth longitude (east)', corrected: 'Corrected', minutes: 'minutes',
+  longitudeHint: 'Known cities are detected automatically. Enter longitude when the city is not recognized.',
+  chartSummary: 'The chart supplies the long-term baseline', tarotSummary: 'Tarot captures the present variables', destinyChart: 'Fate chart', crystalAlt: 'Silver-violet crystal chart',
+  yearPillar: 'Year', monthPillar: 'Month', dayPillar: 'Day', hourPillar: 'Hour', fiveElementsClass: 'Element class', soul: 'Soul ruler', body: 'Body ruler', zodiac: 'Zodiac',
+  ziweiEmpty: 'Complete the birth details to generate the Zi Wei chart.', baziTab: 'BaZi chart', ziweiTab: 'Zi Wei Dou Shu',
+  questionTitle: 'Name the question clearly', questionSub: 'Write what matters most now, or use a quick scenario below', currentDomain: 'Current domain', minimumChars: 'at least 5 characters',
+  questionPlaceholder: 'For example: should I keep my current role or accept the less certain opportunity with more room to grow?',
+  enterDraw: 'Draw cards', calibrating: 'Calibrating', nextDraw: 'Next: draw three variable cards', scenarioPrompt: 'Type a question or choose a scenario below',
+  scenarioTitle: 'Quick scenarios', scenarioHint: 'Selecting one fills the question automatically',
+  pickTitle: 'Draw three variable fragments', pickSub: 'Do not interpret yet. Treat each card as a light appearing in the story and follow your first instinct.', thisScript: 'This question',
+  pickBridge: 'Let Tarot reveal what the chart cannot see', pickBridgeSub: 'The cards will occupy pull, resistance, and future-variable positions.',
+  variables: 'Three-act variables', variablesSub: 'They will meet the chart and form two possible routes.', waitingReveal: 'Waiting to be revealed', undo: 'Undo last card', reshuffle: 'Shuffle again', startCollision: 'Compare both readings',
+  verdictTitle: 'Dual-reading conclusion', chartBackdropLabel: 'Chart baseline', chartFallback: 'Energy profile', tarotVariables: 'Tarot variables', currentDomainLabel: 'Current domain',
+  scaleLabel: 'Scales of fate', routeLabel: 'Route', routeReminder: 'Route note', aiRouteReading: 'AI route reading', whyPath: 'Why this path fits', shadowReminder: 'shadow reminder',
+  actionPlan: 'Action plan', actionPlanSub: 'Turn this choice into a workable 30-day rhythm', riskTitle: 'Costs to watch', stopTitle: 'Stop or redirect signals', chartEcho: 'Chart echo',
+  doneSub: 'AI has turned your dual-reading fork into an interpretation and practical next steps.',
+  quotaRemaining: '{count} free Fate Dual reading left today', quotaUnlimited: 'Unlimited Fate Dual readings', quotaUsed: 'Today’s free Fate Dual reading has been used. Try again tomorrow.',
+  datePending: 'Birth date pending', timePending: 'Birth time pending', emptyPalace: 'No major star',
+} : {
+  heroTitle: '命运双盘',
+  heroSub: '把一个摇摆不定的念头，交给命盘底色与塔罗变量共同推演。',
+  flowAria: '流程步骤', theaterAria: '命运分岔剧场序章', cluesAria: '当前剧情线索', currentScript: '当前剧本',
+  calibrationTitle: '命盘校准', calibrationSub: '已尽量从个人资料预填，可展开微调', currentAnchor: '当前锚点',
+  birthPlacePending: '出生地待补充', collapseCalibration: '收起校准', expandCalibration: '展开校准',
+  gregorianBirth: '公历生日', year: '年', month: '月', day: '日', birthTime: '出生时间', hour: '时', minute: '分',
+  birthPlace: '出生地', birthPlacePlaceholder: '中国·北京市', gender: '性别', male: '男', female: '女',
+  solarCorrection: '真太阳时校正', birthLongitude: '出生地经度（东经）', corrected: '校正后', minutes: '分钟',
+  longitudeHint: '已按常用城市自动识别；未识别时请手动填写经度。',
+  chartSummary: '命盘用于判断底色', tarotSummary: '塔罗用于捕捉当下变量', destinyChart: '命运星盘', crystalAlt: '紫银水晶命盘',
+  yearPillar: '年柱', monthPillar: '月柱', dayPillar: '日柱', hourPillar: '时柱', fiveElementsClass: '五行局', soul: '命主', body: '身主', zodiac: '生肖',
+  ziweiEmpty: '填写完整出生信息后，自动为你排出紫微命盘', baziTab: '八字命盘', ziweiTab: '紫微斗数',
+  questionTitle: '把问题说清楚', questionSub: '先写下此刻最想确认的事，也可以点下面的场景快速套用', currentDomain: '当前领域', minimumChars: '至少写下 5 个字',
+  questionPlaceholder: '例如：我该守住现在的工作，还是接受那个不确定但更有成长性的机会？',
+  enterDraw: '进入抽牌', calibrating: '校准中', nextDraw: '下一步抽取三张变量牌', scenarioPrompt: '直接输入，或点击下方场景自动生成问题',
+  scenarioTitle: '快速场景', scenarioHint: '点选会自动填入问题',
+  pickTitle: '抽取三枚变量碎片', pickSub: '先不要解释牌义。把它当成剧情里突然亮起的三束光，依直觉翻开就好。', thisScript: '本次剧本',
+  pickBridge: '让塔罗补上命盘看不见的变量', pickBridgeSub: '三张牌会落入牵引、阻力、变量三个幕位。',
+  variables: '三幕变量', variablesSub: '它们会和命盘一起碰撞出两条路线。', waitingReveal: '等待翻开', undo: '撤销上一张', reshuffle: '重新洗牌', startCollision: '开始双盘碰撞',
+  verdictTitle: '双盘碰撞结论', chartBackdropLabel: '命盘底色', chartFallback: '气机侧写', tarotVariables: '塔罗变量', currentDomainLabel: '当前领域',
+  scaleLabel: '命运天平', routeLabel: '路线', routeReminder: '路线提醒', aiRouteReading: 'AI 路线解读', whyPath: '为什么适合这条路', shadowReminder: '的阴影提醒',
+  actionPlan: '行动计划', actionPlanSub: '把选择变成接下来 30 天的节奏', riskTitle: '需要留意的代价', stopTitle: '停止或转向信号', chartEcho: '命盘回声',
+  doneSub: 'AI 已根据你的双盘分岔，生成这条路线的解析与行动指引。',
+  quotaRemaining: '今日剩余 {count} 次免费命运双盘', quotaUnlimited: '命运双盘不限次数', quotaUsed: '今日免费命运双盘次数已用完，明天再来吧。',
+  datePending: '生日待校准', timePending: '时辰待校准', emptyPalace: '空宫',
+})
 
 type Step = 'form' | 'pick' | 'analyzing' | 'dual' | 'submitting' | 'done'
 
@@ -36,7 +93,7 @@ const birthMonth = ref<number | null>(4)
 const birthDay = ref<number | null>(21)
 const birthHour = ref<number | null>(12)
 const birthMinute = ref<number | null>(0)
-const birthPlace = ref('中国·北京市')
+const birthPlace = ref('')
 const birthLongitude = ref<number | null>(resolveBirthLongitude(birthPlace.value))
 const gender = ref<'male' | 'female'>('male')
 const solarCorrection = ref(false)
@@ -44,14 +101,21 @@ const chartType = ref<'bazi' | 'ziwei'>('bazi')
 const calibrationOpen = ref(false)
 
 const selectedDomain = ref<DomainKey>('career')
-const domainOptions: { key: DomainKey; label: string; sub: string; category: DomainKey }[] = [
+const domainOptions = computed<{ key: DomainKey; label: string; sub: string; category: DomainKey }[]>(() => isEnglish.value ? [
+  { key: 'love', label: 'Love', sub: 'Matters of the heart', category: 'love' },
+  { key: 'career', label: 'Career', sub: 'Direction and growth', category: 'career' },
+  { key: 'wealth', label: 'Money', sub: 'Opportunity and security', category: 'wealth' },
+  { key: 'health', label: 'Well-being', sub: 'Mind and body', category: 'health' },
+  { key: 'relationship', label: 'Relationships', sub: 'Understanding connection', category: 'relationship' },
+  { key: 'decision', label: 'Decision', sub: 'A life choice', category: 'decision' },
+] : [
   { key: 'love', label: '感情', sub: '缠绵情感', category: 'love' },
   { key: 'career', label: '事业', sub: '发展方向', category: 'career' },
   { key: 'wealth', label: '财运', sub: '财富机遇', category: 'wealth' },
   { key: 'health', label: '健康', sub: '身心状态', category: 'health' },
   { key: 'relationship', label: '人际', sub: '关系解析', category: 'relationship' },
   { key: 'decision', label: '抉择', sub: '人生选择', category: 'decision' },
-]
+])
 
 watch(birthPlace, (place) => {
   birthLongitude.value = resolveBirthLongitude(place)
@@ -67,18 +131,27 @@ const effectiveBirthTime = computed(() => correctedBirthContext.value?.time ?? b
 const effectiveBirthHour = computed(() => Number(effectiveBirthTime.value.split(':')[0] ?? 12))
 
 /** 各领域的问题示例（点选即填入，降低输入门槛） */
-const questionSuggestionMap: Record<DomainKey, string[]> = {
+const questionSuggestionMap = computed<Record<DomainKey, string[]>>(() => isEnglish.value ? {
+  love: ['When might I meet a meaningful partner?', 'Does this relationship have a future?', 'Are we truly compatible?'],
+  career: ['Is this the right time to change jobs?', 'Where is my career direction leading?', 'Is this opportunity worth taking?'],
+  wealth: ['What is my financial outlook this year?', 'Is this investment worth considering?', 'How can I improve my financial situation?'],
+  health: ['What does my current well-being need from me?', 'How should I adjust my daily rhythm?', 'What health signal deserves attention?'],
+  relationship: ['Can my relationship with my family improve?', 'How should I handle this conflict?', 'Who is a helpful ally in my life?'],
+  decision: ['How should I approach the choice before me?', 'Should I persist or let go?', 'Which path fits me best right now?'],
+} : {
   love: ['我的正缘什么时候出现？', '这段感情还有未来吗？', '我和 TA 适合在一起吗？'],
   career: ['我现在适合换工作吗？', '我的事业方向在哪里？', '这个机会值得把握吗？'],
   wealth: ['我今年的财运如何？', '这笔投资值得吗？', '我该如何改善财务状况？'],
   health: ['我近期的身心状态如何？', '我该如何调整作息？', '有什么需要留意的健康信号？'],
   relationship: ['我和家人的关系会改善吗？', '我该如何处理这段人际矛盾？', '谁是我生命中的贵人？'],
   decision: ['我面临的这个选择该怎么定？', '我该坚持还是放手？', '哪条路更适合现在的我？'],
-}
-const questionSuggestions = computed(() => questionSuggestionMap[selectedDomain.value] ?? [])
+})
+const questionSuggestions = computed(() => questionSuggestionMap.value[selectedDomain.value] ?? [])
 
 /** 流程引导步骤（让多步流程更清晰） */
-const flowSteps = ['提出困惑', '抽取变量', '双盘碰撞', '选择路线']
+const flowSteps = computed(() => isEnglish.value
+  ? ['Frame the question', 'Draw the variables', 'Compare the readings', 'Choose a path']
+  : ['提出困惑', '抽取变量', '双盘碰撞', '选择路线'])
 const currentStepIndex = computed(() => {
   switch (step.value) {
     case 'form': return 0
@@ -91,15 +164,22 @@ const currentStepIndex = computed(() => {
   }
 })
 
-const theaterScenes: Record<Step, { chapter: string; title: string; desc: string; pulse: string }> = {
+const theaterScenes = computed<Record<Step, { chapter: string; title: string; desc: string; pulse: string }>>(() => isEnglish.value ? {
+  form: { chapter: 'Prologue', title: 'Turn uncertainty into a fork in the road', desc: 'Set your birth anchor and present question. The chart provides the backdrop; Tarot provides the variables.', pulse: 'Awaiting entry' },
+  pick: { chapter: 'Act one', title: 'Draw three variable fragments', desc: 'Each card marks a turning point. Do not interpret too early; let intuition lead.', pulse: 'Variables appearing' },
+  analyzing: { chapter: 'Act two', title: 'The two readings are meeting', desc: 'Your chart, Tarot cards, and question are becoming two possible paths.', pulse: 'Energy converging' },
+  dual: { chapter: 'Act three', title: 'Stand at the entrance to two paths', desc: 'One path protects your reserves; the other rewrites the pattern. See the cost before you choose.', pulse: 'Path awaiting choice' },
+  submitting: { chapter: 'Finale', title: 'Sealing your chosen path', desc: 'Your choice is being set into this reading and turned into next-step guidance.', pulse: 'Being inscribed' },
+  done: { chapter: 'Echo', title: 'Your action script is ready', desc: 'Bring the symbolic insight into a workable rhythm for the next 30 days.', pulse: 'Guidance complete' },
+} : {
   form: { chapter: '序章', title: '把摇摆写成一个分岔剧本', desc: '先确认出生锚点和此刻议题，命盘负责底色，塔罗负责变量。', pulse: '等待入场' },
   pick: { chapter: '第一幕', title: '抽取三枚变量碎片', desc: '每一张牌都是剧情里的一个转折，先不要解释，交给直觉。', pulse: '变量显影' },
   analyzing: { chapter: '第二幕', title: '双盘正在碰撞', desc: '命盘、塔罗与问题会被叠合成两条可选择路线。', pulse: '能量汇聚' },
   dual: { chapter: '第三幕', title: '站在两条路的入口', desc: '一条保留筹码，一条主动改写。先看清代价，再做签章。', pulse: '路线待选' },
   submitting: { chapter: '终幕', title: '路线签章落定中', desc: '正在把你的选择写入本次分岔，并生成下一步指引。', pulse: '刻印中' },
   done: { chapter: '回声', title: '你的行动剧本已生成', desc: '把玄学结论落到接下来 30 天可执行的节奏里。', pulse: '指引完成' },
-}
-const currentTheaterScene = computed(() => theaterScenes[step.value])
+})
+const currentTheaterScene = computed(() => theaterScenes.value[step.value])
 
 type BranchChoice = 'stable' | 'adventure'
 type PathScores = Partial<Record<'稳健' | '成长' | '风险' | '回报' | '心力', number>>
@@ -165,7 +245,7 @@ const selectedCards = computed(() =>
   selectedIndices.value.map((i) => deck.value[i]).filter(Boolean),
 )
 
-const fateSpreadPositions = ['当前牵引', '隐藏阻力', '未来变量']
+const fateSpreadPositions = computed(() => isEnglish.value ? ['Current pull', 'Hidden resistance', 'Future variable'] : ['当前牵引', '隐藏阻力', '未来变量'])
 
 interface ScenarioCard {
   key: DomainKey
@@ -176,30 +256,37 @@ interface ScenarioCard {
   signal: string
 }
 
-const scenarioCards: ScenarioCard[] = [
+const scenarioCards = computed<ScenarioCard[]>(() => isEnglish.value ? [
+  { key: 'decision', title: 'A difficult choice', sub: 'Stay or change direction', question: 'Which path in front of me fits where I am now?', category: 'career', signal: 'Fork' },
+  { key: 'career', title: 'Career shift', sub: 'Opportunity and risk together', question: 'Is this the right time to change jobs or redirect my career?', category: 'career', signal: 'Breakthrough' },
+  { key: 'love', title: 'Relationship direction', sub: 'Move closer or let go', question: 'Does this relationship have a future worth continuing to invest in?', category: 'love', signal: 'Pull' },
+  { key: 'wealth', title: 'Financial choice', sub: 'Invest, protect, or wait', question: 'Should I pursue this investment or stabilize my cash flow first?', category: 'wealth', signal: 'Stake' },
+  { key: 'relationship', title: 'Relationship undercurrent', sub: 'Support and drain together', question: 'How should I handle this relationship that keeps exhausting me?', category: 'relationship', signal: 'Boundary' },
+  { key: 'health', title: 'Mind and body', sub: 'Calibrating pressure and rhythm', question: 'What is my current well-being asking me to adjust?', category: 'health', signal: 'Rhythm' },
+] : [
   { key: 'decision', title: '两难抉择', sub: '坚持还是转向', question: '我面前的这个选择，哪条路更适合现在的我？', category: 'career', signal: '分岔' },
   { key: 'career', title: '事业换轨', sub: '机会与风险并存', question: '我现在适合换工作或调整事业方向吗？', category: 'career', signal: '破局' },
   { key: 'love', title: '关系去留', sub: '继续靠近还是放手', question: '这段关系还有值得继续投入的未来吗？', category: 'love', signal: '牵引' },
   { key: 'wealth', title: '财富决策', sub: '投入、守住或等待', question: '这笔投入值得把握，还是应该先稳住现金流？', category: 'wealth', signal: '筹码' },
   { key: 'relationship', title: '人际暗流', sub: '贵人与消耗并行', question: '我该如何处理这段让我反复内耗的人际关系？', category: 'relationship', signal: '边界' },
   { key: 'health', title: '身心状态', sub: '压力与节奏校准', question: '我近期的身心状态在提醒我调整什么？', category: 'health', signal: '节律' },
-]
+])
 
-const selectedDomainOption = computed(() => domainOptions.find((d) => d.key === selectedDomain.value) ?? domainOptions[0])
-const selectedScenarioCard = computed(() => scenarioCards.find((s) => s.key === selectedDomain.value) ?? scenarioCards[0])
+const selectedDomainOption = computed(() => domainOptions.value.find((d) => d.key === selectedDomain.value) ?? domainOptions.value[0])
+const selectedScenarioCard = computed(() => scenarioCards.value.find((s) => s.key === selectedDomain.value) ?? scenarioCards.value[0])
 const birthAnchorSummary = computed(() => {
   const y = birthYear.value, m = birthMonth.value, d = birthDay.value
-  const day = y && m && d ? `${y}.${pad2(m)}.${pad2(d)}` : '生日待校准'
-  const time = birthHour.value != null ? `${pad2(birthHour.value)}:${pad2(birthMinute.value ?? 0)}` : '时辰待校准'
-  const sex = gender.value === 'female' ? '女' : '男'
+  const day = y && m && d ? `${y}.${pad2(m)}.${pad2(d)}` : ui.value.datePending
+  const time = birthHour.value != null ? `${pad2(birthHour.value)}:${pad2(birthMinute.value ?? 0)}` : ui.value.timePending
+  const sex = gender.value === 'female' ? ui.value.female : ui.value.male
   return `${day} · ${time} · ${sex}`
 })
-const chartAnchorLabel = computed(() => chartType.value === 'ziwei' ? '紫微斗数' : '八字四柱')
+const chartAnchorLabel = computed(() => chartType.value === 'ziwei' ? ui.value.ziweiTab : ui.value.baziTab)
 const theaterQuestionPreview = computed(() => question.value.trim() || selectedScenarioCard.value.question)
 const theaterClues = computed(() => [
-  { key: 'domain', label: '议题领域', value: selectedDomainOption.value.label },
-  { key: 'scenario', label: '剧本开场', value: selectedScenarioCard.value.title },
-  { key: 'anchor', label: '命盘锚点', value: chartAnchorLabel.value },
+  { key: 'domain', label: isEnglish.value ? 'Domain' : '议题领域', value: selectedDomainOption.value.label },
+  { key: 'scenario', label: isEnglish.value ? 'Opening scene' : '剧本开场', value: selectedScenarioCard.value.title },
+  { key: 'anchor', label: isEnglish.value ? 'Chart anchor' : '命盘锚点', value: chartAnchorLabel.value },
 ])
 
 const birthDateWheelTouched = ref(false)
@@ -216,6 +303,7 @@ watch(
   ([init, logged]) => {
     if (!init) return
     if (!logged) { void router.replace({ path: '/login', query: { redirect: route.fullPath } }); return }
+    void fetchQuota()
     if (!profilePrefilled.value && user.value) {
       profilePrefilled.value = true
       if (user.value.birthday && /^\d{4}-\d{2}-\d{2}/.test(user.value.birthday)) {
@@ -271,7 +359,7 @@ function commitBirthTime() {
 
 const baziPillars = ref<{ year: string; month: string; day: string; time: string } | null>(null)
 let baziComputeSeq = 0
-let baziComputeTimer: ReturnType<typeof window.setTimeout> | null = null
+let baziComputeTimer: number | null = null
 
 function cancelBaziCompute() {
   if (!baziComputeTimer) return
@@ -358,7 +446,9 @@ function applyScenario(card: ScenarioCard) {
 /** 校验缺失项：返回第一条缺失提示，无缺失返回 null */
 function firstMissing(): string | null {
   if (!birthDate.value || !/^\d{4}-\d{2}-\d{2}$/.test(birthDate.value)) return t('pages.fateDual.toastPickBirth')
-  if (solarCorrection.value && !correctedBirthContext.value) return '请填写有效的出生地经度后再启用真太阳时校正'
+  if (solarCorrection.value && !correctedBirthContext.value) return isEnglish.value
+    ? 'Enter a valid birthplace longitude before enabling true solar time correction.'
+    : '请填写有效的出生地经度后再启用真太阳时校正'
   if (question.value.trim().length < 5) return t('pages.fateDual.toastQuestionMin')
   return null
 }
@@ -402,7 +492,7 @@ function buildZiweiSummary() {
     const stars = [...p.majorStars, ...p.minorStars]
       .map((s) => s.name + (s.brightness ? `(${s.brightness})` : '') + (s.mutagen ? `[化${s.mutagen}]` : ''))
       .join('、')
-    return `${p.name}（${p.heavenlyStem}${p.earthlyBranch}）：${stars || '空宫'}`
+    return `${p.name}（${p.heavenlyStem}${p.earthlyBranch}）：${stars || ui.value.emptyPalace}`
   })
   return {
     fiveElementsClass: chart.fiveElementsClass,
@@ -419,6 +509,7 @@ function buildZiweiSummary() {
 
 async function runAnalyzeWithPickedCards() {
   if (!allThreePicked.value || selectedCards.value.length !== 3) { toast.error(t('pages.fateDual.toastPickThree')); return }
+  if (isFateDualExhausted.value) { toast.error(ui.value.quotaUsed); return }
   step.value = 'analyzing'
   try {
     const res = await api.post('/fate/analyze', {
@@ -433,19 +524,30 @@ async function runAnalyzeWithPickedCards() {
       orientations: selectedCards.value.map((s) => (s.isReversed ? 'reversed' : 'upright')),
       chart_type: chartType.value,
       ziwei: chartType.value === 'ziwei' ? buildZiweiSummary() : undefined,
-    })
+      locale: isEnglish.value ? 'en-US' : 'zh-CN',
+    }, { timeout: API_TIMEOUT_MS.fateAnalyze })
     if (!res.data.success) { toast.error(res.data.message || t('pages.fateDual.toastAnalyzeFail')); step.value = 'pick'; return }
-    analysis.value = res.data.data as AnalyzePayload; step.value = 'dual'
+    analysis.value = res.data.data as AnalyzePayload; decrementFateDual(); step.value = 'dual'
   } catch (e: unknown) {
-    const msg = (e as { response?: { data?: { message?: string } } }).response?.data?.message
-    toast.error(msg || t('pages.fateDual.toastAnalyzeRetry')); step.value = 'pick'
+    const response = (e as { response?: { status?: number; data?: { message?: string } } }).response
+    if (response?.status === 429) {
+      await fetchQuota(true)
+      toast.error(ui.value.quotaUsed)
+    } else {
+      toast.error(isEnglish.value ? t('pages.fateDual.toastAnalyzeRetry') : (response?.data?.message || t('pages.fateDual.toastAnalyzeRetry')))
+    }
+    step.value = 'pick'
   }
 }
 
 async function onChoose(choice: BranchChoice) {
   if (!analysis.value) return; step.value = 'submitting'; choiceMade.value = choice
   try {
-    const res = await api.post('/fate/choose', { conflict_id: analysis.value.conflictId, choice: choice === 'stable' ? 'stable' : 'adventure' })
+    const res = await api.post('/fate/choose', {
+      conflict_id: analysis.value.conflictId,
+      choice: choice === 'stable' ? 'stable' : 'adventure',
+      locale: isEnglish.value ? 'en-US' : 'zh-CN',
+    }, { timeout: API_TIMEOUT_MS.fateChoose })
     if (!res.data.success) { toast.error(res.data.message || t('pages.fateDual.toastSubmitFail')); step.value = 'dual'; return }
     const data = res.data.data as { result: string; guidance?: ChoiceGuidance; alreadyChosen?: boolean; choiceType?: BranchChoice }
     finalResult.value = data.result
@@ -475,17 +577,53 @@ const chosenBranchText = computed(() => {
 })
 
 const unchosenPathLabel = computed(() => {
-  if (choiceMade.value === 'stable') return '主动破局'
-  if (choiceMade.value === 'adventure') return '守住现在'
-  return '未选路线'
+  if (choiceMade.value === 'stable') return isEnglish.value ? 'The bold path' : '主动破局'
+  if (choiceMade.value === 'adventure') return isEnglish.value ? 'The measured path' : '守住现在'
+  return isEnglish.value ? 'The unchosen path' : '未选路线'
 })
 
 const fallbackChoiceGuidance = computed<ChoiceGuidance>(() => {
   const a = analysis.value
   const isStable = choiceMade.value === 'stable'
-  const pathText = chosenBranchText.value || finalResult.value || '这条路线已经被你选中，接下来重点是把直觉落到可执行的节奏里。'
+  const pathText = chosenBranchText.value || finalResult.value || (isEnglish.value
+    ? 'This route is now selected. The next task is to turn intuition into a workable pace.'
+    : '这条路线已经被你选中，接下来重点是把直觉落到可执行的节奏里。')
   const shadow = isStable ? a?.branches.adventure : a?.branches.stable
-  const verdictBase = a?.conflict.summary || finalOpening.value || '双盘已经给出分岔，真正的答案会在你接下来的行动里显形。'
+  const verdictBase = a?.conflict.summary || finalOpening.value || (isEnglish.value
+    ? 'The two readings have revealed a fork. The useful answer will emerge through what you do next.'
+    : '双盘已经给出分岔，真正的答案会在你接下来的行动里显形。')
+  if (isEnglish.value) {
+    if (isStable) {
+      return {
+        title: 'The measured path',
+        verdict: `${verdictBase} Protect the foundation first, test assumptions in smaller steps, and increase commitment only when the evidence improves.`,
+        whyThisPath: ['It preserves resources and options.', 'It gives uncertainty time to become observable.', pathText],
+        actionPlan: {
+          now: ['Write down three boundaries to protect', 'Turn the largest fear into one testable question'],
+          sevenDays: ['Run one low-cost experiment', 'Separate facts from imagined pressure'],
+          thirtyDays: ['Set a clear review date', 'Increase commitment only with stronger evidence'],
+        },
+        risks: ['Stability can become delay', 'Over-accommodation can hide a real need', 'Waiting too long can close a window'],
+        stopSignals: ['The same issue keeps draining you', 'The opportunity is clearly shrinking', 'Fear is the only reason you are staying'],
+        shadowPath: shadow ? `The bold path still reminds you: ${shadow}` : 'The unchosen path reminds you that impulse can contain useful information.',
+        mantra: 'Stabilize first, then move with precision',
+      }
+    }
+    return {
+      title: 'The breakthrough path',
+      verdict: `${verdictBase} Use one controlled action to reveal the situation while keeping the cost inside a boundary you can carry.`,
+      whyThisPath: ['It answers momentum that has been building.', 'It replaces guessing with real feedback.', pathText],
+      actionPlan: {
+        now: ['Choose the smallest meaningful action', 'Define the cost you are willing to carry'],
+        sevenDays: ['Complete one real step forward', 'Review the risk boundary with someone you trust'],
+        thirtyDays: ['Use results to recalibrate direction', 'Keep one viable fallback route'],
+      },
+      risks: ['Impulse can amplify cost', 'High expectations can hide detail risk', 'Resources may feel short-term pressure'],
+      stopSignals: ['Effort produces no feedback', 'Progress requires hiding a major cost', 'Your body and emotions remain overloaded'],
+      shadowPath: shadow ? `The measured path still reminds you: ${shadow}` : 'The unchosen path reminds you that stability can preserve strength.',
+      mantra: 'Break the pattern without losing your boundaries',
+    }
+  }
   if (isStable) {
     return {
       title: '稳线行动手札',
@@ -531,9 +669,9 @@ const guidanceView = computed(() => choiceGuidance.value ?? fallbackChoiceGuidan
 const guidancePlanSections = computed(() => {
   const g = guidanceView.value
   return [
-    { key: 'now', label: '现在', sub: '先让局面落地', items: g.actionPlan.now },
-    { key: 'seven', label: '7 天', sub: '制造一次反馈', items: g.actionPlan.sevenDays },
-    { key: 'thirty', label: '30 天', sub: '决定是否加码', items: g.actionPlan.thirtyDays },
+    { key: 'now', label: isEnglish.value ? 'Now' : '现在', sub: isEnglish.value ? 'Make the situation concrete' : '先让局面落地', items: g.actionPlan.now },
+    { key: 'seven', label: isEnglish.value ? '7 days' : '7 天', sub: isEnglish.value ? 'Create one real signal' : '制造一次反馈', items: g.actionPlan.sevenDays },
+    { key: 'thirty', label: isEnglish.value ? '30 days' : '30 天', sub: isEnglish.value ? 'Decide whether to commit more' : '决定是否加码', items: g.actionPlan.thirtyDays },
   ]
 })
 
@@ -544,9 +682,9 @@ const fateVerdict = computed(() => {
 })
 
 const chosenPathLabel = computed(() => {
-  if (choiceMade.value === 'stable') return '守住现在'
-  if (choiceMade.value === 'adventure') return '主动破局'
-  return '尚未选择'
+  if (choiceMade.value === 'stable') return isEnglish.value ? 'Keep the foundation' : '守住现在'
+  if (choiceMade.value === 'adventure') return isEnglish.value ? 'Break the pattern' : '主动破局'
+  return isEnglish.value ? 'No path selected' : '尚未选择'
 })
 
 function elementBlockClass(key: string): string {
@@ -590,7 +728,40 @@ const pathComparison = computed(() => {
     return { axis, stable: s, adventure: v, lowerIsBetter: axis === '风险' }
   })
 })
+
+function elementLabel(key: string): string {
+  if (!isEnglish.value) return key
+  return ({ 木: 'Wood', 火: 'Fire', 土: 'Earth', 金: 'Metal', 水: 'Water' } as Record<string, string>)[key] ?? key
+}
 const hasPathScores = computed(() => pathComparison.value.length > 0)
+
+function scoreAxisLabel(axis: string): string {
+  if (!isEnglish.value) return axis
+  return ({ 稳健: 'Stability', 成长: 'Growth', 风险: 'Risk', 回报: 'Return', 心力: 'Effort' } as Record<string, string>)[axis] ?? axis
+}
+
+const ZIWEI_TERM_EN: Record<string, string> = {
+  命宫: 'Life', 兄弟: 'Siblings', 兄弟宫: 'Siblings', 夫妻: 'Partner', 夫妻宫: 'Partner', 子女: 'Children', 子女宫: 'Children',
+  财帛: 'Wealth', 财帛宫: 'Wealth', 疾厄: 'Health', 疾厄宫: 'Health', 迁移: 'Travel', 迁移宫: 'Travel', 仆役: 'Friends', 仆役宫: 'Friends',
+  交友: 'Friends', 交友宫: 'Friends', 官禄: 'Career', 官禄宫: 'Career', 田宅: 'Property', 田宅宫: 'Property', 福德: 'Well-being', 福德宫: 'Well-being', 父母: 'Parents', 父母宫: 'Parents',
+  紫微: 'Zi Wei', 天机: 'Tian Ji', 太阳: 'Sun', 武曲: 'Wu Qu', 天同: 'Tian Tong', 廉贞: 'Lian Zhen', 天府: 'Tian Fu', 太阴: 'Moon',
+  贪狼: 'Tan Lang', 巨门: 'Ju Men', 天相: 'Tian Xiang', 天梁: 'Tian Liang', 七杀: 'Qi Sha', 破军: 'Po Jun', 文昌: 'Wen Chang', 文曲: 'Wen Qu',
+  左辅: 'Zuo Fu', 右弼: 'You Bi', 天魁: 'Tian Kui', 天钺: 'Tian Yue', 禄存: 'Lu Cun', 擎羊: 'Qing Yang', 陀罗: 'Tuo Luo', 火星: 'Fire Star', 铃星: 'Bell Star',
+  鼠: 'Rat', 牛: 'Ox', 虎: 'Tiger', 兔: 'Rabbit', 龙: 'Dragon', 蛇: 'Snake', 马: 'Horse', 羊: 'Goat', 猴: 'Monkey', 鸡: 'Rooster', 狗: 'Dog', 猪: 'Pig',
+  禄: 'Fortune', 权: 'Power', 科: 'Recognition', 忌: 'Challenge', 庙: 'Exalted', 旺: 'Strong', 得: 'Supported', 利: 'Favorable', 平: 'Neutral', 陷: 'Weakened',
+}
+const STEM_PINYIN: Record<string, string> = { 甲: 'Jia', 乙: 'Yi', 丙: 'Bing', 丁: 'Ding', 戊: 'Wu', 己: 'Ji', 庚: 'Geng', 辛: 'Xin', 壬: 'Ren', 癸: 'Gui' }
+const BRANCH_PINYIN: Record<string, string> = { 子: 'Zi', 丑: 'Chou', 寅: 'Yin', 卯: 'Mao', 辰: 'Chen', 巳: 'Si', 午: 'Wu', 未: 'Wei', 申: 'Shen', 酉: 'You', 戌: 'Xu', 亥: 'Hai' }
+
+function displayPillar(value: string): string {
+  if (!isEnglish.value) return value
+  return [...value].map((char) => STEM_PINYIN[char] ?? BRANCH_PINYIN[char] ?? char).join('-')
+}
+
+function displayZiweiTerm(value: string | null | undefined): string {
+  if (!value || !isEnglish.value) return value ?? ''
+  return ZIWEI_TERM_EN[value] ?? displayPillar(value)
+}
 
 interface RouteTheaterMeta {
   code: string
@@ -604,7 +775,18 @@ interface RouteTheaterMeta {
   buttonHint: string
 }
 
-const routeTheaterMeta: Record<BranchChoice, RouteTheaterMeta> = {
+const routeTheaterMeta = computed<Record<BranchChoice, RouteTheaterMeta>>(() => isEnglish.value ? {
+  stable: {
+    code: 'A', eyebrow: 'MOON LINE', title: 'Moonlit Anchor', subtitle: 'Keep the foundation',
+    persona: 'For preserving options, stabilizing the pace, and watching the next window.',
+    payoff: 'Reduce volatility and commit more only when the evidence improves.', caution: 'Do not let caution become delay.', symbol: 'M', buttonHint: 'Choose this route',
+  },
+  adventure: {
+    code: 'B', eyebrow: 'SPARK LINE', title: 'Spark Breakthrough', subtitle: 'Break the pattern',
+    persona: 'For accepting controlled uncertainty in exchange for growth and new information.',
+    payoff: 'Use one bounded action to bring real feedback to the surface.', caution: 'Do not let impulse magnify the cost.', symbol: 'S', buttonHint: 'Choose this route',
+  },
+} : {
   stable: {
     code: 'A',
     eyebrow: 'MOON LINE',
@@ -627,7 +809,7 @@ const routeTheaterMeta: Record<BranchChoice, RouteTheaterMeta> = {
     symbol: '星',
     buttonHint: '选择破局',
   },
-}
+})
 
 const routeTheaterCards = computed(() => {
   const branches = analysis.value?.branches
@@ -641,7 +823,7 @@ const routeTheaterCards = computed(() => {
 
     return {
       choice,
-      ...routeTheaterMeta[choice],
+      ...routeTheaterMeta.value[choice],
       branchText: (choice === 'stable' ? branches?.stable : branches?.adventure) ?? '',
       tag: choice === 'stable' ? branches?.stableTag : branches?.adventureTag,
       horizon: choice === 'stable' ? branches?.stableHorizon : branches?.adventureHorizon,
@@ -650,7 +832,9 @@ const routeTheaterCards = computed(() => {
   })
 })
 
-const chosenRouteTheater = computed(() => choiceMade.value ? routeTheaterMeta[choiceMade.value] : null)
+const chosenRouteTheater = computed(() => choiceMade.value ? routeTheaterMeta.value[choiceMade.value] : null)
+const forkRunes = computed(() => isEnglish.value ? ['F', 'P', 'C'] : ['命', '岔', '择'])
+const guidanceRunes = computed(() => isEnglish.value ? ['M', 'S', 'F', 'H'] : ['月', '星', '命', '心'])
 
 function splitDisplayParagraphs(text: string): string[] {
   const raw = text.trim(); if (!raw) return []
@@ -672,11 +856,14 @@ function splitDisplayParagraphs(text: string): string[] {
       <header class="fate-hero-header">
         <div class="fate-hero-copy">
           <p class="fate-hero-kicker">FATE DUAL ROOM</p>
-          <h1 class="fate-hero-title">命运双盘</h1>
-          <p class="fate-hero-sub">把一个摇摆不定的念头，交给命盘底色与塔罗变量共同推演。</p>
+          <h1 class="fate-hero-title">{{ ui.heroTitle }}</h1>
+          <p class="fate-hero-sub">{{ ui.heroSub }}</p>
+          <p class="mt-3 text-xs text-violet-200/65">
+            {{ isUnlimited ? ui.quotaUnlimited : ui.quotaRemaining.replace('{count}', String(fateDualRemaining)) }}
+          </p>
         </div>
         <!-- 流程引导 -->
-        <ol class="fate-steps" aria-label="流程步骤">
+        <ol class="fate-steps" :aria-label="ui.flowAria">
           <li
             v-for="(label, i) in flowSteps"
             :key="label"
@@ -689,20 +876,20 @@ function splitDisplayParagraphs(text: string): string[] {
         </ol>
       </header>
 
-      <section class="fate-theater-strip" aria-label="命运分岔剧场序章">
+      <section class="fate-theater-strip" :aria-label="ui.theaterAria">
         <div class="fate-theater-copy">
           <p class="fate-theater-kicker">{{ currentTheaterScene.chapter }} · {{ currentTheaterScene.pulse }}</p>
           <h2>{{ currentTheaterScene.title }}</h2>
           <p>{{ currentTheaterScene.desc }}</p>
         </div>
-        <div class="fate-theater-clues" aria-label="当前剧情线索">
+        <div class="fate-theater-clues" :aria-label="ui.cluesAria">
           <span v-for="clue in theaterClues" :key="clue.key">
             <small>{{ clue.label }}</small>
             {{ clue.value }}
           </span>
         </div>
         <div class="fate-theater-question">
-          <small>当前剧本</small>
+          <small>{{ ui.currentScript }}</small>
           <p>{{ theaterQuestionPreview }}</p>
         </div>
       </section>
@@ -712,19 +899,19 @@ function splitDisplayParagraphs(text: string): string[] {
         <!-- ─── 左栏：命盘校准 ─── -->
         <section class="fate-panel fate-panel-left" aria-labelledby="fate-birth-h">
           <div class="fate-panel-header">
-            <h2 id="fate-birth-h" class="fate-panel-title">命盘校准</h2>
-            <p class="fate-panel-sub">已尽量从个人资料预填，可展开微调</p>
+            <h2 id="fate-birth-h" class="fate-panel-title">{{ ui.calibrationTitle }}</h2>
+            <p class="fate-panel-sub">{{ ui.calibrationSub }}</p>
           </div>
 
           <div class="fate-anchor-card">
-            <p class="fate-anchor-kicker">当前锚点</p>
+            <p class="fate-anchor-kicker">{{ ui.currentAnchor }}</p>
             <p class="fate-anchor-main">{{ birthAnchorSummary }}</p>
             <div class="fate-anchor-meta">
               <span>{{ chartAnchorLabel }}</span>
-              <span>{{ birthPlace || '出生地待补充' }}</span>
+              <span>{{ birthPlace || ui.birthPlacePending }}</span>
             </div>
             <button type="button" class="fate-anchor-toggle cursor-pointer" @click="calibrationOpen = !calibrationOpen">
-              {{ calibrationOpen ? '收起校准' : '展开校准' }}
+              {{ calibrationOpen ? ui.collapseCalibration : ui.expandCalibration }}
             </button>
           </div>
 
@@ -732,86 +919,86 @@ function splitDisplayParagraphs(text: string): string[] {
             <div v-if="calibrationOpen" class="fate-calibration">
               <!-- 公历生日 -->
               <div class="fate-field">
-                <label class="fate-label">公历生日</label>
+                <label class="fate-label">{{ ui.gregorianBirth }}</label>
                 <div class="fate-input-row">
-                  <input v-model.number="birthYear" type="number" min="1900" max="2100" placeholder="1999" class="fate-input fate-input--year" aria-label="年" @change="commitBirthDate">
-                  <span class="fate-unit">年</span>
-                  <input v-model.number="birthMonth" type="number" min="1" max="12" placeholder="04" class="fate-input fate-input--md" aria-label="月" @change="commitBirthDate">
-                  <span class="fate-unit">月</span>
-                  <input v-model.number="birthDay" type="number" min="1" max="31" placeholder="21" class="fate-input fate-input--md" aria-label="日" @change="commitBirthDate">
-                  <span class="fate-unit">日</span>
+                  <input v-model.number="birthYear" type="number" min="1900" max="2100" placeholder="1999" class="fate-input fate-input--year" :aria-label="ui.year" @change="commitBirthDate">
+                  <span class="fate-unit">{{ ui.year }}</span>
+                  <input v-model.number="birthMonth" type="number" min="1" max="12" placeholder="04" class="fate-input fate-input--md" :aria-label="ui.month" @change="commitBirthDate">
+                  <span class="fate-unit">{{ ui.month }}</span>
+                  <input v-model.number="birthDay" type="number" min="1" max="31" placeholder="21" class="fate-input fate-input--md" :aria-label="ui.day" @change="commitBirthDate">
+                  <span class="fate-unit">{{ ui.day }}</span>
                   <svg class="fate-row-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18" stroke-linecap="round"/></svg>
                 </div>
               </div>
 
               <!-- 出生时间 -->
               <div class="fate-field">
-                <label class="fate-label">出生时间</label>
+                <label class="fate-label">{{ ui.birthTime }}</label>
                 <div class="fate-input-row">
-                  <input :value="birthHour ?? ''" type="number" min="0" max="23" placeholder="12" class="fate-input fate-input--md" aria-label="时" @input="birthHour = Number(($event.target as HTMLInputElement).value)" @change="commitBirthTime">
+                  <input :value="birthHour ?? ''" type="number" min="0" max="23" placeholder="12" class="fate-input fate-input--md" :aria-label="ui.hour" @input="birthHour = Number(($event.target as HTMLInputElement).value)" @change="commitBirthTime">
                   <span class="fate-colon">:</span>
-                  <input :value="birthMinute != null ? pad2(birthMinute) : ''" type="text" inputmode="numeric" maxlength="2" placeholder="00" class="fate-input fate-input--md" aria-label="分" @input="birthMinute = Number(($event.target as HTMLInputElement).value)" @change="commitBirthTime">
+                  <input :value="birthMinute != null ? pad2(birthMinute) : ''" type="text" inputmode="numeric" maxlength="2" placeholder="00" class="fate-input fate-input--md" :aria-label="ui.minute" @input="birthMinute = Number(($event.target as HTMLInputElement).value)" @change="commitBirthTime">
                   <svg class="fate-row-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2" stroke-linecap="round" stroke-linejoin="round"/></svg>
                 </div>
               </div>
 
               <!-- 出生地 -->
               <div class="fate-field">
-                <label class="fate-label">出生地</label>
+                <label class="fate-label">{{ ui.birthPlace }}</label>
                 <div class="fate-input-row">
-                  <input v-model="birthPlace" type="text" placeholder="中国·北京市" class="fate-input fate-input--text" aria-label="出生地">
+                  <input v-model="birthPlace" type="text" :placeholder="ui.birthPlacePlaceholder" class="fate-input fate-input--text" :aria-label="ui.birthPlace">
                   <svg class="fate-row-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M12 21s7-6.3 7-11a7 7 0 10-14 0c0 4.7 7 11 7 11z" stroke-linejoin="round"/><circle cx="12" cy="10" r="2.5"/></svg>
                 </div>
               </div>
 
               <!-- 性别 -->
               <div class="fate-field">
-                <label class="fate-label">性别</label>
+                <label class="fate-label">{{ ui.gender }}</label>
                 <div class="fate-gender-row">
                   <button type="button" class="fate-gender cursor-pointer" :class="gender === 'male' ? 'fate-gender--on' : ''" @click="gender = 'male'">
                     <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="10" cy="14" r="5"/><path d="M15 9l5-5M15 4h5v5" stroke-linecap="round" stroke-linejoin="round"/></svg>
-                    男
+                    {{ ui.male }}
                   </button>
                   <button type="button" class="fate-gender cursor-pointer" :class="gender === 'female' ? 'fate-gender--on' : ''" @click="gender = 'female'">
                     <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="12" cy="8" r="5"/><path d="M12 13v8M9 18h6" stroke-linecap="round"/></svg>
-                    女
+                    {{ ui.female }}
                   </button>
                 </div>
               </div>
 
               <!-- 真太阳时校正 -->
               <div class="fate-field fate-toggle-field">
-                <span class="fate-label mb-0">真太阳时校正</span>
+                <span class="fate-label mb-0">{{ ui.solarCorrection }}</span>
                 <button type="button" role="switch" :aria-checked="solarCorrection" class="fate-switch cursor-pointer" :class="solarCorrection ? 'fate-switch--on' : ''" @click="solarCorrection = !solarCorrection">
                   <span class="fate-switch-knob" />
                 </button>
               </div>
               <div v-if="solarCorrection" class="fate-field">
-                <label class="fate-label">出生地经度（东经）</label>
+                <label class="fate-label">{{ ui.birthLongitude }}</label>
                 <div class="fate-input-row">
-                  <input v-model.number="birthLongitude" type="number" min="73" max="135" step="0.0001" placeholder="116.4074" class="fate-input fate-input--text" aria-label="出生地经度">
+                  <input v-model.number="birthLongitude" type="number" min="73" max="135" step="0.0001" placeholder="116.4074" class="fate-input fate-input--text" :aria-label="ui.birthLongitude">
                   <span class="text-xs text-violet-200/60">°E</span>
                 </div>
                 <p v-if="correctedBirthContext" class="mt-2 text-xs text-violet-200/60">
-                  校正后：{{ correctedBirthContext.date }} {{ correctedBirthContext.time }}（{{ correctedBirthContext.offsetMinutes >= 0 ? '+' : '' }}{{ correctedBirthContext.offsetMinutes }} 分钟）
+                  {{ ui.corrected }}: {{ correctedBirthContext.date }} {{ correctedBirthContext.time }} ({{ correctedBirthContext.offsetMinutes >= 0 ? '+' : '' }}{{ correctedBirthContext.offsetMinutes }} {{ ui.minutes }})
                 </p>
-                <p v-else class="mt-2 text-xs text-amber-300/70">已按常用城市自动识别；未识别时请手动填写经度。</p>
+                <p v-else class="mt-2 text-xs text-amber-300/70">{{ ui.longitudeHint }}</p>
               </div>
             </div>
           </Transition>
 
           <div class="fate-mini-summary">
-            <span>命盘用于判断底色</span>
-            <span>塔罗用于捕捉当下变量</span>
+            <span>{{ ui.chartSummary }}</span>
+            <span>{{ ui.tarotSummary }}</span>
           </div>
         </section>
 
         <!-- ─── 中栏：星盘 ─── -->
-        <section class="fate-center" aria-label="命运星盘">
+        <section class="fate-center" :aria-label="ui.destinyChart">
           <div v-if="chartType === 'bazi'" class="fate-orrery-container">
             <img
               :src="fateDualCrystalImage"
-              alt="紫银水晶命盘"
+              :alt="ui.crystalAlt"
               class="fate-static-orb-image"
               decoding="async"
               fetchpriority="high"
@@ -819,20 +1006,20 @@ function splitDisplayParagraphs(text: string): string[] {
             >
             <!-- 四柱徽章 -->
             <div class="fate-pillar fate-pillar--tl">
-              <span class="fate-pillar-label">年柱</span>
-              <span class="fate-pillar-gz">{{ baziPillars ? baziPillars.year : '—' }}</span>
+              <span class="fate-pillar-label">{{ ui.yearPillar }}</span>
+              <span class="fate-pillar-gz">{{ baziPillars ? displayPillar(baziPillars.year) : '—' }}</span>
             </div>
             <div class="fate-pillar fate-pillar--tr">
-              <span class="fate-pillar-label">月柱</span>
-              <span class="fate-pillar-gz">{{ baziPillars ? baziPillars.month : '—' }}</span>
+              <span class="fate-pillar-label">{{ ui.monthPillar }}</span>
+              <span class="fate-pillar-gz">{{ baziPillars ? displayPillar(baziPillars.month) : '—' }}</span>
             </div>
             <div class="fate-pillar fate-pillar--bl">
-              <span class="fate-pillar-label">日柱</span>
-              <span class="fate-pillar-gz">{{ baziPillars ? baziPillars.day : '—' }}</span>
+              <span class="fate-pillar-label">{{ ui.dayPillar }}</span>
+              <span class="fate-pillar-gz">{{ baziPillars ? displayPillar(baziPillars.day) : '—' }}</span>
             </div>
             <div class="fate-pillar fate-pillar--br">
-              <span class="fate-pillar-label">时柱</span>
-              <span class="fate-pillar-gz">{{ baziPillars ? baziPillars.time : '—' }}</span>
+              <span class="fate-pillar-label">{{ ui.hourPillar }}</span>
+              <span class="fate-pillar-gz">{{ baziPillars ? displayPillar(baziPillars.time) : '—' }}</span>
             </div>
 
           </div>
@@ -853,57 +1040,57 @@ function splitDisplayParagraphs(text: string): string[] {
                     :key="'mj'+si"
                     class="fate-zw-star fate-zw-star--major"
                     :class="s.mutagen ? 'fate-zw-star--hua' : ''"
-                  >{{ s.name }}<i v-if="s.brightness" class="fate-zw-bright">{{ s.brightness }}</i><i v-if="s.mutagen" class="fate-zw-hua">化{{ s.mutagen }}</i></span>
+                  >{{ displayZiweiTerm(s.name) }}<i v-if="s.brightness" class="fate-zw-bright">{{ displayZiweiTerm(s.brightness) }}</i><i v-if="s.mutagen" class="fate-zw-hua">{{ isEnglish ? 'Transform: ' : '化' }}{{ displayZiweiTerm(s.mutagen) }}</i></span>
                   <span
                     v-for="(s, si) in p.minorStars"
                     :key="'mn'+si"
                     class="fate-zw-star fate-zw-star--minor"
                     :class="s.mutagen ? 'fate-zw-star--hua' : ''"
-                  >{{ s.name }}<i v-if="s.mutagen" class="fate-zw-hua">化{{ s.mutagen }}</i></span>
+                  >{{ displayZiweiTerm(s.name) }}<i v-if="s.mutagen" class="fate-zw-hua">{{ isEnglish ? 'Transform: ' : '化' }}{{ displayZiweiTerm(s.mutagen) }}</i></span>
                 </div>
                 <div class="fate-zw-foot">
-                  <span class="fate-zw-name">{{ p.name }}</span>
-                  <span class="fate-zw-gz">{{ p.heavenlyStem }}{{ p.earthlyBranch }}</span>
+                  <span class="fate-zw-name">{{ displayZiweiTerm(p.name) }}</span>
+                  <span class="fate-zw-gz">{{ displayPillar(p.heavenlyStem + p.earthlyBranch) }}</span>
                 </div>
               </div>
 
               <!-- 中宫：命主信息 -->
               <div class="fate-zw-center">
-                <p class="fate-zw-center-title">紫微斗数</p>
+                <p class="fate-zw-center-title">{{ ui.ziweiTab }}</p>
                 <div class="fate-zw-center-grid">
-                  <div><span class="fate-zw-c-key">五行局</span>{{ ziweiChart.fiveElementsClass }}</div>
-                  <div><span class="fate-zw-c-key">命主</span>{{ ziweiChart.soul }}</div>
-                  <div><span class="fate-zw-c-key">身主</span>{{ ziweiChart.body }}</div>
-                  <div><span class="fate-zw-c-key">生肖</span>{{ ziweiChart.zodiac }}</div>
+                  <div><span class="fate-zw-c-key">{{ ui.fiveElementsClass }}</span>{{ displayZiweiTerm(ziweiChart.fiveElementsClass) }}</div>
+                  <div><span class="fate-zw-c-key">{{ ui.soul }}</span>{{ displayZiweiTerm(ziweiChart.soul) }}</div>
+                  <div><span class="fate-zw-c-key">{{ ui.body }}</span>{{ displayZiweiTerm(ziweiChart.body) }}</div>
+                  <div><span class="fate-zw-c-key">{{ ui.zodiac }}</span>{{ displayZiweiTerm(ziweiChart.zodiac) }}</div>
                 </div>
-                <p class="fate-zw-center-lunar">{{ ziweiChart.lunarDate }}</p>
+                <p class="fate-zw-center-lunar">{{ isEnglish ? effectiveBirthDate : ziweiChart.lunarDate }}</p>
               </div>
             </div>
             <div v-else class="fate-zw-empty">
-              <p>填写完整出生信息后，自动为你排出紫微命盘</p>
+              <p>{{ ui.ziweiEmpty }}</p>
             </div>
           </div>
 
           <!-- 命盘类型切换 -->
           <div class="fate-chart-tabs">
-            <button type="button" class="fate-tab cursor-pointer" :class="chartType === 'bazi' ? 'fate-tab--on' : ''" @click="chartType = 'bazi'">八字命盘</button>
-            <button type="button" class="fate-tab cursor-pointer" :class="chartType === 'ziwei' ? 'fate-tab--on' : ''" @click="chartType = 'ziwei'">紫微斗数</button>
+            <button type="button" class="fate-tab cursor-pointer" :class="chartType === 'bazi' ? 'fate-tab--on' : ''" @click="chartType = 'bazi'">{{ ui.baziTab }}</button>
+            <button type="button" class="fate-tab cursor-pointer" :class="chartType === 'ziwei' ? 'fate-tab--on' : ''" @click="chartType = 'ziwei'">{{ ui.ziweiTab }}</button>
           </div>
         </section>
 
         <!-- ─── 右栏：AI 命理助手 ─── -->
         <aside class="fate-panel fate-panel-right" aria-labelledby="fate-ai-h">
           <div class="fate-panel-header">
-            <h2 id="fate-ai-h" class="fate-panel-title">把问题说清楚</h2>
-            <p class="fate-panel-sub">先写下此刻最想确认的事，也可以点下面的场景快速套用</p>
+            <h2 id="fate-ai-h" class="fate-panel-title">{{ ui.questionTitle }}</h2>
+            <p class="fate-panel-sub">{{ ui.questionSub }}</p>
           </div>
 
           <!-- 向宇宙提问 -->
           <div ref="askRef" class="fate-ask">
             <div class="fate-ask-heading">
               <div>
-                <p class="fate-ask-title">当前领域：{{ selectedDomainOption.label }}</p>
-                <p class="fate-ask-hint">{{ selectedDomainOption.sub }} · 至少写下 5 个字</p>
+                <p class="fate-ask-title">{{ ui.currentDomain }}: {{ selectedDomainOption.label }}</p>
+                <p class="fate-ask-hint">{{ selectedDomainOption.sub }} · {{ ui.minimumChars }}</p>
               </div>
               <span class="fate-domain-pill">{{ selectedDomainOption.label }}</span>
             </div>
@@ -912,20 +1099,20 @@ function splitDisplayParagraphs(text: string): string[] {
               <button v-for="s in questionSuggestions" :key="s" type="button" class="fate-suggestion cursor-pointer" @click="applySuggestion(s)">{{ s }}</button>
             </div>
             <div class="fate-ask-box" :class="{ 'fate-ask-box--focus': questionFieldFocused }">
-              <textarea v-model="question" rows="4" maxlength="200" placeholder="例如：我该守住现在的工作，还是接受那个不确定但更有成长性的机会？" class="fate-ask-input" @focus="questionFieldFocused = true" @blur="questionFieldFocused = false"/>
+              <textarea v-model="question" rows="4" maxlength="200" :placeholder="ui.questionPlaceholder" class="fate-ask-input" @focus="questionFieldFocused = true" @blur="questionFieldFocused = false"/>
               <div class="fate-ask-bar">
                 <span class="fate-ask-count" :class="{ 'fate-ask-count--ok': question.trim().length >= 5 }">{{ question.length }}/200</span>
-                <button type="button" class="fate-ask-send cursor-pointer" :class="{ 'fate-ask-send--ready': canSubmit }" :disabled="ctaInvoking" aria-label="进入抽牌" @click="invokeCtaRitual">
-                  {{ ctaBusyLabel ? '校准中' : '进入抽牌' }}
+                <button type="button" class="fate-ask-send cursor-pointer" :class="{ 'fate-ask-send--ready': canSubmit }" :disabled="ctaInvoking" :aria-label="ui.enterDraw" @click="invokeCtaRitual">
+                  {{ ctaBusyLabel ? ui.calibrating : ui.enterDraw }}
                 </button>
               </div>
             </div>
-            <p class="fate-cta-hint">{{ canSubmit ? '下一步抽取三张变量牌' : '直接输入，或点击下方场景自动生成问题' }}</p>
+            <p class="fate-cta-hint">{{ canSubmit ? ui.nextDraw : ui.scenarioPrompt }}</p>
           </div>
 
           <div class="fate-scenario-head">
-            <span>快速场景</span>
-            <small>点选会自动填入问题</small>
+            <span>{{ ui.scenarioTitle }}</span>
+            <small>{{ ui.scenarioHint }}</small>
           </div>
           <div class="fate-scenario-grid">
             <button
@@ -953,18 +1140,18 @@ function splitDisplayParagraphs(text: string): string[] {
       <header class="fate-pick-stage">
         <div>
           <p class="fate-theater-kicker">{{ currentTheaterScene.chapter }} · {{ currentTheaterScene.pulse }}</p>
-          <h1>抽取三枚变量碎片</h1>
-          <p>先不要解释牌义。把它当成剧情里突然亮起的三束光，依直觉翻开就好。</p>
+          <h1>{{ ui.pickTitle }}</h1>
+          <p>{{ ui.pickSub }}</p>
         </div>
         <div class="fate-pick-script">
-          <small>本次剧本</small>
+          <small>{{ ui.thisScript }}</small>
           <p>{{ theaterQuestionPreview }}</p>
         </div>
       </header>
       <div class="max-w-4xl mx-auto">
         <div class="text-center mb-8">
-          <h2 class="text-lg font-serif text-gold-200 mb-2">让塔罗补上命盘看不见的变量</h2>
-          <p class="text-gray-500 text-sm">三张牌会落入牵引、阻力、变量三个幕位。</p>
+          <h2 class="text-lg font-serif text-gold-200 mb-2">{{ ui.pickBridge }}</h2>
+          <p class="text-gray-500 text-sm">{{ ui.pickBridgeSub }}</p>
           <!-- 选牌进度 -->
           <div class="flex items-center justify-center gap-2 mt-4">
             <span
@@ -993,8 +1180,8 @@ function splitDisplayParagraphs(text: string): string[] {
           </div>
           <div class="fate-variable-stage mb-10">
             <div class="fate-variable-head">
-              <span>三幕变量</span>
-              <p>它们会和命盘一起碰撞出两条路线。</p>
+              <span>{{ ui.variables }}</span>
+              <p>{{ ui.variablesSub }}</p>
             </div>
             <div class="fate-variable-grid">
               <div
@@ -1013,17 +1200,17 @@ function splitDisplayParagraphs(text: string): string[] {
                   <template v-else><span class="text-gray-600 text-2xl font-light font-serif">{{ posIndex + 1 }}</span></template>
                 </div>
                 <p class="fate-variable-name">{{ position }}</p>
-                <small v-if="selectedCards[posIndex]">{{ selectedCards[posIndex].card.name }}</small>
-                <small v-else>等待翻开</small>
+                <small v-if="selectedCards[posIndex]">{{ isEnglish ? selectedCards[posIndex].card.nameEn : selectedCards[posIndex].card.name }}</small>
+                <small v-else>{{ ui.waitingReveal }}</small>
               </div>
             </div>
           </div>
           <div class="flex flex-col sm:flex-row gap-3 justify-center items-center pb-4">
             <button type="button" class="cursor-pointer px-6 py-2.5 rounded-full bg-white/4 border border-gold-500/15 text-gray-400 text-sm hover:bg-gold-500/5 transition-colors" @click="step = 'form'">{{ t('pages.fateDual.backEditBirth') }}</button>
-            <button v-if="selectedIndices.length > 0 && !allThreePicked" type="button" class="cursor-pointer px-6 py-2.5 rounded-full bg-white/4 border border-gold-500/15 text-gray-400 text-sm hover:bg-gold-500/5 transition-colors" @click="undoLastCard">撤销上一张</button>
-            <button v-if="!allThreePicked" type="button" class="cursor-pointer px-6 py-2.5 rounded-full bg-white/4 border border-gold-500/15 text-gray-400 text-sm hover:bg-gold-500/5 transition-colors" @click="reshuffleDeck">重新洗牌</button>
+            <button v-if="selectedIndices.length > 0 && !allThreePicked" type="button" class="cursor-pointer px-6 py-2.5 rounded-full bg-white/4 border border-gold-500/15 text-gray-400 text-sm hover:bg-gold-500/5 transition-colors" @click="undoLastCard">{{ ui.undo }}</button>
+            <button v-if="!allThreePicked" type="button" class="cursor-pointer px-6 py-2.5 rounded-full bg-white/4 border border-gold-500/15 text-gray-400 text-sm hover:bg-gold-500/5 transition-colors" @click="reshuffleDeck">{{ ui.reshuffle }}</button>
             <button v-if="allThreePicked" type="button" class="cursor-pointer px-6 py-2.5 rounded-full bg-white/4 border border-gold-500/15 text-gray-400 text-sm hover:bg-gold-500/5 transition-colors" @click="resetPickSelection">{{ t('pages.fateDual.resetPickOrder') }}</button>
-            <button v-if="allThreePicked" type="button" class="cursor-pointer px-10 py-4 rounded-2xl cta-button text-white font-medium text-lg" @click="runAnalyzeWithPickedCards">开始双盘碰撞</button>
+            <button v-if="allThreePicked" type="button" class="cursor-pointer px-10 py-4 rounded-2xl cta-button text-white font-medium text-lg" @click="runAnalyzeWithPickedCards">{{ ui.startCollision }}</button>
           </div>
         </template>
       </div>
@@ -1036,14 +1223,14 @@ function splitDisplayParagraphs(text: string): string[] {
     <div v-else-if="step === 'dual' && analysis" class="fate-inner-wrap space-y-10">
       <section class="fate-verdict-panel">
         <div>
-          <p class="fate-verdict-kicker">双盘碰撞结论</p>
+          <p class="fate-verdict-kicker">{{ ui.verdictTitle }}</p>
           <h2 class="fate-verdict-title">{{ analysis.conflict.type }}</h2>
         </div>
         <p class="fate-verdict-text">{{ fateVerdict }}</p>
         <div class="fate-verdict-strip">
-          <span>命盘底色：{{ analysis.bazi.dayMaster || analysis.bazi.pattern || '气机侧写' }}</span>
-          <span>塔罗变量：{{ analysis.tarot.cards.map((c) => c.name).join(' · ') }}</span>
-          <span>当前领域：{{ selectedDomainOption.label }}</span>
+          <span>{{ ui.chartBackdropLabel }}: {{ analysis.bazi.dayMaster || analysis.bazi.pattern || ui.chartFallback }}</span>
+          <span>{{ ui.tarotVariables }}: {{ analysis.tarot.cards.map((c) => c.name).join(' · ') }}</span>
+          <span>{{ ui.currentDomainLabel }}: {{ selectedDomainOption.label }}</span>
         </div>
       </section>
 
@@ -1081,7 +1268,7 @@ function splitDisplayParagraphs(text: string): string[] {
           <div v-if="fiveElementBars.length" class="fate-five-bars mb-5">
             <p class="text-[11px] tracking-widest text-amber-200/50 mb-2.5">{{ t('pages.fateDual.fiveDistribution') }}</p>
             <div v-for="bar in fiveElementBars" :key="bar.key" class="fate-five-row">
-              <span class="fate-five-name" :style="{ color: bar.color }">{{ bar.key }}</span>
+              <span class="fate-five-name" :style="{ color: bar.color }">{{ elementLabel(bar.key) }}</span>
               <div class="fate-five-track">
                 <div class="fate-five-fill" :style="{ width: bar.pct + '%', background: bar.color, boxShadow: `0 0 10px ${bar.color}66` }" />
               </div>
@@ -1092,7 +1279,7 @@ function splitDisplayParagraphs(text: string): string[] {
           <!-- 五行意象（无评分时回退到原意象卡） -->
           <div v-else-if="analysis.bazi.fiveElements" class="mb-4 grid grid-cols-5 gap-2">
             <div v-for="(v, k) in analysis.bazi.fiveElements" :key="k" :class="elementBlockClass(String(k))">
-              <p class="text-xs font-medium text-amber-100/90">{{ k }}</p><p class="mt-1 text-[11px] text-gray-400">{{ v }}</p>
+              <p class="text-xs font-medium text-amber-100/90">{{ elementLabel(String(k)) }}</p><p class="mt-1 text-[11px] text-gray-400">{{ v }}</p>
             </div>
           </div>
 
@@ -1117,7 +1304,7 @@ function splitDisplayParagraphs(text: string): string[] {
         </section>
       </div>
       <section class="fate-collision-panel">
-        <p class="fate-collision-label">命运天平</p>
+        <p class="fate-collision-label">{{ ui.scaleLabel }}</p>
         <p class="fate-collision-summary">{{ analysis.conflict.summary }}</p>
       </section>
       <section class="fate-fork-stage" aria-labelledby="fate-fork-title">
@@ -1143,7 +1330,7 @@ function splitDisplayParagraphs(text: string): string[] {
             </div>
 
             <div class="fate-route-topline">
-              <span class="fate-route-code">路线 {{ route.code }}</span>
+              <span class="fate-route-code">{{ ui.routeLabel }} {{ route.code }}</span>
               <span v-if="route.tag" class="fate-path-tag" :class="`fate-path-tag--${route.choice}`">{{ route.tag }}</span>
             </div>
 
@@ -1162,7 +1349,7 @@ function splitDisplayParagraphs(text: string): string[] {
                 {{ route.horizon }}
               </span>
               <span v-for="axis in route.focusAxes" :key="route.choice + axis.axis">
-                <small>{{ axis.axis }}</small>
+                <small>{{ scoreAxisLabel(axis.axis) }}</small>
                 {{ axis.value }}
               </span>
             </div>
@@ -1180,9 +1367,9 @@ function splitDisplayParagraphs(text: string): string[] {
 
           <div class="fate-fork-rift" aria-hidden="true">
             <span class="fate-fork-rift-core" />
-            <span class="fate-fork-rune fate-fork-rune--one">命</span>
-            <span class="fate-fork-rune fate-fork-rune--two">岔</span>
-            <span class="fate-fork-rune fate-fork-rune--three">择</span>
+            <span class="fate-fork-rune fate-fork-rune--one">{{ forkRunes[0] }}</span>
+            <span class="fate-fork-rune fate-fork-rune--two">{{ forkRunes[1] }}</span>
+            <span class="fate-fork-rune fate-fork-rune--three">{{ forkRunes[2] }}</span>
           </div>
         </div>
       </section>
@@ -1199,7 +1386,7 @@ function splitDisplayParagraphs(text: string): string[] {
         <div class="space-y-4">
           <div v-for="row in pathComparison" :key="row.axis" class="fate-cmp-row">
             <div class="fate-cmp-axis">
-              {{ row.axis }}
+              {{ scoreAxisLabel(row.axis) }}
               <span v-if="row.lowerIsBetter" class="fate-cmp-hint">{{ t('pages.fateDual.lowerBetter') }}</span>
             </div>
             <!-- 稳健条（向左） -->
@@ -1234,7 +1421,7 @@ function splitDisplayParagraphs(text: string): string[] {
       <div class="fate-seal-header fate-seal-header--result">
         <p class="fate-result-kicker">{{ t('pages.fateDual.sealedChoice') }}</p>
         <h3>{{ chosenPathLabel }}</h3>
-        <p class="fate-seal-sub">AI 已根据你的双盘分岔，生成这条路线的解析与行动指引。</p>
+        <p class="fate-seal-sub">{{ ui.doneSub }}</p>
       </div>
 
       <section v-if="chosenRouteTheater" class="fate-route-cover" :class="`fate-route-cover--${choiceMade}`">
@@ -1247,7 +1434,7 @@ function splitDisplayParagraphs(text: string): string[] {
           <p>{{ chosenRouteTheater.persona }}</p>
         </div>
         <div class="fate-route-cover-note">
-          <small>路线提醒</small>
+          <small>{{ ui.routeReminder }}</small>
           <p>{{ chosenRouteTheater.caution }}</p>
         </div>
       </section>
@@ -1256,14 +1443,14 @@ function splitDisplayParagraphs(text: string): string[] {
         <div class="fate-guidance-orb" aria-hidden="true">
           <span class="fate-guidance-ring fate-guidance-ring--one"></span>
           <span class="fate-guidance-ring fate-guidance-ring--two"></span>
-          <span class="fate-guidance-rune" style="--i:0">月</span>
-          <span class="fate-guidance-rune" style="--i:1">星</span>
-          <span class="fate-guidance-rune" style="--i:2">命</span>
-          <span class="fate-guidance-rune" style="--i:3">心</span>
+          <span class="fate-guidance-rune" style="--i:0">{{ guidanceRunes[0] }}</span>
+          <span class="fate-guidance-rune" style="--i:1">{{ guidanceRunes[1] }}</span>
+          <span class="fate-guidance-rune" style="--i:2">{{ guidanceRunes[2] }}</span>
+          <span class="fate-guidance-rune" style="--i:3">{{ guidanceRunes[3] }}</span>
           <span class="fate-guidance-core"></span>
         </div>
         <div class="fate-guidance-copy">
-          <p class="fate-guidance-label">AI 路线解读</p>
+          <p class="fate-guidance-label">{{ ui.aiRouteReading }}</p>
           <h4>{{ guidanceView.title }}</h4>
           <p>{{ guidanceView.verdict }}</p>
           <div class="fate-guidance-mantra">{{ guidanceView.mantra }}</div>
@@ -1272,7 +1459,7 @@ function splitDisplayParagraphs(text: string): string[] {
 
       <section class="fate-guidance-grid">
         <div class="fate-guidance-card fate-guidance-card--why">
-          <p class="fate-card-label">为什么适合这条路</p>
+          <p class="fate-card-label">{{ ui.whyPath }}</p>
           <ol class="fate-guidance-list fate-guidance-list--numbered">
             <li v-for="(item, idx) in guidanceView.whyThisPath" :key="idx">
               <span>{{ idx + 1 }}</span>
@@ -1282,15 +1469,15 @@ function splitDisplayParagraphs(text: string): string[] {
         </div>
 
         <div class="fate-guidance-card fate-guidance-card--shadow">
-          <p class="fate-card-label">{{ unchosenPathLabel }}的阴影提醒</p>
+          <p class="fate-card-label">{{ unchosenPathLabel }}{{ ui.shadowReminder }}</p>
           <p>{{ guidanceView.shadowPath }}</p>
         </div>
       </section>
 
       <section class="fate-plan-panel">
         <div class="fate-plan-head">
-          <p class="fate-card-label">行动计划</p>
-          <h4>把选择变成接下来 30 天的节奏</h4>
+          <p class="fate-card-label">{{ ui.actionPlan }}</p>
+          <h4>{{ ui.actionPlanSub }}</h4>
         </div>
         <div class="fate-plan-grid">
           <div v-for="section in guidancePlanSections" :key="section.key" class="fate-plan-card">
@@ -1305,13 +1492,13 @@ function splitDisplayParagraphs(text: string): string[] {
 
       <section class="fate-risk-grid">
         <div class="fate-risk-card fate-risk-card--risk">
-          <p class="fate-card-label">需要留意的代价</p>
+          <p class="fate-card-label">{{ ui.riskTitle }}</p>
           <ul class="fate-guidance-list">
             <li v-for="(item, idx) in guidanceView.risks" :key="idx">{{ item }}</li>
           </ul>
         </div>
         <div class="fate-risk-card fate-risk-card--signal">
-          <p class="fate-card-label">停止或转向信号</p>
+          <p class="fate-card-label">{{ ui.stopTitle }}</p>
           <ul class="fate-guidance-list">
             <li v-for="(item, idx) in guidanceView.stopSignals" :key="idx">{{ item }}</li>
           </ul>
@@ -1319,7 +1506,7 @@ function splitDisplayParagraphs(text: string): string[] {
       </section>
 
       <div class="fate-final-card">
-        <p class="fate-card-label">命盘回声</p>
+        <p class="fate-card-label">{{ ui.chartEcho }}</p>
         <p v-if="finalOpening" class="fate-final-opening">{{ finalOpening }}</p>
         <p v-for="(para, pi) in finalRestParagraphs" :key="pi" class="fate-final-para">{{ para }}</p>
       </div>

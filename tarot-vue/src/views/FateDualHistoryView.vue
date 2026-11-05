@@ -29,7 +29,7 @@ const loading = ref(true)
 const expandedId = ref<number | null>(null)
 
 watch(
-  [isInitialized, isLoggedIn],
+  [isInitialized, isLoggedIn, locale],
   async ([init, logged]) => {
     if (!init) return
     if (!logged) {
@@ -39,7 +39,9 @@ watch(
     loading.value = true
     expandedId.value = null
     try {
-      const res = await api.get('/fate/history', { params: { limit: 30 } })
+      const res = await api.get('/fate/history', {
+        params: { limit: 30, locale: String(locale.value).toLowerCase().startsWith('en') ? 'en-US' : 'zh-CN' },
+      })
       if (res.data.success) list.value = res.data.data as Row[]
       else toast.error(res.data.message || t('pages.fateDualHistory.loadFail'))
     } catch {

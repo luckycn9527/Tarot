@@ -103,3 +103,6 @@ DOMAIN=tarot.zaopic.cn BACKEND_PORT=5174 CERTBOT_EMAIL=admin@example.com ./deplo
 - 本机正常但公网 403/TLS 被重置：检查 DNS、云安全组、WAF 和 ICP 备案状态。
 
 部署脚本的实现说明见 [`tarot-server/deploy/README.md`](tarot-server/deploy/README.md)。
+
+海外生产站 `asktarot.zaopic.cn` 的服务器清单、发布参数和第三方服务维护记录见
+[`OVERSEAS_DEPLOY.md`](OVERSEAS_DEPLOY.md)。

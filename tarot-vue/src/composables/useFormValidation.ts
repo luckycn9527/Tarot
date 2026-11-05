@@ -1,4 +1,5 @@
 import { ref, computed } from 'vue'
+import { useI18n } from 'vue-i18n'
 
 export interface ValidationOptions {
   minLength?: number
@@ -10,21 +11,22 @@ const EMOJI_REGEX = /[\u{1F600}-\u{1F64F}\u{1F300}-\u{1F5FF}\u{1F680}-\u{1F6FF}\
 
 export function useFormValidation(options: ValidationOptions = {}) {
   const { minLength = 5, maxLength = 200, rejectEmoji = true } = options
+  const { t } = useI18n()
 
   const errorMsg = ref('')
 
   function validate(text: string): boolean {
     const trimmed = text.trim()
     if (trimmed.length < minLength) {
-      errorMsg.value = `至少需要${minLength}个字符`
+      errorMsg.value = t('pages.questionForm.validation.minLength', { count: minLength })
       return false
     }
     if (trimmed.length > maxLength) {
-      errorMsg.value = `不能超过${maxLength}个字符`
+      errorMsg.value = t('pages.questionForm.validation.maxLength', { count: maxLength })
       return false
     }
     if (rejectEmoji && EMOJI_REGEX.test(trimmed)) {
-      errorMsg.value = '请不要使用表情符号'
+      errorMsg.value = t('pages.questionForm.validation.emoji')
       return false
     }
     errorMsg.value = ''

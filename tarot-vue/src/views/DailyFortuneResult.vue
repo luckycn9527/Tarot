@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, computed, onMounted, markRaw, type Component } from 'vue'
+import { ref, computed, watch, onMounted, onUnmounted, markRaw, type Component } from 'vue'
 import { useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { useScrollReveal } from '../composables/useScrollReveal'
@@ -8,7 +8,9 @@ import { getCardImageUrl } from '../data/tarotCards'
 import type { DailyFortuneResult } from '../data/tarotReadings'
 import StarRating from '../components/StarRating.vue'
 import CtaSection from '../components/CtaSection.vue'
-import { StorageKeys, storageGetRaw } from '@/utils/storage'
+import { fetchDailyFortuneCache } from '@/services/tarotAiReading'
+import { useDailyCache } from '@/composables/useDailyCache'
+import { useUserResourcesStore } from '@/stores/userResources'
 import StarIcon from '@icons/star.vue'
 import HeartIcon from '@icons/heart.vue'
 import BriefcaseIcon from '@icons/briefcase.vue'
@@ -21,17 +23,35 @@ useScrollReveal()
 const router = useRouter()
 const { t, locale } = useI18n()
 const fortune = ref<DailyFortuneResult | null>(null)
+const resources = useUserResourcesStore()
+const { businessDate, countdown, loadCache, saveFortune } = useDailyCache()
+let disposed = false
+onUnmounted(() => { disposed = true })
+watch(countdown, (value) => {
+  if (value === '00:00:00') {
+    fortune.value = null
+    void router.replace('/daily-fortune')
+  }
+})
 
-onMounted(() => {
+onMounted(async () => {
   try {
-    const raw = storageGetRaw(StorageKeys.DAILY_FORTUNE_RESULT, 'dailyFortuneResult')
-    if (!raw) {
-      router.replace('/daily-fortune')
-      return
+    const response = await fetchDailyFortuneCache()
+    if (disposed) return
+    resources.applyQuotaWindow(response)
+    if (response.result && response.card && Date.parse(response.resetsAt) > Date.now()) {
+      saveFortune(response.card.id, response.card.isReversed, JSON.stringify(response.result))
     }
-    fortune.value = JSON.parse(raw)
   } catch {
-    router.replace('/daily-fortune')
+    // Fall back only to a result for the current server-defined business date.
+  }
+  if (disposed) return
+  try {
+    const cache = loadCache()
+    if (!cache?.fortune) throw new Error('No current fortune')
+    fortune.value = JSON.parse(cache.fortune)
+  } catch {
+    void router.replace('/daily-fortune')
   }
 })
 
@@ -42,11 +62,13 @@ useDynamicSeoTitle(computed(() =>
 ))
 
 const todayStr = computed(() => {
-  const d = new Date()
+  const d = new Date(`${businessDate.value}T12:00:00Z`)
+  if (!Number.isFinite(d.getTime())) return ''
   return new Intl.DateTimeFormat(String(locale.value), {
     year: 'numeric',
     month: 'long',
     day: 'numeric',
+    timeZone: 'UTC',
   }).format(d)
 })
 
@@ -116,7 +138,7 @@ const sections = computed((): FortuneSection[] =>
         <div
           v-for="(sec, i) in sections"
           :key="sec.key"
-          class="p-6 rounded-2xl card-panel border border-gold-500/10 reveal-on-scroll"
+          class="p-6 rounded-2xl card-panel border border-gold-500/10"
         >
           <div
             class="flex flex-col gap-4"

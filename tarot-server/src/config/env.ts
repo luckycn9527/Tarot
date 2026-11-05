@@ -3,6 +3,15 @@ import { z } from 'zod';
 
 dotenv.config();
 
+function isValidTimeZone(value: string): boolean {
+  try {
+    new Intl.DateTimeFormat('en-US', { timeZone: value }).format();
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 const envSchema = z.object({
   PORT: z.coerce.number().default(5174),
   HOST: z.string().default('0.0.0.0'),
@@ -28,12 +37,19 @@ const envSchema = z.object({
     const t = val.trim();
     return t === '' ? undefined : t;
   }, z.string().optional()),
-  /** 官方为 https://api.deepseek.com；兼容 OpenAI SDK 时可写 https://api.deepseek.com/v1（不要末尾 /） */
+  /**
+   * 官方为 https://api.deepseek.com；也可配置可从部署服务器访问的 OpenAI 兼容网关。
+   * 若网关已带 /v1 会被保留（不要末尾 /）。
+   */
   DEEPSEEK_BASE_URL: z
     .string()
+    .url()
+    .refine((value) => /^https?:\/\//.test(value), 'must use http or https')
     .default('https://api.deepseek.com')
     .transform((s) => s.trim().replace(/\/+$/, '')),
   AI_RATE_LIMIT_PER_MIN: z.coerce.number().int().min(1).max(60).default(8),
+  // IANA time zone used for daily free-quota reset boundaries.
+  QUOTA_TIME_ZONE: z.string().default('UTC').refine(isValidTimeZone, 'must be a valid IANA time zone'),
 
   // Creem payments. Keep disabled until products, API key and webhook secret are configured.
   CREEM_ENABLED: z.string().optional().transform((value) => value === 'true'),
@@ -122,6 +138,9 @@ if (data.NODE_ENV === 'production') {
   }
   if (!data.APP_PUBLIC_ORIGIN?.startsWith('https://')) {
     addError('APP_PUBLIC_ORIGIN', 'production APP_PUBLIC_ORIGIN must be an https URL');
+  }
+  if (!data.DEEPSEEK_API_KEY) {
+    addError('DEEPSEEK_API_KEY', 'production requires an API key because tarot readings use AI');
   }
   if (data.CREEM_ENABLED) {
     if (!data.CREEM_API_KEY) addError('CREEM_API_KEY', 'CREEM_ENABLED requires an API key');

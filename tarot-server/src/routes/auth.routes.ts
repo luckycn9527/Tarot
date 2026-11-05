@@ -1,5 +1,6 @@
 import { Router } from 'express';
 import * as AuthController from '../controllers/auth.controller.js';
+import * as NativeAuthController from '../controllers/nativeAuth.controller.js';
 import { validate } from '../middleware/validate.js';
 import { auth } from '../middleware/auth.js';
 import {
@@ -52,6 +53,19 @@ const resetPasswordSchema = z.object({
   token: z.string().min(32, '重置令牌无效'),
   newPassword: z.string().min(6, '新密码至少6个字符').max(50, '新密码最多50个字符'),
 });
+
+const nativeRefreshSchema = z.object({
+  refreshToken: z.string().trim().min(20, '缺少刷新凭据').max(4096, '刷新凭据无效'),
+});
+const nativeLoginSchema = z.object({
+  identifier: z.string().trim().min(1, '请输入用户名或邮箱').max(254, '账号格式无效'),
+  password: z.string().min(1, '请输入密码').max(200, '密码格式无效'),
+});
+
+router.use('/native', NativeAuthController.noStore);
+router.post('/native/login', authLimiter, validate(nativeLoginSchema), NativeAuthController.login);
+router.post('/native/refresh', authLimiter, validate(nativeRefreshSchema), NativeAuthController.refresh);
+router.post('/native/logout', auth, validate(nativeRefreshSchema), NativeAuthController.logout);
 
 router.post('/register', authLimiter, validate(registerSchema), AuthController.register);
 router.post('/send-register-code', authLimiter, validate(sendRegisterCodeSchema), AuthController.sendRegisterCode);

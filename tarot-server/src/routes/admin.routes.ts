@@ -1,3 +1,5 @@
+import * as ConfigHistoryController from '../controllers/configHistory.controller.js';
+import { configMatchSchema, putCardBacksSchema, putCardsSchema, putReaderPromptsSchema, putFeaturedReadersSchema, rollbackConfigSchema, configHistoryQuerySchema } from '../validation/adminConfig.js';
 import { Router } from 'express';
 import { z } from 'zod';
 import multer from 'multer';
@@ -5,7 +7,7 @@ import * as AdminController from '../controllers/admin.controller.js';
 import { adminAuditLog } from '../middleware/adminAuditLog.js';
 import { adminAuth } from '../middleware/adminAuth.js';
 import { validate, validateQuery } from '../middleware/validate.js';
-import { adminListFeedbackQuerySchema, adminListUsersQuerySchema } from '../validation/adminQuery.js';
+import { adminListFeedbackQuerySchema, adminListUsersQuerySchema, adminUserQuestionsQuerySchema } from '../validation/adminQuery.js';
 import { adminWriteLimiter, authLimiter } from '../middleware/rateLimiter.js';
 import { imageMimeFilter } from '../utils/imageUpload.js';
 
@@ -24,58 +26,16 @@ const patchUserSchema = z.object({
   remaining_free_quota: z.number().int().min(0).max(999).optional(),
 });
 
-const cardBackItemSchema = z.object({
-  code: z.string().max(64),
-  name: z.string().max(200),
-  description: z.string().max(5000).nullable().optional(),
-  assetUrl: z.string().max(500).nullable().optional(),
+const createInvitationSchema = z.object({
+  code: z.string().trim().regex(/^[A-Za-z0-9_-]{4,50}$/, '邀请码格式无效').optional(),
+  type: z.enum(['quota', 'vip_days']),
+  value: z.number().int().min(1).max(3650),
+  maxUses: z.number().int().min(1).max(1_000_000),
+  expiresAt: z.string().datetime().nullable(),
+});
+
+const patchInvitationSchema = z.object({
   isActive: z.boolean(),
-  accessType: z.enum(['free', 'vip', 'paid']),
-  price: z.number().min(0).max(1_000_000_000).nullable().optional(),
-  sortOrder: z.number().int().min(0).max(1_000_000),
-});
-
-const putCardBacksSchema = z.object({
-  items: z.array(cardBackItemSchema).max(200),
-});
-
-const cardConfigItemSchema = z.object({
-  id: z.number().int().positive(),
-  name: z.string().min(1).max(200),
-  nameEn: z.string().min(1).max(200),
-  uprightKeywords: z.string().max(8000),
-  reversedKeywords: z.string().max(8000),
-  yesNoTendency: z.enum(['yes', 'no', 'neutral']),
-  imageUrl: z.string().max(500).nullable().optional(),
-  isActive: z.boolean(),
-});
-
-const putCardsSchema = z.object({
-  items: z.array(cardConfigItemSchema).max(200),
-});
-
-const readerPromptItemSchema = z.object({
-  readerCode: z.string().min(1).max(64),
-  displayName: z.string().max(200).nullable().optional(),
-  avatarUrl: z.string().max(500).nullable().optional(),
-  emoji: z.string().max(32).nullable().optional(),
-  accessLevel: z.enum(['free', 'vip']).nullable().optional(),
-  systemPrompt: z.string().max(200_000),
-  greeting: z.string().max(200_000),
-});
-
-const putReaderPromptsSchema = z.object({
-  items: z.array(readerPromptItemSchema).max(200),
-});
-
-const featuredReaderItemSchema = z.object({
-  readerCode: z.string().min(1).max(64),
-  isActive: z.boolean(),
-  sortOrder: z.number().int().min(0).max(1_000_000),
-});
-
-const putFeaturedReadersSchema = z.object({
-  items: z.array(featuredReaderItemSchema).max(200),
 });
 
 const replyFeedbackSchema = z.object({
@@ -86,6 +46,7 @@ const replyFeedbackSchema = z.object({
 router.post('/auth/login', authLimiter, validate(loginSchema), AdminController.login);
 
 router.get('/users', adminAuth, validateQuery(adminListUsersQuerySchema), AdminController.listUsers);
+router.get('/users/:id/questions', adminAuth, adminAuditLog, validateQuery(adminUserQuestionsQuerySchema), AdminController.listUserQuestions);
 router.patch(
   '/users/:id',
   adminAuth,
@@ -93,6 +54,24 @@ router.patch(
   adminWriteLimiter,
   validate(patchUserSchema),
   AdminController.updateUser,
+);
+
+router.get('/invitations', adminAuth, AdminController.listInvitationCodes);
+router.post(
+  '/invitations',
+  adminAuth,
+  adminAuditLog,
+  adminWriteLimiter,
+  validate(createInvitationSchema),
+  AdminController.createInvitationCode,
+);
+router.patch(
+  '/invitations/:id',
+  adminAuth,
+  adminAuditLog,
+  adminWriteLimiter,
+  validate(patchInvitationSchema),
+  AdminController.setInvitationCodeActive,
 );
 
 router.get('/config/card-backs', adminAuth, AdminController.getCardBacks);
@@ -109,6 +88,7 @@ router.delete(
   adminAuth,
   adminAuditLog,
   adminWriteLimiter,
+  validate(configMatchSchema),
   AdminController.deleteCardBack,
 );
 
@@ -141,6 +121,11 @@ router.put(
   validate(putFeaturedReadersSchema),
   AdminController.putFeaturedReaders,
 );
+
+router.get('/config-history', adminAuth, validateQuery(configHistoryQuerySchema), ConfigHistoryController.list);
+router.get('/config-history/:id', adminAuth, adminAuditLog, ConfigHistoryController.detail);
+router.get('/config-history/:id/rollback-preview', adminAuth, adminAuditLog, ConfigHistoryController.preview);
+router.post('/config-history/:id/rollback', adminAuth, adminAuditLog, adminWriteLimiter, validate(rollbackConfigSchema), ConfigHistoryController.rollback);
 
 router.get('/stats', adminAuth, AdminController.getStats);
 router.get(

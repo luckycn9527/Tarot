@@ -9,7 +9,7 @@
 #   ./deploy.sh nginx        安装站点配置 + 首次自动签发证书 + 校验重载
 #   ./deploy.sh              全流程：check → backend → 发布前端 dist → nginx → health
 #
-# 可用环境变量覆盖：DOMAIN BACKEND_PORT PM2_NAME PM2_LEGACY_NAMES STOP_BACKEND_PORT_HOLDERS DIST_TARGET WEB_DIR
+# 可用环境变量覆盖：DOMAIN BACKEND_PORT PM2_NAME PM2_LEGACY_NAMES STOP_BACKEND_PORT_HOLDERS DIST_TARGET WEB_DIR QUOTA_TIME_ZONE
 #                    NGINX_CONF_DST CERTBOT_EMAIL SMTP_USER BUILD_FRONTEND_ON_SERVER
 set -euo pipefail
 
@@ -22,6 +22,7 @@ STOP_BACKEND_PORT_HOLDERS="${STOP_BACKEND_PORT_HOLDERS:-true}"
 DIST_TARGET="${DIST_TARGET:-/var/www/${DOMAIN}/dist}"
 CERTBOT_EMAIL="${CERTBOT_EMAIL:-you@qq.com}"
 SMTP_USER_DEFAULT="${SMTP_USER:-you@qq.com}"
+QUOTA_TIME_ZONE="${QUOTA_TIME_ZONE:-Asia/Shanghai}"
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 SERVER_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
@@ -146,11 +147,14 @@ init_env(){
     if [ "${a:-N}" != "y" ] && [ "${a:-N}" != "Y" ]; then warn "跳过生成，沿用现有 .env"; return 0; fi
     cp "$ENV_FILE" "$ENV_FILE.bak.$(date +%Y%m%d%H%M%S)" && ok "已备份旧 .env"
   fi
-  local dbpass smtppass deepseek smtpuser
+  local dbpass smtppass deepseek deepseek_base_url smtpuser
   read -rsp "  数据库密码 DB_PASSWORD: " dbpass; echo
   read -rp  "  发信邮箱 SMTP_USER [${SMTP_USER_DEFAULT}]: " smtpuser; smtpuser="${smtpuser:-$SMTP_USER_DEFAULT}"
   read -rsp "  QQ 邮箱客户端授权码 SMTP_PASS: " smtppass; echo
-  read -rp  "  DeepSeek API Key（占卜解读用，可留空）: " deepseek
+  read -rsp "  DeepSeek API Key（占卜解读必填）: " deepseek; echo
+  [ -n "$deepseek" ] || die "DeepSeek API Key 不能为空；占卜功能依赖 AI 服务"
+  read -rp  "  AI API 基础地址 [https://api.deepseek.com]: " deepseek_base_url
+  deepseek_base_url="${deepseek_base_url:-https://api.deepseek.com}"
   umask 077
   cat > "$ENV_FILE" <<EOF
 # 生产环境（由 deploy.sh init-env 生成于 $(date '+%F %T')）
@@ -170,7 +174,8 @@ JWT_ACCESS_EXPIRES_IN=15m
 JWT_REFRESH_EXPIRES_IN=7d
 
 DEEPSEEK_API_KEY=${deepseek}
-DEEPSEEK_BASE_URL=https://api.deepseek.com
+DEEPSEEK_BASE_URL=${deepseek_base_url%/}
+QUOTA_TIME_ZONE=${QUOTA_TIME_ZONE}
 
 # —— 找回密码 / 部署相关 ——
 APP_PUBLIC_ORIGIN=https://${DOMAIN}
@@ -200,6 +205,7 @@ check_envfile(){
   local k miss=0
   for k in NODE_ENV APP_PUBLIC_ORIGIN COOKIE_SECURE SERVE_STATIC_FRONTEND \
            DB_PASSWORD JWT_ACCESS_SECRET JWT_REFRESH_SECRET \
+           DEEPSEEK_API_KEY DEEPSEEK_BASE_URL QUOTA_TIME_ZONE \
            SMTP_HOST SMTP_USER SMTP_PASS SMTP_FROM \
            ADMIN_USERNAME_PEPPER ADMIN_JWT_SECRET; do
     if grep -qE "^${k}=.+" "$ENV_FILE"; then :; else warn ".env 缺少或为空：$k"; miss=1; fi

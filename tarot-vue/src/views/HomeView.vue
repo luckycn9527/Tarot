@@ -10,6 +10,7 @@ import { useShuffle, type ShuffledCard } from '../composables/useShuffle'
 import { getCardImageUrl } from '../data/tarotCards'
 import TarotCard3D from '../components/TarotCard3D.vue'
 import FaqAccordion from '../components/FaqAccordion.vue'
+import { localizedReader } from '../utils/readerLocalization'
 
 useScrollReveal()
 
@@ -23,10 +24,18 @@ const activeMethod = ref(0)
 const drawnCard = ref<ShuffledCard | null>(null)
 const flipped = ref(false)
 
+const isEnglish = computed(() => String(locale.value).toLowerCase().startsWith('en'))
 const orientationKeywords = computed(() => {
   const d = drawnCard.value
   if (!d) return ''
+  if (isEnglish.value) return t('home.cardGuidanceFallback')
   return d.isReversed ? d.card.reversedKeywords : d.card.uprightKeywords
+})
+
+const drawnCardName = computed(() => {
+  const card = drawnCard.value?.card
+  if (!card) return ''
+  return isEnglish.value ? card.nameEn : card.name
 })
 
 function handleDraw() {
@@ -86,7 +95,8 @@ const faqItems = computed((): FaqItem[] => {
 })
 
 const readers = computed(() =>
-  apiReaders.value.map((reader) => {
+  apiReaders.value.map((sourceReader) => {
+    const reader = localizedReader(sourceReader, locale.value)
     const gradient = reader.gradient.trim()
     const splitAt = gradient.indexOf(' to-')
     return {
@@ -135,7 +145,7 @@ const readers = computed(() =>
       <transition name="reveal-fade">
         <div v-if="flipped && drawnCard" class="text-center mt-5 max-w-md mx-auto px-4">
           <p class="text-gold-100 font-serif text-lg">
-            {{ drawnCard.card.name }}
+            {{ drawnCardName }}
             <span class="text-gray-500 text-sm font-sans">· {{ drawnCard.isReversed ? t('home.reversed') : t('home.upright') }}</span>
           </p>
           <p class="text-[0.7rem] uppercase tracking-[0.2em] text-gold-500/60 mt-3 mb-1">{{ t('home.todayGuidance') }}</p>

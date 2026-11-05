@@ -1,0 +1,42 @@
+.mobile-task-notices {
+  position: sticky;
+  top: 0;
+  z-index: 30;
+  background: var(--m-panel);
+  box-shadow: 0 8px 20px var(--m-shadow);
+}
+.mobile-task-notices .mobile-finished,
+.mobile-pending-link,
+.mobile-failed-link {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  width: 100%;
+  min-height: 48px;
+  padding: 10px 24px;
+  border: 0;
+  border-bottom: 1px solid var(--m-line);
+  background: transparent;
+  color: var(--m-text);
+  font-size: 12px;
+  text-align: left;
+}
+.mobile-task-notices button > span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.mobile-task-notices button > strong { flex-shrink: 0; font-size: 12px; font-weight: 500; color: var(--m-accent); }
+.mobile-failed-link { color: var(--m-error); }
+.mobile-reading-question { font-size: 20px !important; line-height: 1.55 !important; margin-bottom: 19px !important; }
+.mobile-interpretation { padding-top: 0; }
+.mobile-summary { font-size: 17px; line-height: 1.85; margin: 9px 0 22px; }
+.mobile-reading-card-details { margin: 0 0 12px; border: 1px solid var(--m-line); border-radius: 12px; background: var(--m-card-surface); }
+.mobile-reading-card-details > summary { display: flex; align-items: center; justify-content: space-between; gap: 12px; min-height: 48px; padding: 11px 14px; color: var(--m-text); font-size: 13px; cursor: pointer; list-style: none; }
+.mobile-reading-card-details > summary::-webkit-details-marker { display: none; }
+.mobile-reading-card-details > summary > span:last-child { font-size: 18px; line-height: 1; }
+.mobile-reading-card-details[open] > summary > span:last-child { transform: rotate(45deg); }
+.mobile-reading-card-details .mobile-reading-cards { margin: 12px 8px 20px; padding-bottom: 0; border-bottom: 0; gap: 12px; }
+.mobile-full-reading summary { min-height: 48px; font-size: 14px; }
+.mobile-new-question { margin: 22px 0 18px; }
+@media (max-width: 360px) {
+  .mobile-task-notices .mobile-finished, .mobile-pending-link, .mobile-failed-link { padding-inline: 18px; }
+  .mobile-reading-card-details .mobile-reading-cards { gap: 8px; }
+}

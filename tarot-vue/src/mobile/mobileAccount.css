@@ -1,0 +1,3 @@
+.mobile-shell.mobile-tab-me { --m-header-height:0px; --m-bg:#121018; --m-nav-bg:#121018; background:#121018; }
+.mobile-tab-me .mobile-main { padding:0 20px 24px; }
+@media(max-width:360px) { .mobile-tab-me .mobile-main { padding-inline:18px; } }

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, computed, nextTick, markRaw, onMounted, type Component } from 'vue'
+import { ref, computed, nextTick, markRaw, onMounted, watch, type Component } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useScrollReveal } from '../composables/useScrollReveal'
 import { useZodiac } from '../composables/useZodiac'
@@ -28,6 +28,7 @@ import ZodiacPisces from '@icons/zodiac-pisces.vue'
 useScrollReveal()
 
 const { t, tm, locale } = useI18n()
+const isEnglish = computed(() => String(locale.value).toLowerCase().startsWith('en'))
 const { zodiacSign, loadFromStorage } = useZodiac()
 
 interface ZodiacSign { key: string; icon: string; name: string; date: string }
@@ -72,7 +73,7 @@ const loadingKey = ref<string | null>(null)
 const errorKey = ref<string | null>(null)
 
 function makeCacheKey(sign = selectedSign.value, period = selectedPeriod.value) {
-  return `${sign}:${period}`
+  return `${isEnglish.value ? 'en' : 'zh'}:${sign}:${period}`
 }
 
 const activeCacheKey = computed(() => makeCacheKey())
@@ -162,10 +163,12 @@ const actionAdvice = computed(() => {
   const advice = currentHoroscope.value?.advice
   if (advice) return advice
   return {
-    do: currentHoroscope.value?.sections.overall || '先完成一件最确定的小事',
-    avoid: currentHoroscope.value?.sections.health || '避免被临时情绪带走节奏',
-    mantra: currentDescription.value?.focus ? `把注意力放回${currentDescription.value.focus}` : '慢一点，判断会更清楚',
-    keyword: currentDescription.value?.focus || '觉察',
+    do: currentHoroscope.value?.sections.overall || (isEnglish.value ? 'Finish one clear, manageable task first' : '先完成一件最确定的小事'),
+    avoid: currentHoroscope.value?.sections.health || (isEnglish.value ? 'Do not let a passing mood set the pace' : '避免被临时情绪带走节奏'),
+    mantra: currentDescription.value?.focus
+      ? (isEnglish.value ? `Return your attention to ${currentDescription.value.focus}` : `把注意力放回${currentDescription.value.focus}`)
+      : (isEnglish.value ? 'A slower pace can reveal the better choice' : '慢一点，判断会更清楚'),
+    keyword: currentDescription.value?.focus || (isEnglish.value ? 'Awareness' : '觉察'),
   }
 })
 
@@ -193,7 +196,7 @@ async function loadHoroscope(sign = selectedSign.value, period = selectedPeriod.
   loadingKey.value = key
   errorKey.value = null
   try {
-    const data = await getHoroscope(sign, period)
+    const data = await getHoroscope(sign, period, isEnglish.value ? 'en-US' : 'zh-CN')
     horoscopeCache.value = { ...horoscopeCache.value, [key]: data }
   } catch {
     errorKey.value = key
@@ -206,6 +209,11 @@ onMounted(() => {
   loadFromStorage()
   const storedKey = storedZodiacKey.value
   if (storedKey) selectedSign.value = storedKey
+  void loadHoroscope()
+})
+
+watch(locale, () => {
+  errorKey.value = null
   void loadHoroscope()
 })
 </script>

@@ -97,8 +97,8 @@ export async function getBirthInfo(req: Request, res: Response) {
 
 export async function updateBirthInfo(req: Request, res: Response) {
   try {
-    const { birthday } = req.body;
-    const data = await UserService.updateBirthInfo(req.userId!, birthday);
+    const { birthday, birthTime } = req.body;
+    const data = await UserService.updateBirthInfo(req.userId!, birthday, birthTime);
     res.json(success(data, '生辰信息更新成功'));
   } catch (err: unknown) {
     const status = (err as any)?.status === 400 ? 400 : 404;

@@ -6,6 +6,13 @@ import { useAuth } from '../composables/useAuth'
 import { useRoute, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { useToast } from '../composables/useToast'
+import {
+  createReadingShare,
+  fetchMyReadingShares,
+  readingShareUrl,
+  revokeReadingShare,
+  type ReadingShareSummary,
+} from '../services/readingShares'
 import TriangleAlertIcon from '@icons/triangle-alert.vue'
 import SparklesIcon from '@icons/sparkles.vue'
 
@@ -22,6 +29,9 @@ const totalPages = ref(0)
 const total = ref(0)
 const loading = ref(false)
 const loadError = ref(false)
+const sharesByReadingId = ref<Record<number, ReadingShareSummary>>({})
+const shareBusyId = ref<number | null>(null)
+let sharesLoaded = false
 
 // 筛选
 const searchQuery = ref('')
@@ -70,8 +80,7 @@ async function loadData(page = 1, force = false) {
     currentPage.value = result.page
     totalPages.value = result.totalPages
     total.value = result.total
-    // 首页有数据时加载 AI 分析（store 自身按天缓存）
-    if (result.page === 1 && entries.value.length > 0) void loadInsights()
+    if (!sharesLoaded) void loadShares()
   } catch {
     if (seq !== loadSeq) return
     // 出错时若已有内容则保留，不清空，避免"闪一下消失"
@@ -103,10 +112,101 @@ async function handleDelete(id: number) {
   if (!confirm(t('pages.history.deleteConfirm'))) return
   try {
     await deleteReading(id)
+    insights.value = null
+    if (sharesByReadingId.value[id]) {
+      const next = { ...sharesByReadingId.value }
+      delete next[id]
+      sharesByReadingId.value = next
+    }
     toast.success(t('pages.history.deleted'))
     loadData(currentPage.value)
   } catch {
     toast.error(t('pages.history.deleteFailed'))
+  }
+}
+
+async function loadShares(force = false) {
+  if (sharesLoaded && !force) return
+  try {
+    const shares = await fetchMyReadingShares()
+    const next: Record<number, ReadingShareSummary> = {}
+    for (const share of shares) {
+      if (!next[share.readingId]) next[share.readingId] = share
+    }
+    sharesByReadingId.value = next
+    sharesLoaded = true
+  } catch {
+    // 分享状态是历史记录的增强信息，加载失败不阻断主列表。
+  }
+}
+
+async function copyText(text: string): Promise<boolean> {
+  try {
+    if (navigator.clipboard?.writeText) {
+      await navigator.clipboard.writeText(text)
+      return true
+    }
+    const textarea = document.createElement('textarea')
+    textarea.value = text
+    textarea.setAttribute('readonly', '')
+    textarea.style.position = 'fixed'
+    textarea.style.opacity = '0'
+    document.body.appendChild(textarea)
+    textarea.select()
+    const copied = document.execCommand('copy')
+    textarea.remove()
+    return copied
+  } catch {
+    return false
+  }
+}
+
+async function handleShare(entry: ReadingHistoryEntry) {
+  if (shareBusyId.value !== null) return
+  shareBusyId.value = entry.id
+  try {
+    let share = sharesByReadingId.value[entry.id]
+    const created = !share
+    if (!share) {
+      const shareCode = await createReadingShare(entry.id)
+      share = {
+        shareCode,
+        readingId: entry.id,
+        viewCount: 0,
+        createdAt: new Date().toISOString(),
+        type: entry.type,
+        question: entry.question || '',
+      }
+      sharesByReadingId.value = { ...sharesByReadingId.value, [entry.id]: share }
+    }
+    const url = readingShareUrl(share.shareCode)
+    if (await copyText(url)) {
+      toast.success(t(created ? 'pages.history.detail.shareCreated' : 'pages.history.detail.shareCopied'))
+    } else {
+      window.prompt(t('pages.history.detail.copyManual'), url)
+    }
+  } catch {
+    toast.error(t('pages.history.detail.shareFailed'))
+  } finally {
+    shareBusyId.value = null
+  }
+}
+
+async function handleRevokeShare(entry: ReadingHistoryEntry) {
+  const share = sharesByReadingId.value[entry.id]
+  if (!share || shareBusyId.value !== null) return
+  if (!confirm(t('pages.history.detail.revokeConfirm'))) return
+  shareBusyId.value = entry.id
+  try {
+    await revokeReadingShare(share.shareCode)
+    const next = { ...sharesByReadingId.value }
+    delete next[entry.id]
+    sharesByReadingId.value = next
+    toast.success(t('pages.history.detail.shareRevoked'))
+  } catch {
+    toast.error(t('pages.history.detail.revokeFailed'))
+  } finally {
+    shareBusyId.value = null
   }
 }
 
@@ -202,20 +302,30 @@ async function rateOutcome(rating: 'full' | 'partial' | 'none') {
 interface InsightItem { category: string; count: number; percent: number }
 const insights = ref<{ rangeMonths: number; total: number; distribution: InsightItem[]; coreTheme: string } | null>(null)
 const insightsLoading = ref(false)
+const insightsError = ref(false)
+const readingLocale = computed(() => String(locale.value).toLowerCase().startsWith('en') ? 'en-US' : 'zh-CN')
 const catColors: Record<string, string> = {
   事业: '#D4AF37', 财富: '#FBBF24', 感情: '#E879F9', 健康: '#34D399', 人际: '#60A5FA', 抉择: '#A78BFA', 其他: '#94A3B8',
 }
 async function loadInsights() {
   if (insightsLoading.value) return
+  const requestedLocale = readingLocale.value
   insightsLoading.value = true
+  insightsError.value = false
   try {
-    insights.value = await fetchInsights()
+    const data = await fetchInsights(requestedLocale)
+    if (requestedLocale === readingLocale.value) insights.value = data
   } catch {
-    insights.value = null
+    if (requestedLocale === readingLocale.value) insightsError.value = true
   } finally {
     insightsLoading.value = false
   }
 }
+
+watch(readingLocale, () => {
+  insights.value = null
+  insightsError.value = false
+})
 
 /** 回访 CTA：展开最近一条记录详情；reader-reading 可直接在详情里反馈追问 */
 function followUpAgain() {
@@ -273,8 +383,7 @@ async function submitFollowup(entry: ReadingHistoryEntry) {
   if (q.length > 200) { toast.error(t('pages.history.detail.followupMax')); return }
   followupLoading.value = true
   try {
-    const prior = entryFollowups(entry).map((f) => ({ question: f.question, answer: f.answer }))
-    const data = await askReaderFollowUp({ readingId: entry.id, question: q, priorTurns: prior })
+    const data = await askReaderFollowUp({ readingId: entry.id, question: q, locale: readingLocale.value })
     // 后端已持久化；本地同步追加，避免重新拉取
     const d = (entry.resultData ?? {}) as { followups?: FollowupTurn[] }
     if (!Array.isArray(d.followups)) d.followups = []
@@ -433,23 +542,36 @@ watch(
 
       <!-- AI 历史分析卡 -->
       <div
-        v-if="insights && insights.total > 0 && noFilterActive && currentPage === 1"
+        v-if="entries.length > 0 && noFilterActive && currentPage === 1"
         class="relative overflow-hidden rounded-2xl border border-violet-500/20 bg-gradient-to-br from-violet-500/[0.07] to-gold-500/[0.04] p-5 sm:p-6 mb-6"
       >
         <div class="flex items-center gap-2 mb-4">
           <svg class="w-4 h-4 text-violet-300" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M3 3v18h18" stroke-linecap="round"/><path d="M7 14l4-4 3 3 5-6" stroke-linecap="round" stroke-linejoin="round"/></svg>
-          <h3 class="text-violet-100 font-serif text-base">{{ t('pages.history.insights.title', { months: insights.rangeMonths }) }}</h3>
+          <h3 class="text-violet-100 font-serif text-base">{{ t('pages.history.insights.title', { months: insights?.rangeMonths ?? 6 }) }}</h3>
         </div>
-        <div class="space-y-2.5">
+        <template v-if="!insights">
+          <p class="text-gray-400 text-sm mb-4">{{ t('pages.history.insights.description') }}</p>
+          <button
+            type="button"
+            class="px-4 py-2 rounded-xl border border-violet-400/30 text-violet-100 text-sm hover:bg-violet-400/10 disabled:opacity-50 disabled:cursor-wait"
+            :disabled="insightsLoading"
+            :aria-busy="insightsLoading"
+            @click="loadInsights"
+          >
+            {{ t(insightsLoading ? 'pages.history.insights.loading' : 'pages.history.insights.analyze') }}
+          </button>
+          <p v-if="insightsError" role="alert" class="text-amber-300 text-sm mt-3">{{ t('pages.history.insights.failed') }}</p>
+        </template>
+        <div v-else class="space-y-2.5">
           <div v-for="(d, di) in insights.distribution.slice(0, 5)" :key="d.category" class="flex items-center gap-3">
-            <span class="w-12 shrink-0 text-sm" :class="di === 0 ? 'text-gold-200 font-medium' : 'text-gray-400'">{{ d.category }}</span>
+            <span class="shrink-0 text-sm" :class="[readingLocale === 'en-US' ? 'w-24' : 'w-12', di === 0 ? 'text-gold-200 font-medium' : 'text-gray-400']">{{ t('pages.history.insights.categories.' + d.category) }}</span>
             <div class="flex-1 h-2.5 rounded-full bg-white/[0.06] overflow-hidden">
               <div class="h-full rounded-full transition-all duration-700" :style="{ width: d.percent + '%', background: catColors[d.category] || '#94A3B8' }" />
             </div>
             <span class="w-10 shrink-0 text-right text-sm tabular-nums" :class="di === 0 ? 'text-gold-200' : 'text-gray-500'">{{ d.percent }}%</span>
           </div>
         </div>
-        <div v-if="insights.coreTheme" class="mt-5 flex items-center gap-2 rounded-xl border border-gold-500/20 bg-gold-500/[0.06] px-4 py-3">
+        <div v-if="insights?.coreTheme" class="mt-5 flex items-center gap-2 rounded-xl border border-gold-500/20 bg-gold-500/[0.06] px-4 py-3">
           <span class="text-[11px] tracking-widest text-gold-500/60 shrink-0">{{ t('pages.history.insights.coreTheme') }}</span>
           <span class="text-gold-100 font-medium">{{ insights.coreTheme }}</span>
         </div>
@@ -572,6 +694,29 @@ watch(
                     <span v-else class="w-4 h-4 border-2 border-gold-200/40 border-t-gold-100 rounded-full animate-spin" />
                   </button>
                 </div>
+              </div>
+
+              <div class="flex flex-wrap items-center gap-2 pt-3 border-t border-white/[0.06]">
+                <button
+                  type="button"
+                  class="px-3.5 py-2 rounded-full border border-gold-500/25 bg-gold-500/[0.08] text-xs text-gold-100 hover:bg-gold-500/[0.16] disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+                  :disabled="shareBusyId !== null"
+                  @click="handleShare(entry)"
+                >
+                  {{ sharesByReadingId[entry.id] ? t('pages.history.detail.copyShare') : t('pages.history.detail.share') }}
+                </button>
+                <span v-if="sharesByReadingId[entry.id]" class="text-[11px] text-gray-500">
+                  {{ t('pages.history.detail.views', { count: sharesByReadingId[entry.id].viewCount }) }}
+                </span>
+                <button
+                  v-if="sharesByReadingId[entry.id]"
+                  type="button"
+                  class="px-3 py-2 text-xs text-gray-500 hover:text-red-300 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+                  :disabled="shareBusyId !== null"
+                  @click="handleRevokeShare(entry)"
+                >
+                  {{ t('pages.history.detail.revokeShare') }}
+                </button>
               </div>
             </div>
           </Transition>

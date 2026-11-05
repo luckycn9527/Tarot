@@ -7,10 +7,13 @@ import AppHeader from './components/AppHeader.vue'
 import AppFooter from './components/AppFooter.vue'
 import ToastNotification from './components/ToastNotification.vue'
 import AppErrorBoundary from './components/AppErrorBoundary.vue'
+import { useAuthStore } from './stores/auth'
 
 const route = useRoute()
 const { t } = useI18n()
 const isAdminPage = computed(() => route.path.startsWith('/admin'))
+const isMobilePage = computed(() => route.path === '/app' || route.path.startsWith('/app/') || import.meta.env.VITE_MOBILE_APP === 'true')
+const auth = useAuthStore()
 </script>
 
 <template>
@@ -20,17 +23,17 @@ const isAdminPage = computed(() => route.path.startsWith('/admin'))
   >
     {{ t('nav.skipToContent') }}
   </a>
-  <HeroBg v-if="!isAdminPage" />
-  <AppHeader v-if="!isAdminPage" />
-  <main id="main-content" :class="isAdminPage ? '' : 'main-content-safe'" tabindex="-1">
+  <HeroBg v-if="!isAdminPage && !isMobilePage" />
+  <AppHeader v-if="!isAdminPage && !isMobilePage" />
+  <main id="main-content" :class="isAdminPage || isMobilePage ? '' : 'main-content-safe'" tabindex="-1">
     <AppErrorBoundary>
       <RouterView v-slot="{ Component }">
         <Transition name="page-oracle">
-          <component :is="Component" />
+          <component :is="Component" :key="`${route.path}:${auth.user?.id ?? 'guest'}`" />
         </Transition>
       </RouterView>
     </AppErrorBoundary>
   </main>
-  <AppFooter v-if="!isAdminPage" />
+  <AppFooter v-if="!isAdminPage && !isMobilePage" />
   <ToastNotification />
 </template>

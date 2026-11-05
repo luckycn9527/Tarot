@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 350 554" fill="none">
+<defs><linearGradient id="paper" x1="0" y1="0" x2="350" y2="554" gradientUnits="userSpaceOnUse"><stop stop-color="#393143"/><stop offset="1" stop-color="#201c2a"/></linearGradient></defs>
+<rect width="350" height="554" rx="22" fill="url(#paper)"/><rect x="14" y="14" width="322" height="526" rx="15" stroke="#b7a3d0" stroke-opacity=".55" stroke-width="2"/>
+<path d="M39 28H28v11M311 28h11v11M28 515v11h11M322 515v11h-11" stroke="#d2c0eb" stroke-width="3" stroke-linecap="round"/>
+<ellipse cx="175" cy="277" rx="110" ry="187" stroke="#a18bbd" stroke-opacity=".36"/>
+<path d="M81 277s42-52 94-52 94 52 94 52-42 52-94 52-94-52-94-52Z" stroke="#cfb9ff" stroke-width="4"/><circle cx="175" cy="277" r="30" stroke="#cfb9ff" stroke-width="4"/><circle cx="175" cy="277" r="11" fill="#cfb9ff"/>
+<path d="M175 199v-17m-29 22-8-14m66 14 8-14m-94 31-12-10m126 10 12-10M175 355v17m-29-22-8 14m66-14 8 14m-94-31-12 10m126-10 12 10" stroke="#cfb9ff" stroke-width="3" stroke-linecap="round"/>
+<path d="M192 124a24 24 0 0 1-35-28 25 25 0 1 0 35 28ZM158 430a24 24 0 0 1 35 28 25 25 0 1 0-35-28Z" fill="#c4aedf"/>
+<path d="m175 57 3 8 8 3-8 3-3 8-3-8-8-3 8-3 3-8Zm0 418 3 8 8 3-8 3-3 8-3-8-8-3 8-3 3-8Z" fill="#d4c0ee"/>
+<g fill="#ba9ed8"><circle cx="74" cy="155" r="3"/><circle cx="276" cy="155" r="3"/><circle cx="74" cy="399" r="3"/><circle cx="276" cy="399" r="3"/><circle cx="175" cy="158" r="2"/><circle cx="175" cy="396" r="2"/></g>
+</svg>

@@ -35,6 +35,26 @@ export async function deleteRefreshToken(token: string): Promise<void> {
   await pool.execute('DELETE FROM refresh_tokens WHERE token = ?', [tokenHash]);
 }
 
+/** Native token rotation locks the credential until replacement and removal commit together. */
+export async function findRefreshTokenForUpdate(token: string, connection: PoolConnection): Promise<{
+  id: number; user_id: number; expires_at: string;
+} | null> {
+  const [rows] = await connection.execute<RowDataPacket[]>(
+    'SELECT id, user_id, expires_at FROM refresh_tokens WHERE token = ? FOR UPDATE',
+    [hashToken(token)],
+  );
+  return (rows[0] as { id: number; user_id: number; expires_at: string }) || null;
+}
+
+/** Never let a device revoke a different account's credential or other devices. */
+export async function deleteOwnedRefreshToken(userId: number, token: string, connection?: PoolConnection): Promise<boolean> {
+  const [result] = await (connection ?? pool).execute<ResultSetHeader>(
+    'DELETE FROM refresh_tokens WHERE user_id = ? AND token = ?',
+    [userId, hashToken(token)],
+  );
+  return result.affectedRows === 1;
+}
+
 export async function deleteAllUserTokens(userId: number): Promise<void> {
   await pool.execute('DELETE FROM refresh_tokens WHERE user_id = ?', [userId]);
 }

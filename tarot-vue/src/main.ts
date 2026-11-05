@@ -16,6 +16,7 @@ const pinia = createPinia()
 setActivePinia(pinia)
 installUploadImageFallback()
 const isAdminRoute = window.location.pathname.startsWith('/admin')
+const isMobileRoute = /^\/app(?:\/|$)/.test(window.location.pathname) || import.meta.env.VITE_MOBILE_APP === 'true'
 
 function showBootstrapError(message: string) {
   const el = document.getElementById('app')
@@ -33,7 +34,7 @@ function showBootstrapError(message: string) {
 }
 
 async function bootstrap() {
-  if (!isAdminRoute) {
+  if (!isAdminRoute && !isMobileRoute) {
     // 并行发起：基础数据（必需）与会话恢复（尽力而为），避免两次串行网络往返叠加到首屏 TTI
     const referencePromise = loadReferenceBundle()
     const sessionPromise = useAuthStore()
@@ -62,6 +63,9 @@ async function bootstrap() {
   app.use(i18n)
   applyLocaleToDocument(String(i18n.global.locale.value))
   app.use(router)
+  if (import.meta.env.VITE_MOBILE_APP === 'true' && !/^\/app(?:\/|$)/.test(window.location.pathname)) await router.replace('/app')
+  // Resolve the initial route before rendering route-specific website chrome.
+  await router.isReady()
 
   const toast = useToast()
   app.config.errorHandler = (err, instance, info) => {
@@ -71,7 +75,7 @@ async function bootstrap() {
 
   window.addEventListener('auth:logout', () => {
     const authStore = useAuthStore()
-    authStore.currentUser = null
+    authStore.clearSession()
     useUserResourcesStore().invalidateAll()
   })
 

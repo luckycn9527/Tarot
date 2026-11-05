@@ -6,6 +6,13 @@
   "scripts": {
     "dev": "tsx watch src/index.ts",
     "build": "tsc",
+    "test": "tsx --test src/tests/*.test.ts",
+    "test:flows": "node tests/flows.integration.mjs",
+    "test:history": "node tests/history.integration.mjs",
+    "test:admin": "node tests/admin.integration.mjs",
+    "test:config-history": "node tests/configHistory.integration.mjs",
+    "test:invitations": "node tests/invitationRedemption.integration.mjs",
+    "test:mobile": "node tests/mobile.integration.mjs",
     "start": "node dist/index.js",
     "migrate": "npm run migrate:all",
     "migrate:all": "tsx src/scripts/migrateAll.ts",

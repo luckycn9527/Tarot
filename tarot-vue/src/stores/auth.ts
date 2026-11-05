@@ -1,7 +1,10 @@
 import { defineStore } from 'pinia'
-import { ref, computed } from 'vue'
+import { ref, computed, watch } from 'vue'
 import api, { setAccessToken } from '@/services/api'
 import { useUserResourcesStore } from '@/stores/userResources'
+import { useReadingHistoryStore } from '@/stores/readingHistory'
+import { changeSessionScope } from '@/utils/sessionScope'
+import { clearPrivateStorage, clearUnownedPrivateStorage } from '@/utils/storage'
 
 export interface User {
   id: number
@@ -11,6 +14,7 @@ export interface User {
   avatar: string
   gender: string
   birthday: string | null
+  birthTime?: string | null
   zodiacSign: string | null
   location: string | null
   bio: string | null
@@ -32,6 +36,19 @@ export const useAuthStore = defineStore('auth', () => {
   const user = computed(() => currentUser.value)
   const isLoggedIn = computed(() => currentUser.value !== null)
 
+  watch(() => currentUser.value?.id ?? null, (id, previous) => {
+    if (previous !== undefined) clearPrivateStorage(previous)
+    clearUnownedPrivateStorage()
+    changeSessionScope(id)
+    useReadingHistoryStore().resetSession()
+    useUserResourcesStore().invalidateAll()
+  }, { immediate: true, flush: 'sync' })
+
+  function clearSession() {
+    currentUser.value = null
+    setAccessToken(null)
+  }
+
   async function fetchProfileFromApi(): Promise<void> {
     const res = await api.get('/user/profile')
     if (res.data.success) {
@@ -48,15 +65,8 @@ export const useAuthStore = defineStore('auth', () => {
       try {
         await fetchProfileFromApi()
       } catch {
-        try {
-          const refreshRes = await api.post('/auth/refresh')
-          if (refreshRes.data.success) {
-            setAccessToken(refreshRes.data.data.accessToken)
-            currentUser.value = refreshRes.data.data.user
-          }
-        } catch {
-          setAccessToken(null)
-        }
+        // api.ts already refreshes expired access tokens and clears invalid
+        // sessions. A second refresh here repeats failures and delays startup.
       } finally {
         isInitialized.value = true
       }
@@ -213,8 +223,7 @@ export const useAuthStore = defineStore('auth', () => {
     } catch {
       /* ignore */
     }
-    currentUser.value = null
-    setAccessToken(null)
+    clearSession()
     useUserResourcesStore().invalidateAll()
   }
 
@@ -295,6 +304,7 @@ export const useAuthStore = defineStore('auth', () => {
     requestPasswordReset,
     resetPasswordWithToken,
     logout,
+    clearSession,
     updateProfile,
     uploadAvatar,
     changePassword,

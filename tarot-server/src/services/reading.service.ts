@@ -9,6 +9,9 @@ import * as UserModel from '../models/user.model.js';
 import * as AdminService from './admin.service.js';
 import { isActiveVip } from '../utils/membership.js';
 import { isVipReaderSpread } from '../data/spreadsData.js';
+import { env } from '../config/env.js';
+import { previousBusinessDate, quotaWindow, type QuotaWindow } from '../utils/quotaDate.js';
+import { historyInsightKey, recentSavedFollowups } from '../utils/readingContext.js';
 
 function parseJsonResponse(text: string): Record<string, unknown> {
   let cleaned = text.trim();
@@ -160,7 +163,7 @@ function normalizeThreeCardResult(
   };
 }
 
-export async function singleCardReading(userId: number, question: string, clientCardId?: number, clientOrientation?: string) {
+export async function singleCardReading(userId: number, question: string, clientCardId?: number, clientOrientation?: string, requestId?: string) {
   let card: TarotCard;
   let isReversed: boolean;
 
@@ -208,7 +211,7 @@ export async function singleCardReading(userId: number, question: string, client
     cardIds: [card.id],
     orientations: [isReversed ? 'reversed' : 'upright'],
     answer: result.answer,
-    resultData: result,
+    resultData: { ...result, ...(requestId ? { _requestId: requestId } : {}) },
   });
 
   return {
@@ -278,11 +281,8 @@ export async function threeCardReading(userId: number, question: string, clientC
   };
 }
 
-export async function dailyFortune(userId: number, zodiacSign?: string, clientCardId?: number, clientIsReversed?: boolean) {
-  const today = new Date().toISOString().slice(0, 10);
-
-  // Check cache
-  const cached = await ReadingModel.getDailyFortuneCache(userId, today);
+async function getDailyFortuneCacheForDate(userId: number, businessDate: string) {
+  const cached = await ReadingModel.getDailyFortuneCache(userId, businessDate);
   if (cached) {
     const resultData = typeof cached.result_data === 'string'
       ? JSON.parse(cached.result_data) : cached.result_data;
@@ -293,6 +293,33 @@ export async function dailyFortune(userId: number, zodiacSign?: string, clientCa
       result: resultData,
     };
   }
+  return { cached: false, card: null, result: null };
+}
+
+export async function getDailyFortuneCache(userId: number, window = quotaWindow(env.QUOTA_TIME_ZONE)) {
+  return { ...window, ...await getDailyFortuneCacheForDate(userId, window.businessDate) };
+}
+
+/** Read only yesterday's saved result, without a current quota window or generation. */
+export async function getYesterdayDailyFortuneCache(userId: number, now = new Date()) {
+  const timeZone = env.QUOTA_TIME_ZONE;
+  const businessDate = previousBusinessDate(timeZone, now);
+  const cached = await getDailyFortuneCacheForDate(userId, businessDate);
+  const savedResult = cached.result;
+  const card = cached.card && {
+    ...cached.card,
+    name: typeof savedResult?.cardName === 'string' && savedResult.cardName.trim()
+      ? savedResult.cardName : cached.card.name,
+    nameEn: typeof savedResult?.cardNameEn === 'string' && savedResult.cardNameEn.trim()
+      ? savedResult.cardNameEn : cached.card.nameEn,
+  };
+  return { businessDate, timeZone, ...cached, card };
+}
+
+export async function dailyFortune(userId: number, zodiacSign?: string, clientCardId?: number, clientIsReversed?: boolean,
+  window: QuotaWindow = quotaWindow(env.QUOTA_TIME_ZONE)) {
+  const cached = await getDailyFortuneCache(userId, window);
+  if (cached.cached) return cached;
 
   // 优先使用前端传来的牌，保证前后端一致
   let card: typeof tarotCards[0];
@@ -329,7 +356,7 @@ export async function dailyFortune(userId: number, zodiacSign?: string, clientCa
   // Save cache
   await ReadingModel.saveDailyFortuneCache({
     userId,
-    fortuneDate: today,
+    fortuneDate: window.businessDate,
     cardId: card.id,
     orientation: isReversed ? 'reversed' : 'upright',
     resultData: result,
@@ -338,6 +365,7 @@ export async function dailyFortune(userId: number, zodiacSign?: string, clientCa
   // 注：每日运势不再写入占卜历史（仅保留当日缓存）。历史只记录有「问题」的塔罗占卜。
 
   return {
+    ...window,
     cached: false,
     card: { id: card.id, name: card.name, nameEn: card.nameEn, isReversed },
     result,
@@ -379,6 +407,28 @@ const spreadConfigs: Record<string, { name: string; cardCount: number; positions
   'yes-no': { name: '是否牌阵', cardCount: 3, positions: ['卡牌一', '卡牌二', '卡牌三'] },
 };
 
+type ReaderLocale = 'zh-CN' | 'en-US';
+
+function readerSystemPrompt(persona: string, locale: ReaderLocale): string {
+  if (locale !== 'en-US') return persona;
+  return `${persona}\n\nIMPORTANT LANGUAGE REQUIREMENT: This request is from the English-language experience. Respond entirely in natural English, including every message and the summary. Do not use Chinese in the response, even when the reader persona or source card data is written in Chinese. Preserve the reader's personality while following this requirement.`;
+}
+
+function readerCardDescriptions(
+  cards: { card: TarotCard; isReversed: boolean }[],
+  spread: { positions: string[] },
+  locale: ReaderLocale,
+): string {
+  return cards.map((entry, index) => {
+    const orientation = entry.isReversed ? (locale === 'en-US' ? 'Reversed' : '逆位') : (locale === 'en-US' ? 'Upright' : '正位');
+    const keywords = entry.isReversed ? entry.card.reversedKeywords : entry.card.uprightKeywords;
+    if (locale === 'en-US') {
+      return `Position ${index + 1} (${spread.positions[index] ?? `Card ${index + 1}`}): ${entry.card.nameEn} (${orientation}) - source keywords: ${keywords}`;
+    }
+    return `牌位${index + 1}（${spread.positions[index]}）：${entry.card.name}（${orientation}）- 关键词：${keywords}`;
+  }).join('\n');
+}
+
 export async function readerReading(
   userId: number,
   readerId: string,
@@ -386,7 +436,13 @@ export async function readerReading(
   question: string,
   category: string,
   clientCardIds?: number[],
-  clientOrientations?: string[]
+  clientOrientations?: string[],
+  locale: ReaderLocale = 'zh-CN',
+  persist?: (data: Parameters<typeof ReadingModel.create>[0], metadata: {
+    reader: { id: string; name: string; emoji: string };
+    spread: { type: string; name: string; positions: string[] };
+    cards: { id: number; name: string; nameEn: string; isReversed: boolean; position: string }[];
+  }) => Promise<number>,
 ) {
   const reader = getReaderById(readerId);
   if (!reader) throw new Error('塔罗师不存在');
@@ -396,10 +452,11 @@ export async function readerReading(
   if (!spread) throw new Error('牌阵类型无效');
 
   // Premium readers and deep spreads are enforced here, not only in the UI.
-  if (reader.accessLevel === 'vip' || isVipReaderSpread(spreadType)) {
+  const accessLevel = promptOverride?.access_level ?? reader.accessLevel;
+  if (accessLevel === 'vip' || isVipReaderSpread(spreadType)) {
     const user = await UserModel.findById(userId);
     if (!user || !isActiveVip(user)) {
-      throw new Error(reader.accessLevel === 'vip' ? '该塔罗师仅限VIP会员使用' : '该牌阵仅限VIP会员使用');
+      throw new Error(accessLevel === 'vip' ? '该塔罗师仅限VIP会员使用' : '该牌阵仅限VIP会员使用');
     }
   }
 
@@ -422,16 +479,12 @@ export async function readerReading(
   }
 
   // Build card descriptions for prompt
-  const cardDescriptions = cards.map((c, i) => {
-    const orientation = c.isReversed ? '逆位' : '正位';
-    const keywords = c.isReversed ? c.card.reversedKeywords : c.card.uprightKeywords;
-    return `牌位${i + 1}（${spread.positions[i]}）：${c.card.name}（${orientation}）- 关键词：${keywords}`;
-  }).join('\n');
+  const cardDescriptions = readerCardDescriptions(cards, spread, locale);
 
-  const userPrompt = buildReaderReadingPrompt(reader.name, spread.name, cardDescriptions, question, category);
+  const userPrompt = buildReaderReadingPrompt(reader.name, spread.name, cardDescriptions, question, category, locale);
   const responseText = await callDeepSeek(
     [
-      { role: 'system', content: promptOverride?.system_prompt || reader.systemPrompt },
+      { role: 'system', content: readerSystemPrompt(promptOverride?.system_prompt || reader.systemPrompt, locale) },
       { role: 'user', content: userPrompt },
     ],
     90000,
@@ -441,7 +494,13 @@ export async function readerReading(
   const resultData = normalizeReaderReadingPayload(data);
 
   // Save to history
-  const historyId = await ReadingModel.create({
+  const metadata = {
+    reader: { id: reader.id, name: reader.name, emoji: reader.emoji },
+    spread: { type: spreadType, name: spread.name, positions: spread.positions },
+    cards: cards.map((c, i) => ({ id: c.card.id, name: c.card.name, nameEn: c.card.nameEn,
+      isReversed: c.isReversed, position: spread.positions[i] })),
+  };
+  const saveData = {
     userId,
     type: 'reader-reading',
     question,
@@ -451,7 +510,8 @@ export async function readerReading(
     resultData,
     readerId,
     spreadType,
-  });
+  };
+  const historyId = persist ? await persist(saveData, metadata) : await ReadingModel.create(saveData);
 
   return {
     id: historyId,
@@ -471,13 +531,15 @@ export async function readerReading(
 /**
  * 追问对话：基于已完成的某次塔罗占卜，回答问卜者的进一步提问。
  * - 占卜上下文（问题/牌面/原解读）一律从数据库按 readingId + userId 还原，保证归属与可信。
- * - 多轮追问的历史由前端传入（未持久化），仅作为对话上下文拼接。
+ * - 多轮追问从已保存记录恢复，客户端不必回传越来越长的历史。
  */
 export async function readerFollowup(
   userId: number,
   readingId: number,
   followupQuestion: string,
-  priorTurns?: { question: string; answer: string }[]
+  _priorTurns?: { question: string; answer: string }[],
+  locale: ReaderLocale = 'zh-CN',
+  persist?: (readingId: number, userId: number, turn: { question: string; answer: string }) => Promise<boolean>,
 ) {
   const reading = await ReadingModel.findById(readingId, userId);
   if (!reading) throw new Error('占卜记录不存在或无权访问');
@@ -488,7 +550,7 @@ export async function readerFollowup(
   const promptOverride = await AdminService.getReaderPromptOverride(reader.id);
 
   // VIP 塔罗师：追问同样需要有效会员
-  if (reader.accessLevel === 'vip') {
+  if ((promptOverride?.access_level ?? reader.accessLevel) === 'vip') {
     const user = await UserModel.findById(userId);
     if (!user || !isActiveVip(user)) {
       throw new Error('该塔罗师仅限VIP会员使用');
@@ -498,15 +560,20 @@ export async function readerFollowup(
   const spread = spreadConfigs[reading.spreadType ?? ''] ?? { name: '塔罗牌阵', cardCount: reading.cardIds.length, positions: [] as string[] };
 
   // 还原牌面描述（与初次占卜一致的格式）
-  const cardDescriptions = reading.cardIds.map((cardId: number, i: number) => {
-    const card = tarotCards.find(c => c.id === cardId);
+  const cards = reading.cardIds.map((cardId: number, i: number) => {
+    const foundCard = tarotCards.find(c => c.id === cardId);
+    const card: TarotCard = foundCard ?? {
+      id: -1,
+      name: '未知牌',
+      nameEn: 'Unknown card',
+      uprightKeywords: '',
+      reversedKeywords: '',
+      yesNoTendency: 'neutral',
+    };
     const isReversed = (reading.orientations[i] ?? 'upright') === 'reversed';
-    const orientation = isReversed ? '逆位' : '正位';
-    const position = spread.positions[i] ?? `牌位${i + 1}`;
-    if (!card) return `牌位${i + 1}（${position}）：未知牌（${orientation}）`;
-    const keywords = isReversed ? card.reversedKeywords : card.uprightKeywords;
-    return `牌位${i + 1}（${position}）：${card.name}（${orientation}）- 关键词：${keywords}`;
-  }).join('\n');
+    return { card, isReversed };
+  });
+  const cardDescriptions = readerCardDescriptions(cards, spread, locale);
 
   // 还原此前解读正文（取初次占卜 messages 的 content 拼接）
   const rd = reading.resultData as { messages?: { content?: string }[] } | null;
@@ -519,17 +586,18 @@ export async function readerFollowup(
     cardDescriptions,
     reading.question ?? '（未记录）',
     priorReading,
-    followupQuestion
+    followupQuestion,
+    locale,
   );
 
   // 拼接对话：system(人格) → user(初次解读请求的浓缩) + assistant(初次解读) → 历次追问 → 本次追问
   const messages: { role: 'system' | 'user' | 'assistant'; content: string }[] = [
-    { role: 'system', content: promptOverride?.system_prompt || reader.systemPrompt },
+    { role: 'system', content: readerSystemPrompt(promptOverride?.system_prompt || reader.systemPrompt, locale) },
   ];
   if (priorReading) {
     messages.push({ role: 'assistant', content: priorReading });
   }
-  for (const turn of (priorTurns ?? []).slice(-6)) {
+  for (const turn of recentSavedFollowups(reading.resultData)) {
     if (turn?.question) messages.push({ role: 'user', content: turn.question });
     if (turn?.answer) messages.push({ role: 'assistant', content: turn.answer });
   }
@@ -539,10 +607,12 @@ export async function readerFollowup(
   if (!answer) throw new Error('追问解读生成失败，请稍后重试');
 
   // 持久化本轮追问到该记录（历史详情可回看；旧记录从现在起开始累积）
-  await ReadingModel.appendFollowupTurn(readingId, userId, {
+  const saveTurn = {
     question: followupQuestion,
     answer,
-  });
+  };
+  const saved = persist ? await persist(readingId, userId, saveTurn) : await ReadingModel.appendFollowupTurn(readingId, userId, saveTurn);
+  if (!saved) throw new Error('占卜记录不存在或无权访问');
 
   return { readingId, question: followupQuestion, answer };
 }
@@ -586,25 +656,28 @@ interface InsightResult {
   generatedAt: string;
 }
 
-// 简单按用户+当日+样本量缓存，避免重复 AI 调用
+// Cache by account, locale, business day and actual sample contents.
 const insightCache = new Map<string, { key: string; data: InsightResult }>();
 
-export async function getInsights(userId: number, months = 6): Promise<InsightResult> {
+export async function getInsights(userId: number, months = 6, locale: ReaderLocale = 'zh-CN'): Promise<InsightResult> {
   const rows = await ReadingModel.listRecentQuestions(userId, months);
   const total = rows.length;
-  const today = new Date().toISOString().slice(0, 10);
-  const cacheKey = `${today}:${total}`;
-  const cached = insightCache.get(String(userId));
+  const today = quotaWindow(env.QUOTA_TIME_ZONE).businessDate;
+  const cacheKey = historyInsightKey(months, locale, today, rows);
+  const ownerKey = `${userId}:${locale}`;
+  const cached = insightCache.get(ownerKey);
   if (cached && cached.key === cacheKey) return cached.data;
 
   if (total === 0) {
     const empty: InsightResult = { rangeMonths: months, total: 0, distribution: [], coreTheme: '', generatedAt: new Date().toISOString() };
-    insightCache.set(String(userId), { key: cacheKey, data: empty });
+    insightCache.set(ownerKey, { key: cacheKey, data: empty });
     return empty;
   }
 
   const questionList = rows.map((r, i) => `${i + 1}. ${r.question}`).join('\n');
-  const system = `你是一位占卜数据分析师。下面是用户最近 ${months} 个月的占卜提问列表。请：
+  const system = locale === 'en-US'
+    ? `Analyze these tarot questions from the last ${months} months. Classify each into exactly one category using these JSON keys: ${INSIGHT_CATEGORIES.join(', ')}. Return only a JSON object with "counts" (a count for each category) and "coreTheme" (one short English phrase describing the user's main concern). All counts must sum to ${total}. Write coreTheme in English; keep the category keys exactly as listed.`
+    : `你是一位占卜数据分析师。下面是用户最近 ${months} 个月的占卜提问列表。请：
 1. 把每个问题归类到下列之一：${INSIGHT_CATEGORIES.join(' / ')}。
 2. 统计各类别的数量。
 3. 用一句不超过 12 字的话总结用户当前的「核心课题」（聚焦占比最高的领域，点出深层关注点，如"事业方向感""亲密关系安全感"）。
@@ -631,7 +704,7 @@ export async function getInsights(userId: number, months = 6): Promise<InsightRe
         if (n > 0) counts[cat] = n;
       }
     }
-    coreTheme = typeof parsed.coreTheme === 'string' ? parsed.coreTheme.trim().slice(0, 24) : '';
+    coreTheme = typeof parsed.coreTheme === 'string' ? parsed.coreTheme.trim().slice(0, locale === 'en-US' ? 96 : 24) : '';
   } catch {
     counts = {};
   }
@@ -642,7 +715,8 @@ export async function getInsights(userId: number, months = 6): Promise<InsightRe
     counts = keywordClassify(rows.map((r) => r.question));
     if (!coreTheme) {
       const top = topCategory(counts);
-      coreTheme = top ? `${top}方向感` : '';
+      const englishThemes: Record<string, string> = { 事业: 'Career direction', 财富: 'Financial priorities', 感情: 'Relationship needs', 健康: 'Personal wellbeing', 人际: 'Social connections', 抉择: 'Making a choice', 其他: 'Personal reflection' };
+      coreTheme = top ? (locale === 'en-US' ? englishThemes[top] : `${top}方向感`) : '';
     }
   }
 
@@ -658,7 +732,7 @@ export async function getInsights(userId: number, months = 6): Promise<InsightRe
     coreTheme,
     generatedAt: new Date().toISOString(),
   };
-  insightCache.set(String(userId), { key: cacheKey, data });
+  insightCache.set(ownerKey, { key: cacheKey, data });
   return data;
 }
 

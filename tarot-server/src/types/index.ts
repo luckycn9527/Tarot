@@ -11,14 +11,20 @@ export interface DbUser {
   avatar: string | null;
   gender: 'male' | 'female' | 'other' | 'unset';
   birthday: string | null;
+  birth_time: string | null;
   zodiac_sign: string | null;
   location: string | null;
   bio: string | null;
   membership: 'free' | 'vip';
   membership_expires_at: string | null;
   access_token_revoked_at: string | null;
+  last_login_at: string | null;
   remaining_free_quota: number;
   quota_reset_date: string | null;
+  remaining_daily_fortune_quota: number;
+  daily_fortune_quota_reset_date: string | null;
+  remaining_fate_dual_quota: number;
+  fate_dual_quota_reset_date: string | null;
   google_id: string | null;
   created_at: string;
   updated_at: string;
@@ -34,6 +40,7 @@ export interface PublicUser {
   avatar: string;
   gender: string;
   birthday: string | null;
+  birthTime: string | null;
   zodiacSign: string | null;
   location: string | null;
   bio: string | null;

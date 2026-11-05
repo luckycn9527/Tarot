@@ -1,34 +1,35 @@
 import { pool } from '../config/database.js';
 import type { RowDataPacket, ResultSetHeader } from 'mysql2';
+import type { PoolConnection } from 'mysql2/promise';
 
 let readerCodeToIdCache: Map<string, number> | null = null;
 let spreadCodeToIdCache: Map<string, number> | null = null;
 
-async function getReaderCodeToIdMap(): Promise<Map<string, number>> {
+async function getReaderCodeToIdMap(connection?: PoolConnection): Promise<Map<string, number>> {
   if (!readerCodeToIdCache) {
-    const [rows] = await pool.execute<RowDataPacket[]>('SELECT id, code FROM reference_tarot_readers');
+    const [rows] = await (connection ?? pool).execute<RowDataPacket[]>('SELECT id, code FROM reference_tarot_readers');
     readerCodeToIdCache = new Map(rows.map((r) => [r.code as string, r.id as number]));
   }
   return readerCodeToIdCache;
 }
 
-async function getSpreadCodeToIdMap(): Promise<Map<string, number>> {
+async function getSpreadCodeToIdMap(connection?: PoolConnection): Promise<Map<string, number>> {
   if (!spreadCodeToIdCache) {
-    const [rows] = await pool.execute<RowDataPacket[]>('SELECT id, code FROM reference_spreads');
+    const [rows] = await (connection ?? pool).execute<RowDataPacket[]>('SELECT id, code FROM reference_spreads');
     spreadCodeToIdCache = new Map(rows.map((r) => [r.code as string, r.id as number]));
   }
   return spreadCodeToIdCache;
 }
 
-export async function resolveReaderRefId(code: string | null | undefined): Promise<number | null> {
+export async function resolveReaderRefId(code: string | null | undefined, connection?: PoolConnection): Promise<number | null> {
   if (!code) return null;
-  const m = await getReaderCodeToIdMap();
+  const m = await getReaderCodeToIdMap(connection);
   return m.get(code) ?? null;
 }
 
-export async function resolveSpreadId(code: string | null | undefined): Promise<number | null> {
+export async function resolveSpreadId(code: string | null | undefined, connection?: PoolConnection): Promise<number | null> {
   if (!code) return null;
-  const m = await getSpreadCodeToIdMap();
+  const m = await getSpreadCodeToIdMap(connection);
   return m.get(code) ?? null;
 }
 
@@ -83,13 +84,13 @@ export async function create(data: {
   resultData: object;
   readerId?: string | null;
   spreadType?: string | null;
-}) {
-  const readerRefId = await resolveReaderRefId(data.readerId);
-  const spreadId = await resolveSpreadId(data.spreadType);
+}, connection?: PoolConnection) {
+  const readerRefId = await resolveReaderRefId(data.readerId, connection);
+  const spreadId = await resolveSpreadId(data.spreadType, connection);
 
-  const conn = await pool.getConnection();
+  const conn = connection ?? await pool.getConnection();
   try {
-    await conn.beginTransaction();
+    if (!connection) await conn.beginTransaction();
     const [result] = await conn.execute<ResultSetHeader>(
       `INSERT INTO reading_history (user_id, type, question, answer, result_data, reader_ref_id, spread_id)
        VALUES (?, ?, ?, ?, ?, ?, ?)`,
@@ -112,13 +113,13 @@ export async function create(data: {
         [readingId, i + 1, data.cardIds[i], orientation]
       );
     }
-    await conn.commit();
+    if (!connection) await conn.commit();
     return readingId;
   } catch (e) {
-    await conn.rollback();
+    if (!connection) await conn.rollback();
     throw e;
   } finally {
-    conn.release();
+    if (!connection) conn.release();
   }
 }
 
@@ -137,8 +138,7 @@ export async function findByUserId(
   // LIMIT/OFFSET 经校验后直接拼接：mysql2 的 execute 在部分 MySQL/驱动组合下
   // 无法把 LIMIT ?/OFFSET ? 作为占位符（会以字符串绑定导致语法错误），与 fate.model 保持一致。
   const safeLimit = Math.min(Math.max(Math.trunc(Number(limit)) || 20, 1), 100);
-  const safePage = Math.max(Math.trunc(Number(page)) || 1, 1);
-  const offset = (safePage - 1) * safeLimit;
+  const requestedPage = Math.max(Math.trunc(Number(page)) || 1, 1);
 
   let where = 'WHERE rh.user_id = ?'
   const params: (string | number)[] = [userId];
@@ -168,13 +168,16 @@ export async function findByUserId(
     params
   );
   const total = countRows[0].total as number;
+  const totalPages = Math.ceil(total / safeLimit);
+  const safePage = Math.min(requestedPage, Math.max(totalPages, 1));
+  const offset = (safePage - 1) * safeLimit;
 
   const [rows] = await pool.query<RowDataPacket[]>(
     `SELECT rh.*, rr.code AS reader_code, rs.code AS spread_code
      FROM reading_history rh
      LEFT JOIN reference_tarot_readers rr ON rh.reader_ref_id = rr.id
      LEFT JOIN reference_spreads rs ON rh.spread_id = rs.id
-     ${where} ORDER BY rh.created_at DESC LIMIT ${safeLimit} OFFSET ${offset}`,
+     ${where} ORDER BY rh.created_at DESC, rh.id DESC LIMIT ${safeLimit} OFFSET ${offset}`,
     params
   );
 
@@ -187,7 +190,7 @@ export async function findByUserId(
     ),
     total,
     page: safePage,
-    totalPages: Math.ceil(total / safeLimit),
+    totalPages,
   };
 }
 
@@ -206,6 +209,16 @@ export async function findById(id: number, userId: number) {
   return formatRowBase(row, cardsMap.get(id) ?? { cardIds: [], orientations: [] });
 }
 
+export async function findSingleByRequestId(userId: number, requestId: string) {
+  const [rows] = await pool.execute<RowDataPacket[]>(
+    `SELECT id FROM reading_history WHERE user_id = ? AND type = 'single'
+     AND JSON_UNQUOTE(JSON_EXTRACT(result_data, '$._requestId')) = ?
+     ORDER BY id DESC LIMIT 1`,
+    [userId, requestId],
+  );
+  return rows[0] ? findById(Number(rows[0].id), userId) : null;
+}
+
 export async function deleteById(id: number, userId: number) {
   const [result] = await pool.execute<ResultSetHeader>(
     'DELETE FROM reading_history WHERE id = ? AND user_id = ?',
@@ -218,31 +231,22 @@ export async function deleteById(id: number, userId: number) {
 export async function appendFollowupTurn(
   id: number,
   userId: number,
-  turn: { question: string; answer: string },
+  turn: { question: string; answer: string; requestId?: string },
+  connection?: PoolConnection,
 ): Promise<boolean> {
-  const [rows] = await pool.execute<RowDataPacket[]>(
-    'SELECT result_data FROM reading_history WHERE id = ? AND user_id = ? LIMIT 1',
-    [id, userId],
+  // Update only this JSON path under the row lock; parallel feedback must not
+  // replace a followup saved after an earlier SELECT.
+  const [result] = await (connection ?? pool).execute<ResultSetHeader>(
+    `UPDATE reading_history SET result_data = JSON_SET(
+       CASE WHEN JSON_TYPE(result_data) = 'OBJECT' THEN result_data ELSE JSON_OBJECT() END,
+       '$.followups', JSON_ARRAY_APPEND(
+         CASE WHEN JSON_TYPE(JSON_EXTRACT(result_data, '$.followups')) = 'ARRAY'
+           THEN JSON_EXTRACT(result_data, '$.followups') ELSE JSON_ARRAY() END,
+         '$', CAST(? AS JSON)))
+     WHERE id = ? AND user_id = ?`,
+    [JSON.stringify({ question: turn.question, answer: turn.answer, at: new Date().toISOString(), ...(turn.requestId ? { requestId: turn.requestId } : {}) }), id, userId],
   );
-  const row = rows[0];
-  if (!row) return false;
-  let data: Record<string, unknown> = {};
-  try {
-    data = typeof row.result_data === 'string' ? JSON.parse(row.result_data) : (row.result_data ?? {});
-  } catch {
-    data = {};
-  }
-  if (!data || typeof data !== 'object') data = {};
-  const list = Array.isArray((data as { followups?: unknown }).followups)
-    ? ((data as { followups: unknown[] }).followups as unknown[])
-    : [];
-  list.push({ question: turn.question, answer: turn.answer, at: new Date().toISOString() });
-  (data as { followups: unknown[] }).followups = list;
-  await pool.execute(
-    'UPDATE reading_history SET result_data = ? WHERE id = ? AND user_id = ?',
-    [JSON.stringify(data), id, userId],
-  );
-  return true;
+  return result.affectedRows > 0;
 }
 
 /** 设置某次占卜的"应验程度"评分（存入 result_data.outcome；次日回访用） */
@@ -251,25 +255,13 @@ export async function setOutcome(
   userId: number,
   rating: 'full' | 'partial' | 'none',
 ): Promise<boolean> {
-  const [rows] = await pool.execute<RowDataPacket[]>(
-    'SELECT result_data FROM reading_history WHERE id = ? AND user_id = ? LIMIT 1',
-    [id, userId],
+  const [result] = await pool.execute<ResultSetHeader>(
+    `UPDATE reading_history SET result_data = JSON_SET(
+       CASE WHEN JSON_TYPE(result_data) = 'OBJECT' THEN result_data ELSE JSON_OBJECT() END,
+       '$.outcome', CAST(? AS JSON)) WHERE id = ? AND user_id = ?`,
+    [JSON.stringify({ rating, at: new Date().toISOString() }), id, userId],
   );
-  const row = rows[0];
-  if (!row) return false;
-  let data: Record<string, unknown> = {};
-  try {
-    data = typeof row.result_data === 'string' ? JSON.parse(row.result_data) : (row.result_data ?? {});
-  } catch {
-    data = {};
-  }
-  if (!data || typeof data !== 'object') data = {};
-  (data as { outcome?: unknown }).outcome = { rating, at: new Date().toISOString() };
-  await pool.execute(
-    'UPDATE reading_history SET result_data = ? WHERE id = ? AND user_id = ?',
-    [JSON.stringify(data), id, userId],
-  );
-  return true;
+  return result.affectedRows > 0;
 }
 
 /** 取最近 N 个月、有问题的占卜（用于 AI 历史分析），排除每日运势 */
@@ -285,7 +277,7 @@ export async function listRecentQuestions(
        AND type <> 'daily-fortune'
        AND question IS NOT NULL AND question <> ''
        AND created_at >= DATE_SUB(NOW(), INTERVAL ${m} MONTH)
-     ORDER BY created_at DESC
+     ORDER BY created_at DESC, id DESC
      LIMIT 200`,
     [userId],
   );

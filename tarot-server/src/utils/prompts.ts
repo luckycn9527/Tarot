@@ -71,7 +71,56 @@ ${cardDescriptions}
  * 若 sourceText 为空（外部源不可用），则退化为基于星座特质的纯生成。
  * 返回严格 JSON：一句话总结 + 五维文字 + 五维星级 + 能量雷达 + 行动建议 + 幸运提示。
  */
-export function buildHoroscopePrompt(signName: string, dateStr: string, sourceText?: string, periodLabel = '今日'): string {
+export function buildHoroscopePrompt(
+  signName: string,
+  dateStr: string,
+  sourceText?: string,
+  periodLabel = '今日',
+  locale: 'zh-CN' | 'en-US' = 'zh-CN',
+): string {
+  if (locale === 'en-US') {
+    const sourceBlock = sourceText && sourceText.trim()
+      ? `Use the following current English horoscope as the factual and tonal source. Expand it thoughtfully across the requested dimensions without copying it verbatim:
+"""
+${sourceText.trim()}
+"""`
+      : `No external source is available. Use the typical traits of ${signName} to create a grounded ${periodLabel.toLowerCase()} outlook.`;
+
+    return `Date range: ${dateStr}. Create the ${periodLabel.toLowerCase()} horoscope for ${signName}.
+
+${sourceBlock}
+
+Requirements:
+1. Write every user-facing value in natural English.
+2. Keep the tone warm, specific, and non-deterministic. Give practical guidance.
+3. Make each dimension distinct while preserving one coherent theme.
+4. Ratings must match the tone of their corresponding sections.
+5. Return only the JSON object below, with no markdown or extra text.
+
+{
+  "summary": "One-sentence overall theme, 12-24 words",
+  "overallScore": "integer from 55 to 98",
+  "sections": {
+    "overall": "Overall outlook, 45-80 words",
+    "love": "Love outlook, 35-70 words",
+    "career": "Career or study outlook, 35-70 words",
+    "wealth": "Money outlook, 35-70 words",
+    "health": "Well-being outlook, 35-70 words"
+  },
+  "energy": { "mood": 0, "action": 0, "social": 0, "intuition": 0 },
+  "advice": {
+    "do": "A useful action, 6-14 words",
+    "avoid": "Something to avoid, 6-14 words",
+    "mantra": "A short reminder, 6-14 words",
+    "keyword": "One to three words"
+  },
+  "ratings": { "overall": 1, "love": 1, "career": 1, "wealth": 1, "health": 1 },
+  "luckyColor": "A natural English color name",
+  "luckyNumber": 0
+}
+
+Use the full overallScore range when justified rather than clustering every result in the 70s.`;
+  }
   const sourceBlock = sourceText && sourceText.trim()
     ? `以下是该星座${periodLabel}运势的英文原文，请以它为依据进行翻译并合理扩展（不要照搬直译，要符合中文表达习惯）：
 """
@@ -132,8 +181,31 @@ export function buildReaderFollowupPrompt(
   cardDescriptions: string,
   originalQuestion: string,
   priorReading: string,
-  followupQuestion: string
+  followupQuestion: string,
+  locale: 'zh-CN' | 'en-US' = 'zh-CN',
 ): string {
+  if (locale === 'en-US') {
+    return `This is a completed Tarot reading. The querent wants to ask a follow-up about the same reading.
+
+[Reading context]
+Original question: "${originalQuestion}"
+Spread: ${spreadName}
+Cards:
+${cardDescriptions}
+
+Your earlier reading:
+${priorReading}
+
+[Follow-up question]
+"${followupQuestion}"
+
+Answer in your established reader persona and stay tightly grounded in the cards and earlier reading.
+Requirements:
+1. Do not draw new cards or invent new card positions; deepen the existing reading only.
+2. Answer the follow-up directly with specific, practical insight.
+3. Write entirely in natural English, 150-300 words, in a warm conversational voice. Source card labels may contain Chinese; interpret them internally and never reproduce Chinese in your answer.
+4. Return only the answer text. Do not use JSON, headings, list markers, or markdown code fences.`;
+  }
   return `这是一次已经完成的塔罗占卜，现在问卜者想就同一次占卜结果继续追问。
 
 【本次占卜背景】
@@ -161,8 +233,35 @@ export function buildReaderReadingPrompt(
   spreadName: string,
   cardDescriptions: string,
   question: string,
-  category: string
+  category: string,
+  locale: 'zh-CN' | 'en-US' = 'zh-CN',
 ): string {
+  if (locale === 'en-US') {
+    return `The querent's question: "${question}"
+Category: ${category}
+Spread: ${spreadName}
+
+Cards:
+${cardDescriptions}
+
+Read for the querent in ${readerName}'s distinct voice and persona. Source card labels or keywords may contain Chinese; interpret them internally, but never reproduce Chinese in the answer.
+
+You must return exactly one JSON object. Do not include an introduction, conclusion outside the JSON, markdown code fences, or any non-JSON text.
+
+Return this exact shape:
+{
+  "messages": [
+    { "type": "greeting", "content": "A 50-80 word opening in your voice that acknowledges the querent and their question" },
+    { "type": "reveal", "content": "An 80-120 word first impression of the overall pattern in the cards" },
+    { "type": "reading", "content": "A 200-400 word reading of every card position, connected to the querent's question" },
+    { "type": "synthesis", "content": "A 150-250 word synthesis with clear, grounded guidance that connects all cards" },
+    { "type": "closing", "content": "A 50-80 word closing encouragement in your distinctive voice" }
+  ],
+  "summary": "A 20-40 word English summary for the reading history"
+}
+
+Every value in "content" and "summary" must be natural English only.`;
+  }
   return `问卜者的问题：「${question}」
 问题分类：${category}
 使用牌阵：${spreadName}

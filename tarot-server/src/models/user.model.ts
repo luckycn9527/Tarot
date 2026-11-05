@@ -3,8 +3,22 @@ import type { RowDataPacket, ResultSetHeader } from 'mysql2';
 import type { PoolConnection } from 'mysql2/promise';
 import type { DbUser } from '../types/index.js';
 import { ACTIVE_VIP_SQL_CONDITION } from '../utils/membership.js';
+import { env } from '../config/env.js';
+import { dateOnlyInTimeZone } from '../utils/quotaDate.js';
 
 export const DAILY_FREE_QUOTA = 3;
+export const DAILY_FORTUNE_FREE_QUOTA = 1;
+export const DAILY_FATE_DUAL_FREE_QUOTA = 1;
+
+/** A successful sign-in, separate from access-token renewal or profile edits. */
+export async function touchLastLogin(id: number, connection?: PoolConnection): Promise<void> {
+  const db = connection ?? pool;
+  await db.execute('UPDATE users SET last_login_at = ? WHERE id = ?', [new Date(), id]);
+}
+
+function currentQuotaDate(): string {
+  return dateOnlyInTimeZone(new Date(), env.QUOTA_TIME_ZONE);
+}
 
 export async function findByEmail(email: string, connection?: PoolConnection): Promise<DbUser | null> {
   const db = connection ?? pool;
@@ -100,6 +114,7 @@ export async function updateProfile(
     avatar: string;
     gender: string;
     birthday: string | null;
+    birth_time: string | null;
     zodiac_sign: string | null;
     location: string | null;
     bio: string | null;
@@ -151,8 +166,7 @@ export async function deleteUserAndData(id: number): Promise<void> {
  * 在同一事务中完成：重置过期配额 → VIP 判断 → 扣减 1 次。
  * 返回 'vip'（VIP 用户不扣减）、'ok'（成功扣减）、'exhausted'（配额不足）、'not_found'（用户不存在）。
  */
-export async function consumeQuota(id: number): Promise<'vip' | 'ok' | 'exhausted' | 'not_found'> {
-  const today = new Date().toISOString().slice(0, 10);
+export async function consumeQuota(id: number, today = currentQuotaDate()): Promise<'vip' | 'ok' | 'exhausted' | 'not_found'> {
   const connection = await pool.getConnection();
   try {
     await connection.beginTransaction();
@@ -175,8 +189,8 @@ export async function consumeQuota(id: number): Promise<'vip' | 'ok' | 'exhauste
 
     // 3. 原子扣减：仅当 remaining_free_quota > 0 时才扣减
     const [result] = await connection.execute<ResultSetHeader>(
-      'UPDATE users SET remaining_free_quota = remaining_free_quota - 1 WHERE id = ? AND remaining_free_quota > 0',
-      [id]
+      'UPDATE users SET remaining_free_quota = remaining_free_quota - 1 WHERE id = ? AND remaining_free_quota > 0 AND quota_reset_date = ?',
+      [id, today]
     );
 
     if (result.affectedRows === 0) {
@@ -194,15 +208,124 @@ export async function consumeQuota(id: number): Promise<'vip' | 'ok' | 'exhauste
   }
 }
 
-export async function refundQuota(id: number): Promise<void> {
-  const today = new Date().toISOString().slice(0, 10);
+/** Consume the separate once-per-day daily-fortune allowance for free users. */
+export async function consumeDailyFortuneQuota(id: number, today = currentQuotaDate()): Promise<'vip' | 'ok' | 'exhausted' | 'not_found'> {
+  const connection = await pool.getConnection();
+  try {
+    await connection.beginTransaction();
+
+    await connection.execute(
+      `UPDATE users
+       SET remaining_daily_fortune_quota = ?, daily_fortune_quota_reset_date = ?
+       WHERE id = ?
+         AND (daily_fortune_quota_reset_date IS NULL OR daily_fortune_quota_reset_date < ?)`,
+      [DAILY_FORTUNE_FREE_QUOTA, today, id, today],
+    );
+
+    const [vipRows] = await connection.execute<RowDataPacket[]>(
+      `SELECT 1 FROM users WHERE id = ? AND ${ACTIVE_VIP_SQL_CONDITION}`,
+      [id],
+    );
+    if (vipRows.length > 0) {
+      await connection.commit();
+      return 'vip';
+    }
+
+    const [result] = await connection.execute<ResultSetHeader>(
+      `UPDATE users
+       SET remaining_daily_fortune_quota = remaining_daily_fortune_quota - 1
+       WHERE id = ? AND remaining_daily_fortune_quota > 0 AND daily_fortune_quota_reset_date = ?`,
+      [id, today],
+    );
+    if (result.affectedRows === 0) {
+      await connection.commit();
+      return 'exhausted';
+    }
+
+    await connection.commit();
+    return 'ok';
+  } catch (err) {
+    await connection.rollback();
+    throw err;
+  } finally {
+    connection.release();
+  }
+}
+
+/** Consume the separate once-per-day Fate Dual allowance for free users. */
+export async function consumeFateDualQuota(id: number, today = currentQuotaDate()): Promise<'vip' | 'ok' | 'exhausted' | 'not_found'> {
+  const connection = await pool.getConnection();
+  try {
+    await connection.beginTransaction();
+
+    await connection.execute(
+      `UPDATE users
+       SET remaining_fate_dual_quota = ?, fate_dual_quota_reset_date = ?
+       WHERE id = ?
+         AND (fate_dual_quota_reset_date IS NULL OR fate_dual_quota_reset_date < ?)`,
+      [DAILY_FATE_DUAL_FREE_QUOTA, today, id, today],
+    );
+
+    const [vipRows] = await connection.execute<RowDataPacket[]>(
+      `SELECT 1 FROM users WHERE id = ? AND ${ACTIVE_VIP_SQL_CONDITION}`,
+      [id],
+    );
+    if (vipRows.length > 0) {
+      await connection.commit();
+      return 'vip';
+    }
+
+    const [result] = await connection.execute<ResultSetHeader>(
+      `UPDATE users
+       SET remaining_fate_dual_quota = remaining_fate_dual_quota - 1
+       WHERE id = ? AND remaining_fate_dual_quota > 0 AND fate_dual_quota_reset_date = ?`,
+      [id, today],
+    );
+    if (result.affectedRows === 0) {
+      await connection.commit();
+      return 'exhausted';
+    }
+
+    await connection.commit();
+    return 'ok';
+  } catch (err) {
+    await connection.rollback();
+    throw err;
+  } finally {
+    connection.release();
+  }
+}
+
+export async function refundQuota(id: number, today = currentQuotaDate()): Promise<void> {
   await pool.execute(
     `UPDATE users
-     SET remaining_free_quota = LEAST(remaining_free_quota + 1, ?)
+     SET remaining_free_quota = remaining_free_quota + 1
      WHERE id = ?
-       AND membership = 'free'
+       AND NOT (${ACTIVE_VIP_SQL_CONDITION})
        AND quota_reset_date = ?`,
-    [DAILY_FREE_QUOTA, id, today],
+    [id, today],
+  );
+}
+
+export async function refundDailyFortuneQuota(id: number, today = currentQuotaDate()): Promise<void> {
+  await pool.execute(
+    `UPDATE users
+     SET remaining_daily_fortune_quota = remaining_daily_fortune_quota + 1
+     WHERE id = ?
+       AND NOT (${ACTIVE_VIP_SQL_CONDITION})
+       AND daily_fortune_quota_reset_date = ?`,
+    [id, today],
+  );
+}
+
+export async function refundFateDualQuota(id: number, today = currentQuotaDate()): Promise<void> {
+  await pool.execute(
+    `UPDATE users
+     SET remaining_fate_dual_quota = remaining_fate_dual_quota + 1
+     WHERE id = ?
+       AND NOT (${ACTIVE_VIP_SQL_CONDITION})
+       AND fate_dual_quota_reset_date = ?`,
+    [id, today],
   );
 }
 
@@ -210,11 +333,24 @@ export async function refundQuota(id: number): Promise<void> {
  * 若用户每日配额已过期，则原子重置为 3 次。
  * 用于 getProfile / getQuota 等只读接口，确保前端看到最新剩余次数。
  */
-export async function resetQuotaIfNeeded(id: number): Promise<void> {
-  const today = new Date().toISOString().slice(0, 10);
+export async function resetQuotaIfNeeded(id: number, today = currentQuotaDate()): Promise<void> {
   await pool.execute(
     'UPDATE users SET remaining_free_quota = ?, quota_reset_date = ? WHERE id = ? AND (quota_reset_date IS NULL OR quota_reset_date < ?)',
     [DAILY_FREE_QUOTA, today, id, today]
+  );
+  await pool.execute(
+    `UPDATE users
+     SET remaining_daily_fortune_quota = ?, daily_fortune_quota_reset_date = ?
+     WHERE id = ?
+       AND (daily_fortune_quota_reset_date IS NULL OR daily_fortune_quota_reset_date < ?)`,
+    [DAILY_FORTUNE_FREE_QUOTA, today, id, today],
+  );
+  await pool.execute(
+    `UPDATE users
+     SET remaining_fate_dual_quota = ?, fate_dual_quota_reset_date = ?
+     WHERE id = ?
+       AND (fate_dual_quota_reset_date IS NULL OR fate_dual_quota_reset_date < ?)`,
+    [DAILY_FATE_DUAL_FREE_QUOTA, today, id, today],
   );
 }
 

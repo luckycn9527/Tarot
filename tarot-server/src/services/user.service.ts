@@ -4,8 +4,11 @@ import * as SettingsModel from '../models/settings.model.js';
 import { toPublicUser } from './auth.service.js';
 import { getZodiacFromDate } from '../utils/zodiac.js';
 import { toDateOnly } from '../utils/dateOnly.js';
+import { assertBirthday, assertBirthTime, toBirthTime } from '../utils/birthInfo.js';
 import { cacheGet, cacheSet, cacheDel, CACHE_KEYS } from './cacheRedis.service.js';
 import { isActiveVip } from '../utils/membership.js';
+import { env } from '../config/env.js';
+import { quotaWindow } from '../utils/quotaDate.js';
 
 const SETTINGS_CACHE_TTL_SEC = 600;
 
@@ -32,11 +35,14 @@ export async function updateProfile(userId: number, data: {
 }) {
   const updateData: any = { ...data };
 
+  if (data.birthday !== undefined) assertBirthday(data.birthday);
+
   // Auto-compute zodiac from birthday
   if (data.birthday) {
     updateData.zodiac_sign = getZodiacFromDate(data.birthday);
   } else if (data.birthday === null) {
     updateData.zodiac_sign = null;
+    updateData.birth_time = null;
   }
 
   await UserModel.updateProfile(userId, updateData);
@@ -74,10 +80,11 @@ export async function deleteAccount(userId: number, password: string) {
 }
 
 export async function getQuota(userId: number) {
+  const window = quotaWindow(env.QUOTA_TIME_ZONE);
   const user = await UserModel.findById(userId);
   if (!user) throw new Error('用户不存在');
 
-  await UserModel.resetQuotaIfNeeded(userId);
+  await UserModel.resetQuotaIfNeeded(userId, window.businessDate);
   const refreshed = await UserModel.findById(userId);
   if (!refreshed) throw new Error('用户不存在');
 
@@ -86,8 +93,13 @@ export async function getQuota(userId: number) {
   const isVip = isActiveVip(refreshed);
 
   return {
+    ...window,
     remaining,
     total: UserModel.DAILY_FREE_QUOTA,
+    dailyFortuneRemaining: refreshed.remaining_daily_fortune_quota,
+    dailyFortuneTotal: UserModel.DAILY_FORTUNE_FREE_QUOTA,
+    fateDualRemaining: refreshed.remaining_fate_dual_quota,
+    fateDualTotal: UserModel.DAILY_FATE_DUAL_FREE_QUOTA,
     isVip,
     unlimited: Boolean(isVip),
     membership: refreshed.membership,
@@ -127,6 +139,7 @@ export async function getBirthInfo(userId: number) {
   if (!user) throw new Error('用户不存在');
   return {
     birthday: toDateOnly(user.birthday),
+    birthTime: user.birthday ? toBirthTime(user.birth_time) : null,
     zodiacSign: user.zodiac_sign,
   };
 }
@@ -134,43 +147,15 @@ export async function getBirthInfo(userId: number) {
 export async function updateBirthInfo(
   userId: number,
   birthday: string | null,
+  birthTime?: string | null,
 ) {
   const user = await UserModel.findById(userId);
   if (!user) throw new Error('用户不存在');
 
-  if (birthday !== null) {
-    // Validate YYYY-MM-DD format
-    if (!/^\d{4}-\d{2}-\d{2}$/.test(birthday)) {
-      throw Object.assign(new Error('日期格式无效，请使用 YYYY-MM-DD'), { status: 400 });
-    }
-
-    // Parse and validate calendar date
-    const [yearStr, monthStr, dayStr] = birthday.split('-');
-    const year = Number(yearStr);
-    const month = Number(monthStr);
-    const day = Number(dayStr);
-
-    // Check month/day ranges before Date construction
-    if (month < 1 || month > 12 || day < 1 || day > 31) {
-      throw Object.assign(new Error('日期不是合法的日历日期'), { status: 400 });
-    }
-
-    // Use Date to verify the date is a real calendar date
-    const parsed = new Date(year, month - 1, day);
-    if (
-      parsed.getFullYear() !== year ||
-      parsed.getMonth() !== month - 1 ||
-      parsed.getDate() !== day
-    ) {
-      throw Object.assign(new Error('日期不是合法的日历日期'), { status: 400 });
-    }
-
-    // Check not in the future
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-    if (parsed.getTime() > today.getTime()) {
-      throw Object.assign(new Error('出生日期不能晚于今天'), { status: 400 });
-    }
+  assertBirthday(birthday);
+  assertBirthTime(birthTime);
+  if (birthday === null && birthTime != null) {
+    throw Object.assign(new Error('请先设置出生日期，再设置出生时刻'), { status: 400 });
   }
 
   const zodiacSign = birthday ? getZodiacFromDate(birthday) : null;
@@ -178,7 +163,9 @@ export async function updateBirthInfo(
   await UserModel.updateProfile(userId, {
     birthday,
     zodiac_sign: zodiacSign,
+    // Omission preserves old clients' saved time; clearing the date clears both.
+    ...(birthday === null ? { birth_time: null } : birthTime !== undefined ? { birth_time: birthTime } : {}),
   });
 
-  return { birthday, zodiacSign };
+  return getBirthInfo(userId);
 }

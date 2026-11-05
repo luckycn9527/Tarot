@@ -3,6 +3,7 @@ import { ref, watch } from 'vue'
 import LoaderCircle from '@icons/loader-circle.vue'
 import { useFormValidation, useCharCount } from '../composables/useFormValidation'
 import { sanitizeInput } from '../utils/sanitize'
+import { useI18n } from 'vue-i18n'
 
 const props = withDefaults(defineProps<{
   title: string
@@ -13,7 +14,7 @@ const props = withDefaults(defineProps<{
   imageUrl?: string
   imageAlt?: string
 }>(), {
-  placeholder: '请输入您的问题...',
+  placeholder: '',
   maxLength: 200,
 })
 
@@ -22,6 +23,7 @@ const emit = defineEmits<{
 }>()
 
 const question = ref('')
+const { t } = useI18n()
 const isSubmitting = ref(false)
 const imageFailed = ref(false)
 const { errorMsg, validate, clearError } = useFormValidation({ maxLength: props.maxLength })
@@ -76,7 +78,7 @@ function handleImageError() {
         <p v-if="subtitle" class="text-gray-500 text-sm mb-3">{{ subtitle }}</p>
         <textarea
           v-model="question"
-          :placeholder="placeholder"
+          :placeholder="placeholder || t('pages.questionForm.defaultPlaceholder')"
           :maxlength="maxLength"
           rows="3"
           class="w-full px-4 py-3 rounded-xl bg-white/4 border border-gold-500/10 text-gray-200 placeholder-gray-600 text-sm resize-none focus:outline-none focus:border-gold-400 focus:shadow-[0_0_0_3px_rgba(212,168,83,.08)] transition-all font-body"
@@ -95,16 +97,16 @@ function handleImageError() {
       >
         <span v-if="isSubmitting" class="flex items-center justify-center gap-2">
           <LoaderCircle class="w-5 h-5 animate-spin" :size="20" />
-          准备中...
+          {{ t('pages.questionForm.preparing') }}
         </span>
-        <span v-else>立即抽取塔罗牌</span>
+        <span v-else>{{ t('pages.questionForm.drawCard') }}</span>
       </button>
     </form>
   </div>
 
   <!-- Example questions -->
   <div v-if="examples?.length" class="mt-8">
-    <h3 class="text-lg font-serif text-gold-200 mb-4 text-center">需要灵感？试试这些问题</h3>
+    <h3 class="text-lg font-serif text-gold-200 mb-4 text-center">{{ t('pages.questionForm.inspiration') }}</h3>
     <div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
       <div v-for="category in examples" :key="category.category" class="space-y-2">
         <p class="text-sm font-semibold text-gray-300">{{ category.category }}</p>

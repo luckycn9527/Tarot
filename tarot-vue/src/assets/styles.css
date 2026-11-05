@@ -513,7 +513,8 @@
 }
 .membership-cycle-option {
   display: inline-flex;
-  min-height: 2.45rem;
+  min-height: 3.4rem;
+  min-width: 10rem;
   align-items: center;
   justify-content: center;
   gap: .55rem;
@@ -524,6 +525,19 @@
   font-weight: 700;
   white-space: nowrap;
   transition: background .2s ease, color .2s ease;
+}
+.membership-cycle-option-copy {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: .12rem;
+  line-height: 1.15;
+}
+.membership-cycle-option-copy small {
+  color: inherit;
+  font-size: .72rem;
+  font-weight: 600;
+  opacity: .78;
 }
 .membership-cycle-option:hover { color: #fff; }
 .membership-cycle-option.active { background: var(--color-gold-400); color: #110b1f; }
@@ -628,7 +642,7 @@
 @media (max-width: 480px) {
   .membership-title { font-size: 2.25rem; }
   .membership-cycle-control { display: grid; width: 100%; grid-template-columns: repeat(2, minmax(0, 1fr)); }
-  .membership-cycle-option { padding-right: .7rem; padding-left: .7rem; }
+  .membership-cycle-option { min-width: 0; padding-right: .7rem; padding-left: .7rem; }
   .membership-pricing-card { padding: 1.45rem 1.25rem; border-radius: 18px; }
   .membership-price-row strong { font-size: 2.35rem; }
 }

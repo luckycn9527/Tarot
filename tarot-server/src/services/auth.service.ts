@@ -7,13 +7,15 @@ import * as PasswordResetModel from '../models/passwordReset.model.js';
 import * as EmailVerificationModel from '../models/emailVerification.model.js';
 import { normalizeEmail } from '../utils/emailNormalize.js';
 import { toDateOnly } from '../utils/dateOnly.js';
-import { signAccessToken, signRefreshToken } from '../utils/jwt.js';
+import { toBirthTime } from '../utils/birthInfo.js';
+import { signAccessToken, signRefreshToken, verifyRefreshToken } from '../utils/jwt.js';
 import { sendPasswordResetEmail, sendRegisterVerificationEmail } from '../utils/mailer.js';
 import { env } from '../config/env.js';
 import { isActiveVip } from '../utils/membership.js';
 import type { PublicUser } from '../types/index.js';
 import type { DbUser } from '../types/index.js';
 import { pool } from '../config/database.js';
+import { ApiError } from '../utils/apiError.js';
 
 function isDuplicateEntryError(error: unknown): boolean {
   return typeof error === 'object'
@@ -30,6 +32,18 @@ function createSessionTokens(userId: number) {
   };
 }
 
+const NATIVE_SESSION_DURATION_MS = 90 * 24 * 60 * 60 * 1000;
+
+/** Keep the signed expiration and stored deadline identical across native rotations. */
+function createNativeSessionTokens(userId: number, deadlineMs = Date.now() + NATIVE_SESSION_DURATION_MS) {
+  const expiresAt = new Date(Math.floor(deadlineMs / 1000) * 1000);
+  return {
+    accessToken: signAccessToken({ userId }),
+    refreshToken: signRefreshToken({ userId, nativeSession: true }, expiresAt),
+    expiresAt,
+  };
+}
+
 function toPublicUser(user: DbUser): PublicUser {
   const activeVip = isActiveVip(user);
   return {
@@ -40,6 +54,7 @@ function toPublicUser(user: DbUser): PublicUser {
     avatar: user.avatar ?? '🔮',
     gender: user.gender,
     birthday: toDateOnly(user.birthday),
+    birthTime: user.birthday ? toBirthTime(user.birth_time) : null,
     zodiacSign: user.zodiac_sign,
     location: user.location,
     bio: user.bio,
@@ -89,18 +104,28 @@ function looksLikeEmail(s: string): boolean {
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(s);
 }
 
-async function issueNewSession(userId: number): Promise<{
+async function issueNewSession(userId: number, recordLogin = true, nativeSession = false): Promise<{
   user: PublicUser;
   accessToken: string;
   refreshToken: string;
+  sessionExpiresAt?: string;
 }> {
-  const { accessToken, refreshToken, expiresAt } = createSessionTokens(userId);
-  await TokenModel.saveRefreshToken(userId, refreshToken, expiresAt);
-  const user = await UserModel.findById(userId);
-  if (!user) {
-    throw new Error('用户不存在');
+  const { accessToken, refreshToken, expiresAt } = nativeSession ? createNativeSessionTokens(userId) : createSessionTokens(userId);
+  const connection = await pool.getConnection();
+  try {
+    await connection.beginTransaction();
+    await TokenModel.saveRefreshToken(userId, refreshToken, expiresAt, connection);
+    if (recordLogin) await UserModel.touchLastLogin(userId, connection);
+    const user = await UserModel.findById(userId, connection);
+    if (!user) throw new Error('用户不存在');
+    await connection.commit();
+    return { user: toPublicUser(user), accessToken, refreshToken, ...(nativeSession ? { sessionExpiresAt: expiresAt.toISOString() } : {}) };
+  } catch (error) {
+    await connection.rollback();
+    throw error;
+  } finally {
+    connection.release();
   }
-  return { user: toPublicUser(user), accessToken, refreshToken };
 }
 
 function generateVerificationCode(): string {
@@ -220,6 +245,7 @@ export async function register(
 
     const { accessToken, refreshToken, expiresAt } = createSessionTokens(userId);
     await TokenModel.saveRefreshToken(userId, refreshToken, expiresAt, connection);
+    await UserModel.touchLastLogin(userId, connection);
     const user = await UserModel.findById(userId, connection);
     if (!user) {
       throw new Error('注册用户创建失败');
@@ -239,7 +265,7 @@ export async function register(
  * 登录：支持「用户名或邮箱 + 密码」。
  * identifier 形似邮箱则按邮箱归一化查找，否则按用户名/邮箱联合查找。
  */
-export async function login(identifier: string, password: string) {
+export async function login(identifier: string, password: string, sessionType: 'web' | 'native' = 'web') {
   const raw = (identifier ?? '').trim();
   if (!raw) {
     throw new Error('账号或密码错误');
@@ -265,7 +291,7 @@ export async function login(identifier: string, password: string) {
     throw new Error('账号或密码错误');
   }
 
-  return issueNewSession(user.id);
+  return issueNewSession(user.id, true, sessionType === 'native');
 }
 
 export async function signInWithGoogleIdToken(idToken: string) {
@@ -380,6 +406,14 @@ export async function resetPasswordWithToken(plainToken: string, newPassword: st
 }
 
 export async function refresh(oldRefreshToken: string) {
+  let payload;
+  try {
+    payload = verifyRefreshToken(oldRefreshToken);
+  } catch {
+    throw new Error('无效的刷新令牌');
+  }
+  // A native credential must never enter the web's sliding seven-day rotation.
+  if (payload.nativeSession) throw new Error('请在原生应用中刷新登录');
   const tokenRecord = await TokenModel.findRefreshToken(oldRefreshToken);
   if (!tokenRecord) {
     throw new Error('无效的刷新令牌');
@@ -391,7 +425,7 @@ export async function refresh(oldRefreshToken: string) {
   }
 
   await TokenModel.deleteRefreshToken(oldRefreshToken);
-  return issueNewSession(tokenRecord.user_id);
+  return issueNewSession(tokenRecord.user_id, false);
 }
 
 export async function logout(userId: number, refreshToken?: string) {
@@ -399,6 +433,54 @@ export async function logout(userId: number, refreshToken?: string) {
     await TokenModel.deleteRefreshToken(refreshToken);
   } else {
     await TokenModel.deleteAllUserTokens(userId);
+  }
+}
+
+/** Native apps use secure token storage instead of cross-site refresh cookies.
+ * Rotation is atomic: competing requests cannot both consume one credential. */
+export async function refreshNative(oldRefreshToken: string) {
+  let userId: number;
+  let signedExpiresAtMs: number;
+  try {
+    const payload = verifyRefreshToken(oldRefreshToken);
+    userId = payload.userId;
+    if (!Number.isSafeInteger(userId) || userId < 1) throw new Error('Invalid owner');
+    if (!Number.isSafeInteger(payload.exp) || payload.exp < 1) throw new Error('Invalid expiration');
+    signedExpiresAtMs = payload.exp * 1000;
+  } catch {
+    throw new ApiError(401, '登录已过期，请重新登录');
+  }
+  const connection = await pool.getConnection();
+  try {
+    await connection.beginTransaction();
+    const record = await TokenModel.findRefreshTokenForUpdate(oldRefreshToken, connection);
+    // Legacy native credentials keep their existing (usually seven-day) deadline.
+    // Neither a DB/JWT mismatch nor repeated rotation can extend the original session.
+    const expiresAtMs = record ? Math.min(new Date(record.expires_at).getTime(), signedExpiresAtMs) : 0;
+    if (!record || record.user_id !== userId || !Number.isFinite(expiresAtMs) || expiresAtMs <= Date.now()) {
+      throw new ApiError(401, '登录已过期，请重新登录');
+    }
+    const user = await UserModel.findById(userId, connection);
+    if (!user) throw new ApiError(401, '登录已过期，请重新登录');
+    const { accessToken, refreshToken, expiresAt } = createNativeSessionTokens(userId, expiresAtMs);
+    await TokenModel.saveRefreshToken(userId, refreshToken, expiresAt, connection);
+    if (!await TokenModel.deleteOwnedRefreshToken(userId, oldRefreshToken, connection)) {
+      throw new ApiError(401, '登录已过期，请重新登录');
+    }
+    await connection.commit();
+    return { user: toPublicUser(user), accessToken, refreshToken, sessionExpiresAt: expiresAt.toISOString() };
+  } catch (error) {
+    await connection.rollback();
+    throw error;
+  } finally {
+    connection.release();
+  }
+}
+
+/** Logout affects only the presented device credential, even if another one is omitted or invalid. */
+export async function logoutNative(userId: number, refreshToken: string): Promise<void> {
+  if (!await TokenModel.deleteOwnedRefreshToken(userId, refreshToken)) {
+    throw new ApiError(401, '当前登录凭据无效');
   }
 }
 

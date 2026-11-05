@@ -20,6 +20,7 @@ jobs:
           cache-dependency-path: tarot-server/package-lock.json
       - run: npm ci
       - run: npm run build
+      - run: npm test
 
   frontend:
     name: Frontend build
@@ -35,4 +36,7 @@ jobs:
           cache: npm
           cache-dependency-path: tarot-vue/package-lock.json
       - run: npm ci
+      - run: npm test
       - run: npm run build
+      - run: npm run mobile:build:domestic
+      - run: npm run mobile:ios -- --check

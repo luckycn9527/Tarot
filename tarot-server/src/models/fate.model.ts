@@ -130,16 +130,18 @@ export async function insertFateChoice(data: {
   choiceType: string;
   resultPathText: string;
   guidance: object;
+  locale: 'zh-CN' | 'en-US';
 }): Promise<number> {
   const [r] = await pool.execute<ResultSetHeader>(
-    `INSERT INTO fate_choices (user_id, conflict_id, choice_type, result_path_text, guidance_json)
-     VALUES (?, ?, ?, ?, ?)`,
+    `INSERT INTO fate_choices (user_id, conflict_id, choice_type, result_path_text, guidance_json, locale)
+     VALUES (?, ?, ?, ?, ?, ?)`,
     [
       data.userId,
       data.conflictId,
       trunc(data.choiceType, 16),
       data.resultPathText,
       JSON.stringify(data.guidance),
+      data.locale,
     ],
   );
   return r.insertId;
@@ -182,15 +184,22 @@ export async function findConflictForUser(
   return rows[0] ?? null;
 }
 
-export async function getChoiceByConflictId(conflictId: number): Promise<RowDataPacket | null> {
+export async function getChoiceByConflictId(
+  conflictId: number,
+  locale: 'zh-CN' | 'en-US',
+): Promise<RowDataPacket | null> {
   const [rows] = await pool.execute<RowDataPacket[]>(
-    'SELECT * FROM fate_choices WHERE conflict_id = ?',
-    [conflictId],
+    'SELECT * FROM fate_choices WHERE conflict_id = ? AND locale = ?',
+    [conflictId, locale],
   );
   return rows[0] ?? null;
 }
 
-export async function listFateHistory(userId: number, limit: number): Promise<RowDataPacket[]> {
+export async function listFateHistory(
+  userId: number,
+  limit: number,
+  locale: 'zh-CN' | 'en-US',
+): Promise<RowDataPacket[]> {
   let lim = Math.trunc(Number(limit));
   if (!Number.isFinite(lim)) lim = 20;
   lim = Math.min(Math.max(lim, 1), 50);
@@ -209,11 +218,11 @@ export async function listFateHistory(userId: number, limit: number): Promise<Ro
      FROM fate_conflicts fc
      JOIN bazi_results b ON b.id = fc.bazi_id
      JOIN tarot_results t ON t.id = fc.tarot_id
-     LEFT JOIN fate_choices ch ON ch.conflict_id = fc.id
+     LEFT JOIN fate_choices ch ON ch.conflict_id = fc.id AND ch.locale = ?
      WHERE fc.user_id = ?
      ORDER BY fc.created_at DESC
      LIMIT ${lim}`,
-    [userId],
+    [locale, userId],
   );
   return rows;
 }

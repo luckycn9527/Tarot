@@ -1,3 +1,5 @@
+import { configuredCards } from '../utils/configuredCards.js';
+import { invalidatableCache } from '../utils/invalidatableCache.js';
 import fs from 'fs';
 import path from 'path';
 import type { Request, Response } from 'express';
@@ -37,12 +39,8 @@ interface ReferenceCore {
 }
 
 const CORE_CACHE_TTL_MS = 60_000;
-let coreCache: { expiresAt: number; data: ReferenceCore } | null = null;
-let coreInflight: Promise<ReferenceCore> | null = null;
-
-export function invalidateReferenceCore(): void {
-  coreCache = null;
-}
+const referenceCache = invalidatableCache(buildReferenceCore, CORE_CACHE_TTL_MS);
+export function invalidateReferenceCore(): void { referenceCache.invalidate(); }
 
 function preferWebpUploadAsset(assetUrl: string | null): string | null {
   if (!assetUrl || !assetUrl.startsWith('/uploads/') || !/\.(png|jpe?g)$/i.test(assetUrl)) {
@@ -61,17 +59,8 @@ async function buildReferenceCore(): Promise<ReferenceCore> {
     AdminModel.listCardBacks(),
   ]);
 
-  const mergedCards = dbCards.length > 0
-    ? dbCards.filter(c => c.is_active).map(c => ({
-        id: c.id,
-        name: c.name,
-        nameEn: c.name_en,
-        uprightKeywords: c.upright_keywords,
-        reversedKeywords: c.reversed_keywords,
-        yesNoTendency: c.yes_no_tendency,
-        imageUrl: c.image_url || null,
-      }))
-    : tarotCards;
+  const mergedCards = configuredCards(dbCards).filter(card => card.isActive)
+    .map(({ isActive: _active, ...card }) => card);
 
   const mergedReaders = mergeReadersBundle(dbPrompts);
   const readerByCode = new Map(mergedReaders.map((r) => [r.id, r]));
@@ -103,25 +92,11 @@ async function buildReferenceCore(): Promise<ReferenceCore> {
   };
 }
 
-async function getCachedReferenceCore(): Promise<ReferenceCore> {
-  const now = Date.now();
-  if (coreCache && coreCache.expiresAt > now) return coreCache.data;
-  if (!coreInflight) {
-    coreInflight = buildReferenceCore()
-      .then((data) => {
-        coreCache = { data, expiresAt: Date.now() + CORE_CACHE_TTL_MS };
-        return data;
-      })
-      .finally(() => {
-        coreInflight = null;
-      });
-  }
-  return coreInflight;
-}
+async function getCachedReferenceCore(): Promise<ReferenceCore> { return referenceCache.get(); }
 
 export async function getReferenceCore(_req: Request, res: Response) {
   const data = await getCachedReferenceCore();
-  res.set('Cache-Control', 'public, max-age=30, must-revalidate');
+  res.set('Cache-Control', 'public, max-age=0, must-revalidate');
   res.json(success(data));
 }
 
@@ -132,7 +107,7 @@ export async function getTarotCardDetails(_req: Request, res: Response) {
 
 export async function getReferenceBundle(_req: Request, res: Response) {
   const core = await getCachedReferenceCore();
-  res.set('Cache-Control', 'public, max-age=30, must-revalidate');
+  res.set('Cache-Control', 'public, max-age=0, must-revalidate');
   res.json(success({
     ...core,
     cardDetails: tarotCardDetails,

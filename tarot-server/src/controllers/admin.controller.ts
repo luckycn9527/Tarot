@@ -1,6 +1,8 @@
+import * as ConfigHistory from '../models/configHistory.model.js';
+import { configError } from './configHistory.controller.js';
 import type { NextFunction, Request, Response } from 'express';
 import * as AdminService from '../services/admin.service.js';
-import type { AdminListFeedbackQuery, AdminListUsersQuery } from '../validation/adminQuery.js';
+import type { AdminListFeedbackQuery, AdminListUsersQuery, AdminUserQuestionsQuery } from '../validation/adminQuery.js';
 import { adminSafeServerMessage } from '../utils/adminHttp.js';
 import { ApiError } from '../utils/apiError.js';
 import { storeUploadedImage } from '../utils/imageUpload.js';
@@ -23,10 +25,24 @@ export async function login(req: Request, res: Response, next: NextFunction): Pr
 export async function listUsers(req: Request, res: Response, next: NextFunction): Promise<void> {
   try {
     const q = req.validatedQuery as AdminListUsersQuery;
-    const data = await AdminService.listUsers(q.page, q.pageSize, q.keyword);
+    const data = await AdminService.listUsers(q.page, q.pageSize, q.keyword, q.sort);
     res.json(success(data));
   } catch (e) {
     next(new ApiError(500, adminSafeServerMessage(e, '查询失败')));
+  }
+}
+
+export async function listUserQuestions(req: Request, res: Response, next: NextFunction): Promise<void> {
+  const userId = Number(req.params.id);
+  if (!Number.isSafeInteger(userId) || userId < 1) {
+    next(new ApiError(400, '无效的用户 ID')); return;
+  }
+  try {
+    const data = await AdminService.listUserQuestions(userId, req.validatedQuery as AdminUserQuestionsQuery);
+    if (!data) { next(new ApiError(404, '用户不存在')); return; }
+    res.json(success(data));
+  } catch (error) {
+    next(new ApiError(500, adminSafeServerMessage(error, '查询用户问题失败')));
   }
 }
 
@@ -44,10 +60,42 @@ export async function updateUser(req: Request, res: Response, next: NextFunction
   }
 }
 
+export async function listInvitationCodes(_req: Request, res: Response, next: NextFunction): Promise<void> {
+  try {
+    const data = await AdminService.listInvitationCodes();
+    res.json(success(data));
+  } catch (e) {
+    next(new ApiError(500, adminSafeServerMessage(e, '查询邀请码失败')));
+  }
+}
+
+export async function createInvitationCode(req: Request, res: Response, next: NextFunction): Promise<void> {
+  try {
+    const data = await AdminService.createInvitationCode(req.body);
+    res.status(201).json(success(data, '邀请码创建成功'));
+  } catch (e) {
+    next(new ApiError(400, e instanceof Error ? e.message : '邀请码创建失败'));
+  }
+}
+
+export async function setInvitationCodeActive(req: Request, res: Response, next: NextFunction): Promise<void> {
+  try {
+    const id = Number(req.params.id);
+    if (!Number.isFinite(id) || id < 1) {
+      next(new ApiError(400, '无效的邀请码 ID'));
+      return;
+    }
+    await AdminService.setInvitationCodeActive(id, req.body.isActive);
+    res.json(success(null, req.body.isActive ? '邀请码已启用' : '邀请码已停用'));
+  } catch (e) {
+    next(new ApiError(400, e instanceof Error ? e.message : '邀请码状态更新失败'));
+  }
+}
+
 export async function getCardBacks(_req: Request, res: Response, next: NextFunction): Promise<void> {
   try {
-    const data = await AdminService.listCardBacks();
-    res.json(success(data));
+    const result = await ConfigHistory.readVersioned('card-backs', connection => AdminService.listCardBacks(connection));
+    res.json({ ...success(result.data), configVersion: result.configVersion });
   } catch (e) {
     next(new ApiError(500, adminSafeServerMessage(e, '查询失败')));
   }
@@ -55,33 +103,33 @@ export async function getCardBacks(_req: Request, res: Response, next: NextFunct
 
 export async function putCardBacks(req: Request, res: Response, next: NextFunction): Promise<void> {
   try {
-    await AdminService.saveCardBacks(req.body.items);
-    invalidateReferenceCore();
-    res.json(success(null, '保存成功'));
+    const result = await AdminService.saveCardBacks(req.body.items, req.adminId!, req.body);
+    if (result.changed) invalidateReferenceCore();
+    res.json(success(result, result.changed ? '保存成功' : '配置未发生变化'));
   } catch (e) {
-    next(new ApiError(400, e instanceof Error ? e.message : '保存失败'));
+    configError(next, e, '保存失败');
   }
 }
 
 export async function deleteCardBack(req: Request, res: Response, next: NextFunction): Promise<void> {
   try {
     const id = Number(req.params.id);
-    if (!Number.isFinite(id) || id < 1) {
+    if (!Number.isSafeInteger(id) || id < 1) {
       next(new ApiError(400, '无效的牌背 ID'));
       return;
     }
-    await AdminService.deleteCardBack(id);
-    invalidateReferenceCore();
-    res.json(success(null, '删除成功'));
+    const result = await AdminService.deleteCardBack(id, req.adminId!, req.body);
+    if (result.changed) invalidateReferenceCore();
+    res.json(success(result, '删除成功'));
   } catch (e) {
-    next(new ApiError(400, e instanceof Error ? e.message : '删除失败'));
+    configError(next, e, '删除失败');
   }
 }
 
 export async function getCards(_req: Request, res: Response, next: NextFunction): Promise<void> {
   try {
-    const data = await AdminService.listCards();
-    res.json(success(data));
+    const result = await ConfigHistory.readVersioned('cards', connection => AdminService.listCards(connection));
+    res.json({ ...success(result.data), configVersion: result.configVersion });
   } catch (e) {
     next(new ApiError(500, adminSafeServerMessage(e, '查询失败')));
   }
@@ -89,18 +137,18 @@ export async function getCards(_req: Request, res: Response, next: NextFunction)
 
 export async function putCards(req: Request, res: Response, next: NextFunction): Promise<void> {
   try {
-    await AdminService.saveCards(req.body.items);
-    invalidateReferenceCore();
-    res.json(success(null, '保存成功'));
+    const result = await AdminService.saveCards(req.body.items, req.adminId!, req.body);
+    if (result.changed) invalidateReferenceCore();
+    res.json(success(result, result.changed ? '保存成功' : '配置未发生变化'));
   } catch (e) {
-    next(new ApiError(400, e instanceof Error ? e.message : '保存失败'));
+    configError(next, e, '保存失败');
   }
 }
 
 export async function getReaderPrompts(_req: Request, res: Response, next: NextFunction): Promise<void> {
   try {
-    const data = await AdminService.listReaderPrompts();
-    res.json(success(data));
+    const result = await ConfigHistory.readVersioned('readers-prompts', connection => AdminService.listReaderPrompts(connection));
+    res.json({ ...success(result.data), configVersion: result.configVersion });
   } catch (e) {
     next(new ApiError(500, adminSafeServerMessage(e, '查询失败')));
   }
@@ -108,18 +156,18 @@ export async function getReaderPrompts(_req: Request, res: Response, next: NextF
 
 export async function putReaderPrompts(req: Request, res: Response, next: NextFunction): Promise<void> {
   try {
-    await AdminService.saveReaderPrompts(req.body.items);
-    invalidateReferenceCore();
-    res.json(success(null, '保存成功'));
+    const result = await AdminService.saveReaderPrompts(req.body.items, req.adminId!, req.body);
+    if (result.changed) invalidateReferenceCore();
+    res.json(success(result, result.changed ? '保存成功' : '配置未发生变化'));
   } catch (e) {
-    next(new ApiError(400, e instanceof Error ? e.message : '保存失败'));
+    configError(next, e, '保存失败');
   }
 }
 
 export async function getFeaturedReaders(_req: Request, res: Response, next: NextFunction): Promise<void> {
   try {
-    const data = await AdminService.listFeaturedReaders();
-    res.json(success(data));
+    const result = await ConfigHistory.readVersioned('featured-readers', connection => AdminService.listFeaturedReaders(connection));
+    res.json({ ...success(result.data), configVersion: result.configVersion });
   } catch (e) {
     next(new ApiError(500, adminSafeServerMessage(e, '查询失败')));
   }
@@ -127,11 +175,11 @@ export async function getFeaturedReaders(_req: Request, res: Response, next: Nex
 
 export async function putFeaturedReaders(req: Request, res: Response, next: NextFunction): Promise<void> {
   try {
-    await AdminService.saveFeaturedReaders(req.body.items);
-    invalidateReferenceCore();
-    res.json(success(null, '保存成功'));
+    const result = await AdminService.saveFeaturedReaders(req.body.items, req.adminId!, req.body);
+    if (result.changed) invalidateReferenceCore();
+    res.json(success(result, result.changed ? '保存成功' : '配置未发生变化'));
   } catch (e) {
-    next(new ApiError(400, e instanceof Error ? e.message : '保存失败'));
+    configError(next, e, '保存失败');
   }
 }
 

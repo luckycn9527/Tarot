@@ -10,6 +10,7 @@ const router = createRouter({
     return { top: 0 }
   },
   routes: [
+    { path: '/app/:pathMatch(.*)*', name: 'mobile-app', component: () => import('../mobile/MobileApp.vue') },
     { path: '/', name: 'home', component: () => import('../views/HomeView.vue') },
     { path: '/tarot', name: 'tarot', component: () => import('../views/TarotView.vue') },
     { path: '/daily-fortune', name: 'daily-fortune', component: () => import('../views/DailyFortuneView.vue') },
@@ -40,7 +41,6 @@ const router = createRouter({
     {
       path: '/membership',
       name: 'membership',
-      meta: { requiresAuth: true },
       component: () => import('../views/MembershipView.vue'),
     },
     { path: '/login', name: 'login', meta: { guestOnly: true }, component: () => import('../views/LoginView.vue') },
@@ -65,6 +65,7 @@ const router = createRouter({
     },
     { path: '/privacy', name: 'privacy', component: () => import('../views/PrivacyView.vue') },
     { path: '/terms', name: 'terms', component: () => import('../views/TermsView.vue') },
+    { path: '/refund-policy', name: 'refund-policy', component: () => import('../views/RefundPolicyView.vue') },
     { path: '/feedback', name: 'feedback', component: () => import('../views/FeedbackView.vue') },
     { path: '/gallery', name: 'gallery', component: () => import('../views/GalleryView.vue') },
     { path: '/gallery/card/:slug', name: 'card-detail', component: () => import('../views/CardDetailView.vue') },
@@ -72,6 +73,7 @@ const router = createRouter({
     { path: '/oracle-gallery', name: 'oracle-gallery', component: () => import('../views/OracleGalleryView.vue') },
     { path: '/blog', name: 'blog', component: () => import('../views/BlogView.vue') },
     { path: '/blog/:slug', name: 'blog-article', component: () => import('../views/BlogArticleView.vue') },
+    { path: '/share/:code', name: 'shared-reading', component: () => import('../views/SharedReadingView.vue') },
     {
       path: '/history',
       name: 'history',

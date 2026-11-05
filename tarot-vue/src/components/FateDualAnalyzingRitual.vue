@@ -1,10 +1,18 @@
 <script setup lang="ts">
-import { ref, onMounted, onBeforeUnmount } from 'vue'
+import { computed, ref, onMounted, onBeforeUnmount } from 'vue'
+import { useI18n } from 'vue-i18n'
+
+const { locale } = useI18n()
+const isEnglish = computed(() => String(locale.value).toLowerCase().startsWith('en'))
 
 /** 十天干 · 东方命理环 */
-const stems = '甲乙丙丁戊己庚辛壬癸'.split('')
+const stems = computed(() => isEnglish.value
+  ? ['Jia', 'Yi', 'Bing', 'Ding', 'Wu', 'Ji', 'Geng', 'Xin', 'Ren', 'Gui']
+  : '甲乙丙丁戊己庚辛壬癸'.split(''))
 /** 十二地支 · 中环 */
-const branches = '子丑寅卯辰巳午未申酉戌亥'.split('')
+const branches = computed(() => isEnglish.value
+  ? ['Zi', 'Chou', 'Yin', 'Mao', 'Chen', 'Si', 'Wu', 'Wei', 'Shen', 'You', 'Xu', 'Hai']
+  : '子丑寅卯辰巳午未申酉戌亥'.split(''))
 /** 塔罗大阿尔卡那罗马数字 · 西方环 */
 const arcana = ['0', 'I', 'II', 'III', 'IV', 'V', 'VI', 'VII', 'VIII', 'IX', 'X', 'XI', 'XII']
 
@@ -106,7 +114,7 @@ function sparkStyle(n: number) {
                 <circle cy="-124" r="0.9" fill="rgba(232,231,255,0.64)" />
                 <text
                   x="0" y="-108" text-anchor="middle"
-                  fill="rgba(238,238,255,0.9)" font-size="12"
+                  fill="rgba(238,238,255,0.9)" :font-size="isEnglish ? 8 : 12"
                   class="select-none" style="font-family: 'Songti SC', 'Noto Serif SC', serif"
                 >{{ ch }}</text>
               </g>
@@ -119,7 +127,7 @@ function sparkStyle(n: number) {
                 <line x1="0" y1="-132" x2="0" y2="-106" stroke="rgba(167,139,250,0.22)" stroke-width="0.4" />
                 <text
                   x="0" y="-116" text-anchor="middle"
-                  fill="rgba(208,195,255,0.84)" font-size="12"
+                  fill="rgba(208,195,255,0.84)" :font-size="isEnglish ? 8 : 12"
                   class="select-none" style="font-family: 'Songti SC', 'Noto Serif SC', serif"
                 >{{ ch }}</text>
               </g>
@@ -169,13 +177,13 @@ function sparkStyle(n: number) {
     </div>
 
     <p class="fate-astro-title mt-10 max-w-md text-center font-serif text-xl tracking-wide text-[#eeeaff] sm:mt-14 sm:text-2xl">
-      双盘碰撞中…
+      {{ isEnglish ? 'Comparing both readings…' : '双盘碰撞中…' }}
     </p>
 
     <!-- 阶段进度 -->
     <div class="fate-phase mt-4" aria-hidden="true">
       <Transition name="fate-phase-fade" mode="out-in">
-        <p :key="phaseIndex" class="fate-phase-text">{{ phases[phaseIndex].zh }}</p>
+        <p :key="phaseIndex" class="fate-phase-text">{{ phases[phaseIndex][isEnglish ? 'en' : 'zh'] }}</p>
       </Transition>
     </div>
     <div class="fate-phase-dots mt-3" aria-hidden="true">

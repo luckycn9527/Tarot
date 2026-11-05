@@ -19,17 +19,16 @@ interface PaymentPlan {
 }
 
 function configuredPlans(): PaymentPlan[] {
-  if (!env.CREEM_ENABLED) return [];
   return [
     {
       code: 'vip_monthly',
-      productId: env.CREEM_MONTHLY_PRODUCT_ID!,
+      productId: env.CREEM_MONTHLY_PRODUCT_ID ?? '',
       amountCents: env.CREEM_MONTHLY_PRICE_CENTS,
       currency: env.CREEM_CURRENCY,
     },
     {
       code: 'vip_yearly',
-      productId: env.CREEM_YEARLY_PRODUCT_ID!,
+      productId: env.CREEM_YEARLY_PRODUCT_ID ?? '',
       amountCents: env.CREEM_YEARLY_PRICE_CENTS,
       currency: env.CREEM_CURRENCY,
     },
@@ -78,6 +77,11 @@ function dateValue(value: unknown): Date | null {
   return Number.isFinite(date.getTime()) ? date : null;
 }
 
+function numberValue(value: unknown): number | null {
+  if (typeof value !== 'number' || !Number.isFinite(value)) return null;
+  return value;
+}
+
 function nestedObject(root: CreemObject, key: string): CreemObject | null {
   return asObject(root[key]);
 }
@@ -86,11 +90,18 @@ function productIdFrom(root: CreemObject): string | null {
   return objectId(root.product)
     ?? objectId(nestedObject(root, 'subscription')?.product)
     ?? objectId(nestedObject(root, 'checkout')?.product)
-    ?? objectId(nestedObject(root, 'order')?.product);
+    ?? objectId(nestedObject(root, 'order')?.product)
+    ?? objectId(nestedObject(root, 'transaction')?.product);
 }
 
 function metadataOrderId(root: CreemObject): string | null {
-  const candidates = [root, nestedObject(root, 'checkout'), nestedObject(root, 'subscription')];
+  const candidates = [
+    root,
+    nestedObject(root, 'checkout'),
+    nestedObject(root, 'subscription'),
+    nestedObject(root, 'order'),
+    nestedObject(root, 'transaction'),
+  ];
   for (const candidate of candidates) {
     const metadata = asObject(candidate?.metadata);
     const id = asString(metadata?.orderId);
@@ -102,19 +113,20 @@ function metadataOrderId(root: CreemObject): string | null {
 function checkoutIdFrom(root: CreemObject, eventType: string): string | null {
   return eventType === 'checkout.completed'
     ? asString(root.id)
-    : objectId(root.checkout);
+    : objectId(root.checkout) ?? objectId(nestedObject(root, 'transaction')?.checkout);
 }
 
 function subscriptionIdFrom(root: CreemObject, eventType: string): string | null {
   return eventType.startsWith('subscription.')
     ? asString(root.id)
-    : objectId(root.subscription);
+    : objectId(root.subscription) ?? objectId(nestedObject(root, 'transaction')?.subscription);
 }
 
 function customerIdFrom(root: CreemObject): string | null {
   return objectId(root.customer)
     ?? objectId(nestedObject(root, 'subscription')?.customer)
-    ?? objectId(nestedObject(root, 'checkout')?.customer);
+    ?? objectId(nestedObject(root, 'checkout')?.customer)
+    ?? objectId(nestedObject(root, 'transaction')?.customer);
 }
 
 function periodEndFrom(root: CreemObject): Date | null {
@@ -122,8 +134,20 @@ function periodEndFrom(root: CreemObject): Date | null {
   return dateValue(subscription.current_period_end_date);
 }
 
+function isFullRefund(root: CreemObject): boolean {
+  if (asString(nestedObject(root, 'subscription')?.status) === 'canceled') return true;
+  const transaction = nestedObject(root, 'transaction');
+  const refundAmount = numberValue(root.refund_amount) ?? numberValue(transaction?.refunded_amount);
+  const paidAmount = numberValue(transaction?.amount_paid) ?? numberValue(transaction?.amount);
+  return refundAmount !== null && paidAmount !== null && paidAmount > 0 && refundAmount >= paidAmount;
+}
+
 function statusForEvent(eventType: string, root: CreemObject): string {
   if (eventType === 'checkout.completed') return 'checkout_completed';
+  if (eventType === 'refund.created') return isFullRefund(root) ? 'refunded' : 'partially_refunded';
+  if (eventType === 'dispute.created') return 'disputed';
+  if (eventType === 'subscription.paused') return 'paused';
+  if (eventType === 'subscription.expired') return 'expired_retrying';
   const status = asString(root.status);
   return status ?? eventType.replace('subscription.', '').replace('.', '_');
 }
@@ -150,7 +174,7 @@ export async function createCheckout(user: { id: number; email: string }, planCo
   const orderId = randomUUID();
   await PaymentModel.createOrder({ id: orderId, userId: user.id, planCode, productId: plan.productId });
 
-  const successUrl = `${env.APP_PUBLIC_ORIGIN}/membership?payment=success`;
+  const successUrl = `${env.APP_PUBLIC_ORIGIN}/membership?payment=success&orderId=${encodeURIComponent(orderId)}`;
   try {
     const response = await fetch(`${env.CREEM_API_BASE_URL}/v1/checkouts`, {
       method: 'POST',
@@ -175,7 +199,7 @@ export async function createCheckout(user: { id: number; email: string }, planCo
     const checkoutUrl = asString(payload.checkout_url);
     if (!checkoutId || !checkoutUrl) throw new Error('Creem checkout response is incomplete');
     await PaymentModel.markCheckoutCreated(orderId, checkoutId);
-    return { checkoutUrl };
+    return { checkoutUrl, orderId };
   } catch (error) {
     await PaymentModel.markCheckoutFailed(orderId);
     console.error('[payment] failed to create Creem checkout', {
@@ -223,10 +247,12 @@ export async function processWebhook(rawBody: Buffer, signature: string | undefi
   const status = statusForEvent(eventType, object);
   const periodEnd = periodEndFrom(object);
   const activeEvents = new Set(['checkout.completed', 'subscription.active', 'subscription.paid', 'subscription.trialing']);
+  const refundRevokesAccess = eventType === 'refund.created' && isFullRefund(object);
+  const revokeEvents = new Set(['dispute.created', 'subscription.paused', 'subscription.canceled']);
   const membershipAction = activeEvents.has(eventType) && periodEnd
     ? 'activate'
-    : eventType === 'subscription.expired'
-      ? 'expire'
+    : refundRevokesAccess || revokeEvents.has(eventType)
+      ? 'revoke'
       : 'none';
   await PaymentModel.applyWebhookEvent({
     providerEventId: eventId,
@@ -241,6 +267,29 @@ export async function processWebhook(rawBody: Buffer, signature: string | undefi
     currentPeriodEndAt: periodEnd,
     membershipAction,
   });
+}
+
+export async function getOrderStatus(userId: number, orderId: string) {
+  const order = await PaymentModel.findOrderForUser(orderId, userId);
+  if (!order) throw new PaymentError('支付订单不存在', 404);
+
+  const activeStatuses = new Set(['active', 'trialing', 'paid', 'scheduled_cancel', 'partially_refunded']);
+  const failedStatuses = new Set(['failed', 'expired', 'canceled']);
+  const refundedStatuses = new Set(['refund_created', 'refunded']);
+  const disputedStatuses = new Set(['dispute_created', 'disputed']);
+
+  let state: 'pending' | 'active' | 'failed' | 'refunded' | 'disputed' = 'pending';
+  if (activeStatuses.has(order.status) && order.current_period_end_at) state = 'active';
+  else if (refundedStatuses.has(order.status)) state = 'refunded';
+  else if (disputedStatuses.has(order.status)) state = 'disputed';
+  else if (failedStatuses.has(order.status)) state = 'failed';
+
+  return {
+    orderId: order.id,
+    state,
+    status: order.status,
+    currentPeriodEndAt: order.current_period_end_at,
+  };
 }
 
 export async function getSubscription(userId: number) {

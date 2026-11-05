@@ -1,6 +1,10 @@
 import type { ResultSetHeader, RowDataPacket } from 'mysql2';
 import { repairUtf8Mojibake } from '../utils/fixMojibakeUtf8.js';
 import { pool } from '../config/database.js';
+import type { PoolConnection } from 'mysql2/promise';
+import { latestQuestionsForUsers, literalLike } from './adminUserQuestions.model.js';
+import { env } from '../config/env.js';
+import { businessDayRange } from '../utils/quotaDate.js';
 
 export interface DbAdminUser extends RowDataPacket {
   id: number;
@@ -58,6 +62,19 @@ export interface AdminFeaturedReader extends RowDataPacket {
   updated_at: string;
 }
 
+export interface AdminInvitationCode extends RowDataPacket {
+  id: number;
+  code: string;
+  type: 'quota' | 'vip_days';
+  value: number;
+  max_uses: number;
+  used_count: number;
+  expires_at: string | null;
+  is_active: number;
+  created_at: string;
+  updated_at: string;
+}
+
 export async function findAdminByUsernameHash(usernameHash: string): Promise<DbAdminUser | null> {
   const [rows] = await pool.execute<DbAdminUser[]>(
     'SELECT * FROM admin_users WHERE username_hash = ? LIMIT 1',
@@ -81,32 +98,36 @@ export async function touchAdminLastLogin(id: number): Promise<void> {
   await pool.execute('UPDATE admin_users SET last_login_at = NOW() WHERE id = ?', [id]);
 }
 
-export async function listUsers(params: { page: number; pageSize: number; keyword?: string }) {
-  const { page, pageSize, keyword } = params;
-  const offset = (page - 1) * pageSize;
-  const like = keyword ? `%${keyword}%` : null;
+export async function listUsers(params: { page: number; pageSize: number; keyword?: string; sort?: 'newest' | 'last-login' }) {
+  const { keyword } = params;
+  const pageSize = Math.min(100, Math.max(1, Math.trunc(params.pageSize) || 20));
+  const like = keyword ? literalLike(keyword) : null;
 
   const where = keyword
-    ? 'WHERE email LIKE ? OR nickname LIKE ?'
+    ? 'WHERE email LIKE ? OR nickname LIKE ? OR username LIKE ? OR CAST(id AS CHAR) = ?'
     : '';
 
-  const args: any[] = keyword ? [like, like] : [];
+  const args = keyword ? [like, like, like, keyword] : [];
   const [countRows] = await pool.execute<RowDataPacket[]>(
     `SELECT COUNT(*) AS total FROM users ${where}`,
     args,
   );
   const total = Number(countRows[0]?.total || 0);
+  const totalPages = Math.ceil(total / pageSize);
+  const page = Math.min(Math.max(1, Math.trunc(params.page) || 1), Math.max(1, totalPages));
+  const offset = (page - 1) * pageSize;
 
   // mysql2 execute() (prepared statements) has issues with LIMIT/OFFSET params — use query() instead
   const [rows] = await pool.query<RowDataPacket[]>(
-    `SELECT id, email, nickname, avatar, membership, membership_expires_at, remaining_free_quota, created_at, updated_at
+    `SELECT id, email, username, nickname, avatar, membership, membership_expires_at, remaining_free_quota, created_at, updated_at, last_login_at
      FROM users ${where}
-     ORDER BY id DESC
+     ORDER BY ${params.sort === 'last-login' ? 'last_login_at DESC, id DESC' : 'id DESC'}
      LIMIT ${Number(pageSize)} OFFSET ${Number(offset)}`,
     args,
   );
 
-  return { total, rows };
+  const summaries = await latestQuestionsForUsers(rows.map(row => Number(row.id)));
+  return { total, page, pageSize, totalPages, rows: rows.map(row => ({ ...row, latestQuestion: summaries.get(Number(row.id)) ?? null })) };
 }
 
 export async function updateUserByAdmin(
@@ -133,8 +154,41 @@ export async function updateUserByAdmin(
   await pool.execute(`UPDATE users SET ${fields.join(', ')} WHERE id = ?`, values);
 }
 
-export async function listCardBacks(): Promise<AdminConfigCardBack[]> {
-  const [rows] = await pool.execute<AdminConfigCardBack[]>(
+export async function listInvitationCodes(): Promise<AdminInvitationCode[]> {
+  const [rows] = await pool.execute<AdminInvitationCode[]>(
+    `SELECT id, code, type, value, max_uses, used_count, expires_at, is_active, created_at, updated_at
+     FROM invitation_codes
+     ORDER BY id DESC
+     LIMIT 500`,
+  );
+  return rows;
+}
+
+export async function createInvitationCode(input: {
+  code: string;
+  type: 'quota' | 'vip_days';
+  value: number;
+  maxUses: number;
+  expiresAt: Date | null;
+}): Promise<number> {
+  const [result] = await pool.execute<ResultSetHeader>(
+    `INSERT INTO invitation_codes (code, type, value, max_uses, expires_at, is_active)
+     VALUES (?, ?, ?, ?, ?, 1)`,
+    [input.code, input.type, input.value, input.maxUses, input.expiresAt],
+  );
+  return result.insertId;
+}
+
+export async function setInvitationCodeActive(id: number, isActive: boolean): Promise<boolean> {
+  const [result] = await pool.execute<ResultSetHeader>(
+    'UPDATE invitation_codes SET is_active = ? WHERE id = ?',
+    [isActive ? 1 : 0, id],
+  );
+  return result.affectedRows > 0;
+}
+
+export async function listCardBacks(connection?: PoolConnection): Promise<AdminConfigCardBack[]> {
+  const [rows] = await (connection ?? pool).execute<AdminConfigCardBack[]>(
     `SELECT id, code, name, description, asset_url, is_active, access_type, price, sort_order, created_at, updated_at
      FROM card_backs ORDER BY sort_order ASC, id ASC`,
   );
@@ -150,10 +204,10 @@ export async function upsertCardBacks(items: Array<{
   accessType: 'free' | 'vip' | 'paid';
   price: number | null;
   sortOrder: number;
-}>): Promise<void> {
-  const conn = await pool.getConnection();
+}>, connection?: PoolConnection): Promise<void> {
+  const conn = connection ?? await pool.getConnection();
   try {
-    await conn.beginTransaction();
+    if (!connection) await conn.beginTransaction();
     for (const item of items) {
       await conn.execute(
         `INSERT INTO card_backs (code, name, description, asset_url, is_active, access_type, price, sort_order)
@@ -166,15 +220,15 @@ export async function upsertCardBacks(items: Array<{
            access_type = VALUES(access_type),
            price = VALUES(price),
            sort_order = VALUES(sort_order)`,
-        [item.code, item.name, item.description, item.assetUrl, item.isActive ? 1 : 0, item.accessType, item.price, item.sortOrder],
+        [item.code, item.name, item.description ?? null, item.assetUrl ?? null, item.isActive ? 1 : 0, item.accessType, item.price ?? null, item.sortOrder],
       );
     }
-    await conn.commit();
+    if (!connection) await conn.commit();
   } catch (e) {
-    await conn.rollback();
+    if (!connection) await conn.rollback();
     throw e;
   } finally {
-    conn.release();
+    if (!connection) conn.release();
   }
 }
 
@@ -199,8 +253,8 @@ export async function grantUserCardBack(userId: number, cardBackId: number): Pro
   );
 }
 
-export async function listTarotCardsConfig(): Promise<AdminConfigCard[]> {
-  const [rows] = await pool.execute<AdminConfigCard[]>(
+export async function listTarotCardsConfig(connection?: PoolConnection): Promise<AdminConfigCard[]> {
+  const [rows] = await (connection ?? pool).execute<AdminConfigCard[]>(
     `SELECT id, name, name_en, upright_keywords, reversed_keywords, yes_no_tendency, image_url, is_active
      FROM tarot_cards_config
      ORDER BY id ASC`,
@@ -217,10 +271,10 @@ export async function upsertTarotCardsConfig(items: Array<{
   yesNoTendency: 'yes' | 'no' | 'neutral';
   imageUrl: string | null;
   isActive: boolean;
-}>): Promise<void> {
-  const conn = await pool.getConnection();
+}>, connection?: PoolConnection): Promise<void> {
+  const conn = connection ?? await pool.getConnection();
   try {
-    await conn.beginTransaction();
+    if (!connection) await conn.beginTransaction();
     for (const c of items) {
       await conn.execute(
         `INSERT INTO tarot_cards_config
@@ -234,20 +288,20 @@ export async function upsertTarotCardsConfig(items: Array<{
            yes_no_tendency = VALUES(yes_no_tendency),
            image_url = VALUES(image_url),
            is_active = VALUES(is_active)`,
-        [c.id, c.name, c.nameEn, c.uprightKeywords, c.reversedKeywords, c.yesNoTendency, c.imageUrl, c.isActive ? 1 : 0],
+        [c.id, c.name, c.nameEn, c.uprightKeywords, c.reversedKeywords, c.yesNoTendency, c.imageUrl ?? null, c.isActive ? 1 : 0],
       );
     }
-    await conn.commit();
+    if (!connection) await conn.commit();
   } catch (e) {
-    await conn.rollback();
+    if (!connection) await conn.rollback();
     throw e;
   } finally {
-    conn.release();
+    if (!connection) conn.release();
   }
 }
 
-export async function listReaderPromptsConfig(): Promise<AdminReaderPrompt[]> {
-  const [rows] = await pool.execute<AdminReaderPrompt[]>(
+export async function listReaderPromptsConfig(connection?: PoolConnection): Promise<AdminReaderPrompt[]> {
+  const [rows] = await (connection ?? pool).execute<AdminReaderPrompt[]>(
     `SELECT id, reader_code, display_name, avatar_url, emoji, access_level,
             system_prompt, greeting, updated_at
      FROM reader_prompts_config ORDER BY reader_code ASC`,
@@ -263,10 +317,10 @@ export async function upsertReaderPromptsConfig(items: Array<{
   accessLevel: 'free' | 'vip' | null;
   systemPrompt: string;
   greeting: string;
-}>): Promise<void> {
-  const conn = await pool.getConnection();
+}>, connection?: PoolConnection): Promise<void> {
+  const conn = connection ?? await pool.getConnection();
   try {
-    await conn.beginTransaction();
+    if (!connection) await conn.beginTransaction();
     for (const item of items) {
       // reader_prompts_config.reader_code 外键引用 reference_tarot_readers；旧库可能只有历史 code
       await conn.execute(
@@ -286,21 +340,21 @@ export async function upsertReaderPromptsConfig(items: Array<{
            greeting = VALUES(greeting)`,
         [
           item.readerCode,
-          item.displayName,
-          item.avatarUrl,
-          item.emoji,
-          item.accessLevel,
+          item.displayName ?? null,
+          item.avatarUrl ?? null,
+          item.emoji ?? null,
+          item.accessLevel ?? null,
           item.systemPrompt,
           item.greeting,
         ],
       );
     }
-    await conn.commit();
+    if (!connection) await conn.commit();
   } catch (e) {
-    await conn.rollback();
+    if (!connection) await conn.rollback();
     throw e;
   } finally {
-    conn.release();
+    if (!connection) conn.release();
   }
 }
 
@@ -314,8 +368,8 @@ export async function findReaderPromptByCode(readerCode: string): Promise<AdminR
   return rows[0] || null;
 }
 
-export async function listFeaturedReadersConfig(): Promise<AdminFeaturedReader[]> {
-  const [rows] = await pool.execute<AdminFeaturedReader[]>(
+export async function listFeaturedReadersConfig(connection?: PoolConnection): Promise<AdminFeaturedReader[]> {
+  const [rows] = await (connection ?? pool).execute<AdminFeaturedReader[]>(
     `SELECT id, reader_code, sort_order, is_active, updated_at
      FROM featured_readers ORDER BY sort_order ASC, reader_code ASC`,
   );
@@ -326,10 +380,10 @@ export async function upsertFeaturedReadersConfig(items: Array<{
   readerCode: string;
   sortOrder: number;
   isActive: boolean;
-}>): Promise<void> {
-  const conn = await pool.getConnection();
+}>, connection?: PoolConnection): Promise<void> {
+  const conn = connection ?? await pool.getConnection();
   try {
-    await conn.beginTransaction();
+    if (!connection) await conn.beginTransaction();
     for (const item of items) {
       await conn.execute(
         `INSERT INTO featured_readers (reader_code, sort_order, is_active)
@@ -340,27 +394,32 @@ export async function upsertFeaturedReadersConfig(items: Array<{
         [item.readerCode, item.sortOrder, item.isActive ? 1 : 0],
       );
     }
-    await conn.commit();
+    if (!connection) await conn.commit();
   } catch (e) {
-    await conn.rollback();
+    if (!connection) await conn.rollback();
     throw e;
   } finally {
-    conn.release();
+    if (!connection) conn.release();
   }
 }
 
-export async function getStats() {
+export async function getStats(now = new Date(), timeZone = env.QUOTA_TIME_ZONE) {
+  const day = businessDayRange(timeZone, now);
+  const bounds = [new Date(day.startsAt), new Date(day.resetsAt)];
   const [[userStats]] = await pool.execute<RowDataPacket[]>(
     `SELECT
        COUNT(*) AS totalUsers,
-       SUM(CASE WHEN DATE(created_at) = CURDATE() THEN 1 ELSE 0 END) AS todayUsers
-     FROM users`
+       SUM(CASE WHEN created_at >= ? AND created_at < ? THEN 1 ELSE 0 END) AS todayUsers
+     FROM users`, bounds,
   );
   const [[readingStats]] = await pool.execute<RowDataPacket[]>(
-    `SELECT
-       COUNT(*) AS totalReadings,
-       SUM(CASE WHEN DATE(created_at) = CURDATE() THEN 1 ELSE 0 END) AS todayReadings
-     FROM reading_history`
+    `SELECT SUM(total_count) AS totalReadings, SUM(today_count) AS todayReadings FROM (
+       SELECT COUNT(*) AS total_count,
+         SUM(CASE WHEN created_at >= ? AND created_at < ? THEN 1 ELSE 0 END) AS today_count FROM reading_history
+       UNION ALL
+       SELECT COUNT(*) AS total_count,
+         SUM(CASE WHEN created_at >= ? AND created_at < ? THEN 1 ELSE 0 END) AS today_count FROM fate_conflicts
+     ) counts`, [...bounds, ...bounds],
   );
   const [[feedbackStats]] = await pool.execute<RowDataPacket[]>(
     `SELECT
@@ -369,6 +428,8 @@ export async function getStats() {
      FROM feedback`
   );
   return {
+    businessDate: day.businessDate,
+    timeZone: day.timeZone,
     totalUsers: Number(userStats?.totalUsers || 0),
     todayUsers: Number(userStats?.todayUsers || 0),
     totalReadings: Number(readingStats?.totalReadings || 0),

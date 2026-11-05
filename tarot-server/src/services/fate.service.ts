@@ -12,8 +12,19 @@ const CATEGORY_LABEL: Record<string, string> = {
   decision: '人生抉择',
 };
 
-function categoryLabel(cat: string): string {
-  return CATEGORY_LABEL[cat] ?? cat;
+const CATEGORY_LABEL_EN: Record<string, string> = {
+  love: 'love',
+  career: 'career',
+  wealth: 'money',
+  health: 'well-being',
+  relationship: 'relationships',
+  decision: 'life decision',
+};
+
+type FateLocale = 'zh-CN' | 'en-US';
+
+function categoryLabel(cat: string, locale: FateLocale = 'zh-CN'): string {
+  return (locale === 'en-US' ? CATEGORY_LABEL_EN : CATEGORY_LABEL)[cat] ?? cat;
 }
 
 type ZiweiInput = {
@@ -29,8 +40,8 @@ type ZiweiInput = {
 };
 
 /** 紫微斗数版本的东方命理 system 提示词（输出结构与八字版保持一致，便于前端复用） */
-function buildZiweiSystemPrompt(catZh: string): string {
-  return `你是一位精通紫微斗数的命理分析师。用户已提供由排盘程序精确计算出的紫微命盘（命宫、身宫、五行局、命主身主与十二宫主辅星），请基于这份**真实命盘数据**，结合其问题领域（${catZh}），给出有紫微质感的运势侧写（侧重心理与象征，避免恐吓性断言）。
+function buildZiweiSystemPrompt(category: string, locale: FateLocale): string {
+  return `你是一位精通紫微斗数的命理分析师。用户已提供由排盘程序精确计算出的紫微命盘（命宫、身宫、五行局、命主身主与十二宫主辅星），请基于这份**真实命盘数据**，结合其问题领域（${category}），给出有紫微质感的运势侧写（侧重心理与象征，避免恐吓性断言）。
 
 请重点参考命宫主星及其三方四正、身宫、以及与问题领域相关的宫位（如事业看官禄宫、财运看财帛宫、感情看夫妻宫），并留意四化（化禄/权/科/忌）的影响。
 
@@ -48,7 +59,8 @@ function buildZiweiSystemPrompt(catZh: string): string {
   "analysis": "命盘断语正文，结合命宫主星、相关宫位与四化，分2-3段，180-260字，有画面感和指导性",
   "advice": "一句话行动建议，30-50字"
 }
-注意：fiveElementScores 五项要有明显高低差异，参考五行局与星曜分布，体现命局实际强弱。`;
+注意：fiveElementScores 五项要有明显高低差异，参考五行局与星曜分布，体现命局实际强弱。
+${locale === 'en-US' ? 'All user-facing JSON values must be written in natural English. Keep the JSON keys and the five Chinese element keys unchanged. Transliterate or briefly explain Chinese astrology terms in English.' : '所有面向用户的 JSON 值必须使用简体中文。'}`;
 }
 
 /** 将紫微命盘摘要格式化为提示词文本 */
@@ -202,6 +214,7 @@ export async function analyzeFateDual(
     cardIds: number[];
     orientations: ('upright' | 'reversed')[];
     chartType?: 'bazi' | 'ziwei';
+    locale?: FateLocale;
     ziwei?: {
       fiveElementsClass?: string;
       soul?: string;
@@ -216,26 +229,32 @@ export async function analyzeFateDual(
   },
 ) {
   const cat = input.category;
-  const catZh = categoryLabel(cat);
+  const outputLocale: FateLocale = input.locale === 'en-US' ? 'en-US' : 'zh-CN';
+  const isEnglish = outputLocale === 'en-US';
+  const catLabel = categoryLabel(cat, outputLocale);
   const correctedBirth = input.solarCorrection && input.birthTime && input.birthLongitude != null
     ? calculateTrueSolarTime(input.birthDate, input.birthTime, input.birthLongitude)
     : null;
   const effectiveBirthDate = correctedBirth?.date ?? input.birthDate;
   const effectiveBirthTime = correctedBirth?.time ?? input.birthTime;
-  const timeStr = effectiveBirthTime ?? '未知（可按日柱推演）';
-  const genderLabel = input.gender === 'female' ? '女' : input.gender === 'male' ? '男' : '未提供';
-  const placeLabel = input.birthPlace || '未提供';
+  const timeStr = effectiveBirthTime ?? (isEnglish ? 'Unknown (infer from the day pillar)' : '未知（可按日柱推演）');
+  const genderLabel = input.gender === 'female'
+    ? (isEnglish ? 'Female' : '女')
+    : input.gender === 'male'
+      ? (isEnglish ? 'Male' : '男')
+      : (isEnglish ? 'Not provided' : '未提供');
+  const placeLabel = input.birthPlace || (isEnglish ? 'Not provided' : '未提供');
   const correctionLabel = correctedBirth
-    ? `已校正（${correctedBirth.offsetMinutes >= 0 ? '+' : ''}${correctedBirth.offsetMinutes} 分钟）`
-    : '未启用';
+    ? `${isEnglish ? 'Corrected' : '已校正'}（${correctedBirth.offsetMinutes >= 0 ? '+' : ''}${correctedBirth.offsetMinutes} ${isEnglish ? 'minutes' : '分钟'}）`
+    : (isEnglish ? 'Disabled' : '未启用');
   const pillarsText = input.baziPillars
     ? `${input.baziPillars.year}年 ${input.baziPillars.month}月 ${input.baziPillars.day}日 ${input.baziPillars.time}时`
-    : '未提供';
+    : (isEnglish ? 'Not provided' : '未提供');
   const useZiwei = input.chartType === 'ziwei' && input.ziwei != null;
 
   const baziSystem = useZiwei
-    ? buildZiweiSystemPrompt(catZh)
-    : `你是一位精通八字命理（子平术）的分析师。用户提供了由排盘程序计算出的四柱，请优先依据四柱、性别和真太阳时校正结果，结合其问题领域（${catZh}），给出运势侧写（侧重心理与象征，避免恐吓性断言）。
+    ? buildZiweiSystemPrompt(catLabel, outputLocale)
+    : `你是一位精通八字命理（子平术）的分析师。用户提供了由排盘程序计算出的四柱，请优先依据四柱、性别和真太阳时校正结果，结合其问题领域（${catLabel}），给出运势侧写（侧重心理与象征，避免恐吓性断言）。
 
 请尽量充实内容、用词专业而温暖。严格只输出一个 JSON 对象，不要 markdown 代码块，不要其它文字。格式：
 {
@@ -251,7 +270,8 @@ export async function analyzeFateDual(
   "analysis": "命理断语正文，结合日主旺衰、喜忌与问题领域，分2-3段，180-260字，有画面感和指导性",
   "advice": "一句话行动建议，30-50字"
 }
-注意：fiveElementScores 五项要有明显高低差异、加起来不必为100，体现命局五行的实际强弱分布。`;
+注意：fiveElementScores 五项要有明显高低差异、加起来不必为100，体现命局五行的实际强弱分布。
+${isEnglish ? 'All user-facing JSON values must be written in natural English. Keep the JSON keys and the five Chinese element keys unchanged. Transliterate or briefly explain BaZi terms in English.' : '所有面向用户的 JSON 值必须使用简体中文。'}`;
 
   const birthContext = `原始出生日期：${input.birthDate}
 原始出生时间：${input.birthTime ?? '未提供'}
@@ -265,13 +285,25 @@ export async function analyzeFateDual(
     ? `${birthContext}
 ${formatZiweiForPrompt(input.ziwei!)}
 问题：${input.question}
-场景：${catZh}`
+场景：${catLabel}`
     : `${birthContext}
 程序排盘四柱：${pillarsText}
 问题：${input.question}
-场景：${catZh}`;
+场景：${catLabel}`;
 
-  const baziFallbackJson = JSON.stringify({
+  const baziFallback: BaziAiJson = isEnglish ? {
+    dayMaster: 'Gui Water',
+    dayMasterStrength: 'Balanced',
+    fiveElements: { 木: 'New growth beginning', 火: 'A spark awaiting direction', 土: 'Grounded and protective', 金: 'Strength being refined', 水: 'Intuition moving quietly' },
+    fiveElementScores: { 木: 58, 火: 42, 土: 70, 金: 48, 水: 62 },
+    favorable: ['Water', 'Wood'],
+    unfavorable: ['Earth'],
+    pattern: 'Gathering strength before change',
+    keywords: ['Preparation', 'Observation', 'Turning point', 'Reflection'],
+    luckTrend: 'A change is beginning',
+    analysis: 'The overall pattern is still taking shape. This is a useful moment to slow down, name what you truly want, and separate real constraints from imagined ones.\n\nThe surface may look quiet, but a turning point is forming underneath. Let evidence guide the next move instead of pressure or urgency.',
+    advice: 'Clarify what matters most, then choose the smallest useful next step.',
+  } : {
     dayMaster: '癸水',
     dayMasterStrength: '中和',
     fiveElements: { 木: '萌动初生', 火: '未炎待引', 土: '厚载守中', 金: '待砺藏锋', 水: '细流通脉' },
@@ -284,7 +316,8 @@ ${formatZiweiForPrompt(input.ziwei!)}
     analysis:
       '天地气机未明，命局五行各有进退。日主居中，既不躁进亦不固守，正是观照内心、厘清所求的时节。\n\n当下宜向内沉潜，待机而动；外界看似平静，实则暗流酝酿转机。心念所向，即为舵向。',
     advice: '先厘清真正想要的，再决定下一步的取舍。',
-  });
+  };
+  const baziFallbackJson = JSON.stringify(baziFallback);
 
   const baziRaw = await deepSeekOr(
     () => callDeepSeek(
@@ -301,39 +334,28 @@ ${formatZiweiForPrompt(input.ziwei!)}
 
   let baziParsed = extractJsonBlock<BaziAiJson>(baziRaw);
   if (!baziParsed?.analysis) {
-    baziParsed = {
-      dayMaster: '癸水',
-      dayMasterStrength: '中和',
-      keywords: ['蓄势', '观望', '转机', '内省'],
-      luckTrend: '变动序章',
-      pattern: '气机未定 · 待时而动',
-      favorable: ['水', '木'],
-      unfavorable: ['土'],
-      analysis: '当下宜静观其变，以问心为先；行动前可先厘清真正所求。',
-      advice: '先厘清真正想要的，再决定下一步的取舍。',
-      fiveElements: { 木: '萌动初生', 火: '未炎待引', 土: '厚载守中', 金: '待砺藏锋', 水: '细流通脉' },
-      fiveElementScores: { 木: 58, 火: 42, 土: 70, 金: 48, 水: 62 },
-    };
+    baziParsed = baziFallback;
   }
 
   const keywordsArr = Array.isArray(baziParsed.keywords) ? baziParsed.keywords : [];
-  const keywordsStr = keywordsArr.slice(0, 5).join('、') || '未定';
+  const keywordsStr = keywordsArr.slice(0, 5).join(isEnglish ? ', ' : '、') || (isEnglish ? 'Undetermined' : '未定');
 
   const { cards, reversed } = resolvePickedTarot(input.cardIds, input.orientations);
-  const posLabels = ['过去', '现在', '未来'];
+  const posLabels = isEnglish ? ['Past', 'Present', 'Future'] : ['过去', '现在', '未来'];
   const lines = cards.map((c, i) => {
-    const o = reversed[i] ? '逆位' : '正位';
-    return `${posLabels[i]}：${c.name}（${o}）`;
+    const o = reversed[i] ? (isEnglish ? 'reversed' : '逆位') : (isEnglish ? 'upright' : '正位');
+    return `${posLabels[i]}: ${isEnglish ? c.nameEn : c.name} (${o})`;
   });
 
   const tarotSystem = `你是一位塔罗占卜师。根据三张牌（过去/现在/未来）解读用户问题。
-要求：强调情绪与潜意识、有画面感、有引导性结论；中文；300字以内。
+要求：强调情绪与潜意识、有画面感、有引导性结论；${isEnglish ? 'use natural English' : '使用简体中文'}；300字以内。
 只输出解读正文，不要 JSON。`;
 
-  const tarotUser = `牌面：\n${lines.join('\n')}\n问题：${input.question}\n场景：${catZh}`;
+  const tarotUser = `牌面：\n${lines.join('\n')}\n问题：${input.question}\n场景：${catLabel}`;
 
-  const tarotFallback =
-    '三张牌在情绪与潜意识层面交织：过去留有未竟之感，现在正站在抉择边缘，未来则指向「由你书写」。请先诚实面对内心真实渴望，再决定下一步。';
+  const tarotFallback = isEnglish
+    ? 'The three cards trace an unfinished feeling in the past, a decision taking shape in the present, and a future that still depends on your authorship. Name the desire beneath the pressure before deciding what to do next.'
+    : '三张牌在情绪与潜意识层面交织：过去留有未竟之感，现在正站在抉择边缘，未来则指向「由你书写」。请先诚实面对内心真实渴望，再决定下一步。';
 
   const tarotAnalysis = await deepSeekOr(
     () => callDeepSeek(
@@ -373,7 +395,8 @@ ${formatZiweiForPrompt(input.ziwei!)}
   "adventureHorizon":"如 半年至一年",
   "stableScores":{"稳健":85,"成长":45,"风险":25,"回报":55,"心力":40},
   "adventureScores":{"稳健":40,"成长":85,"风险":75,"回报":85,"心力":75}
-}`;
+}
+${isEnglish ? 'Write every user-facing JSON value in natural English. Keep all JSON keys and the five Chinese score-axis keys unchanged.' : '所有面向用户的 JSON 值必须使用简体中文。'}`;
 
   const mergeUser = `【东方侧写】
 关键词：${keywordsStr}
@@ -383,7 +406,19 @@ ${formatZiweiForPrompt(input.ziwei!)}
 【塔罗解读】
 ${tarotAnalysis}`;
 
-  const mergeFallbackJson = JSON.stringify({
+  const mergeFallback: ConflictBranchesJson = isEnglish ? {
+    conflictType: 'Tension',
+    conflictLevel: 'Medium',
+    summary: 'The chart asks for stability; Tarot asks for honesty. The tradeoff is yours.',
+    pathStable: 'Choose a measured pace and protect the foundations already working. The short term may feel less dramatic, but you gain time to test assumptions and preserve options. The cost is delaying part of what you want while you wait for stronger evidence.',
+    pathAdventure: 'Follow the impulse to change through one controlled action. The short term may become less predictable, but real feedback can open a path that planning alone cannot reveal. The cost is accepting uncertainty and a limited amount of trial and error.',
+    stableTag: 'Measured progress',
+    adventureTag: 'Controlled breakthrough',
+    stableHorizon: 'Visible in 3-6 months',
+    adventureHorizon: 'Six to twelve months',
+    stableScores: { 稳健: 85, 成长: 45, 风险: 25, 回报: 55, 心力: 40 },
+    adventureScores: { 稳健: 40, 成长: 85, 风险: 75, 回报: 85, 心力: 75 },
+  } : {
     conflictType: '冲突',
     conflictLevel: '中',
     summary: '命理求稳，塔罗见心；取舍在你。',
@@ -395,7 +430,8 @@ ${tarotAnalysis}`;
     adventureHorizon: '半年至一年',
     stableScores: { 稳健: 85, 成长: 45, 风险: 25, 回报: 55, 心力: 40 },
     adventureScores: { 稳健: 40, 成长: 85, 风险: 75, 回报: 85, 心力: 75 },
-  });
+  };
+  const mergeFallbackJson = JSON.stringify(mergeFallback);
 
   const mergeRaw = await deepSeekOr(
     () => callDeepSeek(
@@ -413,15 +449,15 @@ ${tarotAnalysis}`;
   let merge = extractJsonBlock<ConflictBranchesJson>(mergeRaw);
   if (!merge?.summary || !merge.pathStable || !merge.pathAdventure) {
     merge = {
-      conflictType: merge?.conflictType ?? '冲突',
-      conflictLevel: merge?.conflictLevel ?? '中',
-      summary: merge?.summary ?? '命理求稳，塔罗见心；取舍在你。',
-      pathStable: merge?.pathStable ?? '选择稳妥节奏，短期少波澜，但可能延缓真正想做的事；代价是压抑一部分渴望。',
-      pathAdventure: merge?.pathAdventure ?? '追随内心冲动，短期震荡加大，但可能打开新局；代价是要承担不确定与试错成本。',
-      stableTag: merge?.stableTag ?? '稳中求进',
-      adventureTag: merge?.adventureTag ?? '破局重生',
-      stableHorizon: merge?.stableHorizon ?? '3-6 个月见效',
-      adventureHorizon: merge?.adventureHorizon ?? '半年至一年',
+      conflictType: merge?.conflictType ?? mergeFallback.conflictType,
+      conflictLevel: merge?.conflictLevel ?? mergeFallback.conflictLevel,
+      summary: merge?.summary ?? mergeFallback.summary,
+      pathStable: merge?.pathStable ?? mergeFallback.pathStable,
+      pathAdventure: merge?.pathAdventure ?? mergeFallback.pathAdventure,
+      stableTag: merge?.stableTag ?? mergeFallback.stableTag,
+      adventureTag: merge?.adventureTag ?? mergeFallback.adventureTag,
+      stableHorizon: merge?.stableHorizon ?? mergeFallback.stableHorizon,
+      adventureHorizon: merge?.adventureHorizon ?? mergeFallback.adventureHorizon,
       stableScores: merge?.stableScores,
       adventureScores: merge?.adventureScores,
     };
@@ -468,7 +504,7 @@ ${tarotAnalysis}`;
     userId,
     baziId,
     tarotId,
-    conflictType: merge.conflictType ?? '冲突',
+    conflictType: merge.conflictType ?? (isEnglish ? 'Tension' : '冲突'),
     conflictLevel: merge.conflictLevel ?? null,
     summaryText: merge.summary ?? '',
     pathStableText: merge.pathStable ?? '',
@@ -520,7 +556,7 @@ ${tarotAnalysis}`;
     },
     tarot: {
       cards: cards.map((c, i) => ({
-        name: c.name,
+        name: isEnglish ? c.nameEn : c.name,
         nameEn: c.nameEn,
         position: posLabels[i],
         reversed: reversed[i]!,
@@ -528,7 +564,7 @@ ${tarotAnalysis}`;
       analysis: tarotAnalysis,
     },
     conflict: {
-      type: merge.conflictType ?? '冲突',
+      type: merge.conflictType ?? (isEnglish ? 'Tension' : '冲突'),
       level: merge.conflictLevel ?? null,
       summary: merge.summary ?? '',
     },
@@ -564,8 +600,69 @@ function buildChoiceGuidanceFallback(
   row: Record<string, unknown>,
   resultText: string,
   choice: 'stable' | 'adventure',
+  locale: FateLocale,
 ): ChoiceGuidance {
   const isStable = choice === 'stable';
+  const isEnglish = locale === 'en-US';
+  if (isEnglish) {
+    const selectedPath = cleanGuidanceText(
+      isStable ? row.path_stable_text : row.path_adventure_text,
+      resultText,
+      140,
+    );
+    const oppositePath = cleanGuidanceText(
+      isStable ? row.path_adventure_text : row.path_stable_text,
+      '',
+      120,
+    );
+    const summary = cleanGuidanceText(
+      row.summary_text,
+      'This choice is about bringing inner momentum back into alignment with a workable pace.',
+      90,
+    );
+    if (isStable) {
+      return {
+        title: 'The measured path',
+        verdict: `${summary} Protect the foundation first, then use smaller tests to decide where more commitment is justified.`,
+        whyThisPath: [
+          'It reduces outside noise so you can see what is actually worth protecting.',
+          'It preserves resources and options while the evidence is still incomplete.',
+          selectedPath,
+        ],
+        actionPlan: {
+          now: ['Write down three boundaries you must protect', 'Turn the largest fear into one testable question'],
+          sevenDays: ['Run one low-cost experiment', 'Separate real pressure from imagined pressure'],
+          thirtyDays: ['Set a clear review date', 'Increase commitment only when the evidence improves'],
+        },
+        risks: ['Stability can become delay', 'Over-accommodation can suppress a real need', 'Waiting too long can close a useful window'],
+        stopSignals: ['The same issue keeps draining you', 'The opportunity is clearly shrinking', 'Fear is the only reason you are staying'],
+        shadowPath: oppositePath
+          ? `The bold path still reminds you: ${oppositePath}`
+          : 'The unchosen path reminds you that your impulse is information, not noise.',
+        mantra: 'Stabilize first, then move with precision',
+      };
+    }
+    return {
+      title: 'The breakthrough path',
+      verdict: `${summary} Let one controlled action reveal the situation, while keeping the cost inside a boundary you can carry.`,
+      whyThisPath: [
+        'It answers momentum that has been building for some time.',
+        'It replaces repeated guessing with real-world feedback.',
+        selectedPath,
+      ],
+      actionPlan: {
+        now: ['Choose the smallest meaningful action', 'Define the cost you are willing to carry'],
+        sevenDays: ['Complete one real step forward', 'Review the risk boundary with someone you trust'],
+        thirtyDays: ['Use results to recalibrate direction', 'Keep one viable fallback route'],
+      },
+      risks: ['Impulse can amplify cost', 'High expectations can hide detail risk', 'Resources or relationships may feel short-term pressure'],
+      stopSignals: ['Continued effort produces no feedback', 'Progress requires hiding a major cost', 'Your body and emotions remain overloaded'],
+      shadowPath: oppositePath
+        ? `The measured path still reminds you: ${oppositePath}`
+        : 'The unchosen path reminds you that stability can preserve strength for the next move.',
+      mantra: 'Break the pattern without losing your boundaries',
+    };
+  }
   const selectedLabel = isStable ? '守住现在' : '主动破局';
   const oppositeLabel = isStable ? '主动破局' : '守住现在';
   const summary = cleanGuidanceText(row.summary_text, '这次选择的重点，是把内心冲动与现实节奏重新对齐。', 90);
@@ -651,6 +748,7 @@ function readCachedChoiceGuidance(
   row: Record<string, unknown>,
   resultText: string,
   choice: 'stable' | 'adventure',
+  locale: FateLocale,
 ): ChoiceGuidance | null {
   if (value == null || value === '') return null;
   try {
@@ -658,7 +756,7 @@ function readCachedChoiceGuidance(
     if (!parsed || typeof parsed !== 'object') return null;
     return normalizeChoiceGuidance(
       parsed as ChoiceGuidanceJson,
-      buildChoiceGuidanceFallback(row, resultText, choice),
+      buildChoiceGuidanceFallback(row, resultText, choice, locale),
     );
   } catch {
     return null;
@@ -669,11 +767,13 @@ async function buildChoiceGuidance(
   row: Record<string, unknown>,
   resultText: string,
   choice: 'stable' | 'adventure',
+  locale: FateLocale,
 ): Promise<ChoiceGuidance> {
-  const fallback = buildChoiceGuidanceFallback(row, resultText, choice);
+  const fallback = buildChoiceGuidanceFallback(row, resultText, choice, locale);
   const isStable = choice === 'stable';
-  const selectedLabel = isStable ? '守住现在' : '主动破局';
-  const unselectedLabel = isStable ? '主动破局' : '守住现在';
+  const isEnglish = locale === 'en-US';
+  const selectedLabel = isStable ? (isEnglish ? 'Keep the foundation' : '守住现在') : (isEnglish ? 'Break the pattern' : '主动破局');
+  const unselectedLabel = isStable ? (isEnglish ? 'Break the pattern' : '主动破局') : (isEnglish ? 'Keep the foundation' : '守住现在');
   const selectedPath = isStable ? row.path_stable_text : row.path_adventure_text;
   const unselectedPath = isStable ? row.path_adventure_text : row.path_stable_text;
 
@@ -697,10 +797,11 @@ JSON 格式：
   "stopSignals":["停止或转向信号1","停止或转向信号2","停止或转向信号3"],
   "shadowPath":"60-100字说明未选路线仍然提醒了什么",
   "mantra":"12-24字行动箴言"
-}`;
+}
+${isEnglish ? 'Write every JSON value in natural English. Keep the JSON keys unchanged.' : '所有 JSON 值必须使用简体中文。'}`;
 
   const guidanceUser = `用户问题：${cleanGuidanceText(row.question, '未记录具体问题', 180)}
-领域：${categoryLabel(String(row.category ?? ''))}
+领域：${categoryLabel(String(row.category ?? ''), locale)}
 冲突类型：${cleanGuidanceText(row.conflict_type, '未定', 20)}
 冲突层级：${cleanGuidanceText(row.conflict_level, '未定', 20)}
 核心摘要：${cleanGuidanceText(row.summary_text, '', 140)}
@@ -735,13 +836,14 @@ export async function chooseFatePath(
   userId: number,
   conflictId: number,
   choice: 'stable' | 'adventure',
+  locale: FateLocale = 'zh-CN',
 ) {
   const row = await FateModel.findConflictForUser(conflictId, userId);
   if (!row) {
     throw new Error('记录不存在或无权访问');
   }
 
-  const existing = await FateModel.getChoiceByConflictId(conflictId);
+  const existing = await FateModel.getChoiceByConflictId(conflictId, locale);
   if (existing) {
     const existingChoice = existing.choice_type === 'adventure' ? 'adventure' : 'stable';
     const resultText = String(existing.result_path_text);
@@ -750,9 +852,10 @@ export async function chooseFatePath(
       row,
       resultText,
       existingChoice,
+      locale,
     );
     if (!guidance) {
-      guidance = await buildChoiceGuidance(row, resultText, existingChoice);
+      guidance = await buildChoiceGuidance(row, resultText, existingChoice, locale);
       await FateModel.updateFateChoiceGuidance(Number(existing.id), guidance);
     }
     return {
@@ -768,10 +871,11 @@ export async function chooseFatePath(
       ? String(row.path_stable_text)
       : String(row.path_adventure_text);
 
-  const polishSystem =
-    '你是命运解说者。用户已做出路径选择。请基于给定「路径正文」写一段收束语：肯定其选择、点出接下来 30 天内可执行的一小步；语气克制、不恐吓；中文 120 字以内。只输出正文。';
+  const polishSystem = locale === 'en-US'
+    ? 'You are a grounded fate-reading narrator. Based on the selected path, write a concise closing in natural English: acknowledge the choice and give one practical step for the next 30 days. Keep it calm, non-deterministic, and under 100 words. Output only the closing.'
+    : '你是命运解说者。用户已做出路径选择。请基于给定「路径正文」写一段收束语：肯定其选择、点出接下来 30 天内可执行的一小步；语气克制、不恐吓；中文 120 字以内。只输出正文。';
 
-  const polishUser = `选择：${choice === 'stable' ? '相信命（顺稳）' : '相信心（冒险）'}\n路径正文：\n${baseText}`;
+  const polishUser = `选择：${choice === 'stable' ? (locale === 'en-US' ? 'Keep the foundation' : '相信命（顺稳）') : (locale === 'en-US' ? 'Break the pattern' : '相信心（冒险）')}\n路径正文：\n${baseText}`;
 
   let resultText = baseText;
   try {
@@ -790,13 +894,14 @@ export async function chooseFatePath(
     resultText = baseText;
   }
 
-  const guidance = await buildChoiceGuidance(row, resultText, choice);
+  const guidance = await buildChoiceGuidance(row, resultText, choice, locale);
   await FateModel.insertFateChoice({
     userId,
     conflictId,
     choiceType: choice,
     resultPathText: resultText,
     guidance,
+    locale,
   });
 
   return {
@@ -813,8 +918,8 @@ function sqlDateToIso(v: unknown): string {
   return String(v);
 }
 
-export async function getFateHistory(userId: number, limit: number) {
-  const rows = await FateModel.listFateHistory(userId, limit);
+export async function getFateHistory(userId: number, limit: number, locale: FateLocale) {
+  const rows = await FateModel.listFateHistory(userId, limit, locale);
   return rows.map((r) => ({
     conflictId: Number(r.conflict_id),
     summary: String(r.summary_text ?? ''),

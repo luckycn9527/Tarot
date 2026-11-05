@@ -1,4 +1,10 @@
+import type { PoolConnection } from 'mysql2/promise';
+import * as ConfigHistory from '../models/configHistory.model.js';
+import type { ConfigMatch } from '../utils/configHistory.js';
+import { ApiError } from '../utils/apiError.js';
+import { configuredCards } from '../utils/configuredCards.js';
 import bcrypt from 'bcryptjs';
+import { randomBytes } from 'node:crypto';
 import * as AdminModel from '../models/admin.model.js';
 import type { AdminReaderPrompt } from '../models/admin.model.js';
 import { readers as staticReaders } from '../data/readers.js';
@@ -6,6 +12,8 @@ import { hashAdminUsername, signAdminToken } from '../utils/adminAuth.js';
 import { getDefaultReaderAvatarUrl } from '../utils/defaultReaderAvatars.js';
 import { resolveReaderAvatarThumbUrl } from '../utils/readerAvatarThumb.js';
 import { fail } from '../utils/response.js';
+import * as UserQuestionsModel from '../models/adminUserQuestions.model.js';
+import type { AdminListUsersQuery, AdminUserQuestionsQuery } from '../validation/adminQuery.js';
 
 /** 管理后台「塔罗师设置」列表：camelCase，且始终带上代码里的默认提示词/名称供展示与编辑 */
 export interface AdminReaderPromptListItem {
@@ -62,16 +70,67 @@ export async function adminLogin(username: string, password: string) {
   };
 }
 
-export async function listUsers(page: number, pageSize: number, keyword?: string) {
-  return AdminModel.listUsers({ page, pageSize, keyword });
+export async function listUsers(page: number, pageSize: number, keyword?: string, sort?: AdminListUsersQuery['sort']) {
+  return AdminModel.listUsers({ page, pageSize, keyword, sort });
+}
+
+export async function listUserQuestions(userId: number, query: AdminUserQuestionsQuery) {
+  return UserQuestionsModel.listUserQuestions(userId, query);
 }
 
 export async function updateUserByAdmin(userId: number, patch: any) {
   await AdminModel.updateUserByAdmin(userId, patch);
 }
 
-export async function listCardBacks() {
-  return AdminModel.listCardBacks();
+function generatedInvitationCode(): string {
+  return `ETOMD-${randomBytes(6).toString('hex').toUpperCase()}`;
+}
+
+function isDuplicateEntry(error: unknown): boolean {
+  return typeof error === 'object'
+    && error !== null
+    && 'code' in error
+    && (error as { code?: string }).code === 'ER_DUP_ENTRY';
+}
+
+export async function listInvitationCodes() {
+  return AdminModel.listInvitationCodes();
+}
+
+export async function createInvitationCode(input: {
+  code?: string;
+  type: 'quota' | 'vip_days';
+  value: number;
+  maxUses: number;
+  expiresAt: string | null;
+}) {
+  const requestedCode = input.code?.trim().toUpperCase();
+  const expiresAt = input.expiresAt ? new Date(input.expiresAt) : null;
+  if (expiresAt && Number.isNaN(expiresAt.getTime())) {
+    throw new Error('邀请码到期时间无效');
+  }
+  const attempts = requestedCode ? 1 : 3;
+
+  for (let attempt = 0; attempt < attempts; attempt += 1) {
+    const code = requestedCode || generatedInvitationCode();
+    try {
+      const id = await AdminModel.createInvitationCode({ ...input, code, expiresAt });
+      return { id, code };
+    } catch (error) {
+      if (!isDuplicateEntry(error)) throw error;
+      if (requestedCode) throw new Error('邀请码已存在');
+    }
+  }
+  throw new Error('邀请码生成冲突，请重试');
+}
+
+export async function setInvitationCodeActive(id: number, isActive: boolean) {
+  const updated = await AdminModel.setInvitationCodeActive(id, isActive);
+  if (!updated) throw new Error('邀请码不存在');
+}
+
+export async function listCardBacks(connection?: PoolConnection) {
+  return AdminModel.listCardBacks(connection);
 }
 
 export async function saveCardBacks(items: Array<{
@@ -83,16 +142,23 @@ export async function saveCardBacks(items: Array<{
   accessType: 'free' | 'vip' | 'paid';
   price: number | null;
   sortOrder: number;
-}>) {
-  await AdminModel.upsertCardBacks(items);
+}>, adminId: number, match: ConfigMatch) {
+  return ConfigHistory.changeConfig('card-backs', adminId, match, 'save', async (connection, current) => {
+    for (const item of items as (typeof items[number] & { id?: number })[]) {
+      if (item.id && !current.some(row => row.id === item.id && row.code === item.code)) throw new ApiError(409, '已有牌背编码不可修改，请重新加载或新增牌背');
+    }
+    await AdminModel.upsertCardBacks(items, connection);
+  });
 }
 
-export async function deleteCardBack(id: number) {
-  await AdminModel.deleteCardBack(id);
+export async function deleteCardBack(id: number, adminId: number, match: ConfigMatch) {
+  return ConfigHistory.deleteCardBackVersioned(adminId, id, match);
 }
 
-export async function listCards() {
-  return AdminModel.listTarotCardsConfig();
+export async function listCards(connection?: PoolConnection) {
+  return configuredCards(await AdminModel.listTarotCardsConfig(connection)).map(card => ({ id: card.id, name: card.name,
+    name_en: card.nameEn, upright_keywords: card.uprightKeywords, reversed_keywords: card.reversedKeywords,
+    yes_no_tendency: card.yesNoTendency, image_url: card.imageUrl, is_active: card.isActive ? 1 : 0 }));
 }
 
 export async function saveCards(items: Array<{
@@ -104,12 +170,14 @@ export async function saveCards(items: Array<{
   yesNoTendency: 'yes' | 'no' | 'neutral';
   imageUrl: string | null;
   isActive: boolean;
-}>) {
-  await AdminModel.upsertTarotCardsConfig(items);
+}>, adminId: number, match: ConfigMatch) {
+  return ConfigHistory.changeConfig('cards', adminId, match, 'save', async connection => {
+    await AdminModel.upsertTarotCardsConfig(items, connection);
+  });
 }
 
-export async function listReaderPrompts(): Promise<AdminReaderPromptListItem[]> {
-  const dbRows = await AdminModel.listReaderPromptsConfig();
+export async function listReaderPrompts(connection?: PoolConnection): Promise<AdminReaderPromptListItem[]> {
+  const dbRows = await AdminModel.listReaderPromptsConfig(connection);
   const byCode = new Map(dbRows.map((r) => [r.reader_code, r]));
   return staticReaders.map((sr) => {
     const db = byCode.get(sr.id);
@@ -144,8 +212,11 @@ export async function saveReaderPrompts(items: Array<{
   accessLevel: 'free' | 'vip' | null;
   systemPrompt: string;
   greeting: string;
-}>) {
-  await AdminModel.upsertReaderPromptsConfig(items);
+}>, adminId: number, match: ConfigMatch) {
+  return ConfigHistory.changeConfig('readers-prompts', adminId, match, 'save', async connection => {
+    if (items.some(item => !staticReaders.some(reader => reader.id === item.readerCode))) throw new ApiError(400, '塔罗师编码无效');
+    await AdminModel.upsertReaderPromptsConfig(items, connection);
+  });
 }
 
 export async function getReaderPromptOverride(readerCode: string) {
@@ -158,8 +229,8 @@ export interface AdminFeaturedReaderListItem {
   sortOrder: number;
 }
 
-export async function listFeaturedReaders(): Promise<AdminFeaturedReaderListItem[]> {
-  const dbRows = await AdminModel.listFeaturedReadersConfig();
+export async function listFeaturedReaders(connection?: PoolConnection): Promise<AdminFeaturedReaderListItem[]> {
+  const dbRows = await AdminModel.listFeaturedReadersConfig(connection);
   const byCode = new Map(dbRows.map((r) => [r.reader_code, r]));
   return staticReaders.map((sr) => {
     const db = byCode.get(sr.id);
@@ -171,10 +242,11 @@ export async function listFeaturedReaders(): Promise<AdminFeaturedReaderListItem
   });
 }
 
-export async function saveFeaturedReaders(items: AdminFeaturedReaderListItem[]): Promise<void> {
+export async function saveFeaturedReaders(items: AdminFeaturedReaderListItem[], adminId: number, match: ConfigMatch) {
   const validCodes = new Set(staticReaders.map((r) => r.id));
   const filtered = items.filter((item) => validCodes.has(item.readerCode));
-  await AdminModel.upsertFeaturedReadersConfig(filtered);
+  if (filtered.length !== items.length) throw new ApiError(400, '推荐塔罗师编码无效');
+  return ConfigHistory.changeConfig('featured-readers', adminId, match, 'save', connection => AdminModel.upsertFeaturedReadersConfig(filtered, connection));
 }
 
 export async function getStats() {

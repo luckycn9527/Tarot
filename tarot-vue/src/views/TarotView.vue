@@ -10,10 +10,11 @@ import FaqAccordion from '../components/FaqAccordion.vue'
 import ReaderAvatarMedia from '../components/ui/ReaderAvatarMedia.vue'
 import FeaturedReaders from '../components/FeaturedReaders.vue'
 import Crown from '@icons/crown.vue'
+import { localizedReader } from '../utils/readerLocalization'
 
 useScrollReveal()
 
-const { t, tm } = useI18n()
+const { t, tm, locale } = useI18n()
 const { remaining, isVip } = useQuota()
 const { user, isLoggedIn } = useAuth()
 const route = useRoute()
@@ -30,6 +31,7 @@ function selectReader(readerId: string, accessLevel: 'free' | 'vip') {
 }
 
 const noticeFaq = computed(() => tm('pages.tarot.noticeFaq') as { question: string; answer: string }[])
+const localizedReaders = computed(() => readers.value.map(reader => localizedReader(reader, locale.value)))
 </script>
 
 <template>
@@ -71,7 +73,7 @@ const noticeFaq = computed(() => tm('pages.tarot.noticeFaq') as { question: stri
     <!-- Readers Grid -->
     <section class="w-full max-w-6xl mx-auto px-4 pb-20">
       <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
-        <div v-for="readerItem in readers" :key="readerItem.id" class="reader-select-card flex flex-col">
+        <div v-for="readerItem in localizedReaders" :key="readerItem.id" class="reader-select-card flex flex-col">
           <div class="flex items-center gap-4 mb-4">
             <ReaderAvatarMedia :reader="readerItem" />
             <div class="min-w-0">
@@ -93,7 +95,7 @@ const noticeFaq = computed(() => tm('pages.tarot.noticeFaq') as { question: stri
             >
               {{ readerItem.accessLevel === 'free' ? t('pages.tarot.selectFree') : t('pages.tarot.selectVip') }}
             </button>
-            <span class="text-gray-600 text-xs">{{ readerItem.likes }} {{ t('pages.tarot.picksSuffix') }}</span>
+            <span class="text-gray-600 text-xs">{{ t('pages.tarot.featuredReads', { count: readerItem.likes }) }}</span>
           </div>
         </div>
       </div>

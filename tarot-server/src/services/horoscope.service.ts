@@ -17,6 +17,10 @@ const SIGN_NAMES: Record<string, string> = {
   aquarius: '水瓶座',
   pisces: '双鱼座',
 };
+const SIGN_NAMES_EN: Record<string, string> = {
+  aries: 'Aries', taurus: 'Taurus', gemini: 'Gemini', cancer: 'Cancer', leo: 'Leo', virgo: 'Virgo',
+  libra: 'Libra', scorpio: 'Scorpio', sagittarius: 'Sagittarius', capricorn: 'Capricorn', aquarius: 'Aquarius', pisces: 'Pisces',
+};
 
 export const ZODIAC_SIGNS = Object.keys(SIGN_NAMES);
 export type HoroscopePeriod = 'today' | 'tomorrow' | 'week';
@@ -47,12 +51,17 @@ const PERIOD_LABELS: Record<HoroscopePeriod, string> = {
   tomorrow: '明日',
   week: '本周',
 };
+const PERIOD_LABELS_EN: Record<HoroscopePeriod, string> = {
+  today: 'Today',
+  tomorrow: 'Tomorrow',
+  week: 'This week',
+};
 
 function formatDate(date: Date): string {
   return date.toISOString().slice(0, 10);
 }
 
-function dateLabel(period: HoroscopePeriod): string {
+function dateLabel(period: HoroscopePeriod, locale: 'zh-CN' | 'en-US'): string {
   const start = new Date();
   if (period === 'tomorrow') {
     start.setDate(start.getDate() + 1);
@@ -61,7 +70,7 @@ function dateLabel(period: HoroscopePeriod): string {
   if (period === 'week') {
     const end = new Date(start);
     end.setDate(end.getDate() + 6);
-    return `${formatDate(start)} 至 ${formatDate(end)}`;
+    return `${formatDate(start)} ${locale === 'en-US' ? 'to' : '至'} ${formatDate(end)}`;
   }
   return formatDate(start);
 }
@@ -127,15 +136,21 @@ function str(v: unknown, fallback = ''): string {
  * 获取某星座的周期运势。
  * 内容与用户无关、按 (星座, 周期, 日期) 缓存，避免重复调用 AI。
  */
-export async function getHoroscope(signRaw: string, periodRaw: unknown = 'today'): Promise<HoroscopeResult> {
+export async function getHoroscope(
+  signRaw: string,
+  periodRaw: unknown = 'today',
+  localeRaw: 'zh-CN' | 'en-US' = 'zh-CN',
+): Promise<HoroscopeResult> {
   const sign = String(signRaw || '').trim().toLowerCase();
-  const signName = SIGN_NAMES[sign];
+  const locale: 'zh-CN' | 'en-US' = localeRaw === 'en-US' ? 'en-US' : 'zh-CN';
+  const isEnglish = locale === 'en-US';
+  const signName = (isEnglish ? SIGN_NAMES_EN : SIGN_NAMES)[sign];
   if (!signName) throw new Error('无效的星座');
 
   const period = normalizePeriod(periodRaw);
-  const date = dateLabel(period);
-  const periodLabel = PERIOD_LABELS[period];
-  const cacheKey = `horoscope:v3:${sign}:${period}:${date}`;
+  const date = dateLabel(period, locale);
+  const periodLabel = (isEnglish ? PERIOD_LABELS_EN : PERIOD_LABELS)[period];
+  const cacheKey = `horoscope:v4:${locale}:${sign}:${period}:${date}`;
 
   const mem = memoryCache.get(cacheKey);
   if (mem) return mem;
@@ -152,8 +167,13 @@ export async function getHoroscope(signRaw: string, periodRaw: unknown = 'today'
   // 2) DeepSeek 翻译 + 扩展为结构化中文
   const responseText = await callDeepSeek(
     [
-      { role: 'system', content: SYSTEM_PROMPT },
-      { role: 'user', content: buildHoroscopePrompt(signName, date, sourceText ?? undefined, periodLabel) },
+      {
+        role: 'system',
+        content: isEnglish
+          ? 'You are an experienced astrology writer. Return only valid JSON in the requested structure. Write all user-facing content in natural English, stay warm and practical, and avoid absolute predictions.'
+          : SYSTEM_PROMPT,
+      },
+      { role: 'user', content: buildHoroscopePrompt(signName, date, sourceText ?? undefined, periodLabel, locale) },
     ],
     45000,
     1200,
@@ -186,14 +206,14 @@ export async function getHoroscope(signRaw: string, periodRaw: unknown = 'today'
     sign,
     date,
     period,
-    summary: str(data.summary, `${periodLabel}能量平稳，宜顺势而为。`),
+    summary: str(data.summary, isEnglish ? `${periodLabel} favors steady progress and clear priorities.` : `${periodLabel}能量平稳，宜顺势而为。`),
     overallScore,
     sections: {
-      overall: str(sectionsRaw.overall, '整体平稳，适合按部就班地推进既定计划。'),
-      love: str(sectionsRaw.love, '感情上保持真诚沟通，会有温暖的回应。'),
-      career: str(sectionsRaw.career, '工作适合处理细节与收尾，循序渐进更稳妥。'),
-      wealth: str(sectionsRaw.wealth, '财务宜稳健，避免冲动消费。'),
-      health: str(sectionsRaw.health, '注意作息与休息，给身心留出余地。'),
+      overall: str(sectionsRaw.overall, isEnglish ? 'The overall pace is steady. Focus on the next practical step instead of forcing a dramatic change.' : '整体平稳，适合按部就班地推进既定计划。'),
+      love: str(sectionsRaw.love, isEnglish ? 'Honest, unhurried communication creates room for a warmer response.' : '感情上保持真诚沟通，会有温暖的回应。'),
+      career: str(sectionsRaw.career, isEnglish ? 'Detail work and thoughtful follow-through are more useful than rushing into a new commitment.' : '工作适合处理细节与收尾，循序渐进更稳妥。'),
+      wealth: str(sectionsRaw.wealth, isEnglish ? 'Keep money decisions measured and avoid spending to change a temporary mood.' : '财务宜稳健，避免冲动消费。'),
+      health: str(sectionsRaw.health, isEnglish ? 'Protect rest and leave enough space for your attention and energy to reset.' : '注意作息与休息，给身心留出余地。'),
     },
     ratings,
     energy: {
@@ -203,12 +223,12 @@ export async function getHoroscope(signRaw: string, periodRaw: unknown = 'today'
       intuition: clampPercent(energyRaw.intuition, ratings.health * 18),
     },
     advice: {
-      do: str(adviceRaw.do, '先处理最确定的一件事'),
-      avoid: str(adviceRaw.avoid, '避免被临时情绪带节奏'),
-      mantra: str(adviceRaw.mantra, '慢一点，判断会更清楚'),
-      keyword: str(adviceRaw.keyword, '稳住'),
+      do: str(adviceRaw.do, isEnglish ? 'Finish one clear, manageable task first' : '先处理最确定的一件事'),
+      avoid: str(adviceRaw.avoid, isEnglish ? 'Do not let a passing mood set the pace' : '避免被临时情绪带节奏'),
+      mantra: str(adviceRaw.mantra, isEnglish ? 'A slower pace can reveal the better choice' : '慢一点，判断会更清楚'),
+      keyword: str(adviceRaw.keyword, isEnglish ? 'Clarity' : '稳住'),
     },
-    luckyColor: str(data.luckyColor, '靛蓝'),
+    luckyColor: str(data.luckyColor, isEnglish ? 'Indigo' : '靛蓝'),
     luckyNumber: (() => {
       const n = Math.round(Number(data.luckyNumber));
       return Number.isFinite(n) ? Math.max(0, Math.min(9, n)) : 7;

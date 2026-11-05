@@ -10,14 +10,19 @@ import { useAuth } from '../../composables/useAuth'
 import { readerSpreads } from '../../data/spreadsData'
 import { useDynamicSeoTitle } from '../../composables/useDynamicSeoTitle'
 import ReaderAvatarMedia from '../../components/ui/ReaderAvatarMedia.vue'
+import { localizedReader, localizedSpread, normalizeLocale } from '../../utils/readerLocalization'
 
 const route = useRoute()
 const router = useRouter()
-const { t } = useI18n()
+const { t, locale } = useI18n()
 const { user, isLoggedIn } = useAuth()
 
 const readerId = route.params.readerId as string
-const reader = computed(() => getReaderById(readerId))
+const reader = computed(() => {
+  const value = getReaderById(readerId)
+  return value ? localizedReader(value, locale.value) : undefined
+})
+const isEnglish = computed(() => normalizeLocale(locale.value) === 'en-US')
 
 const ready = ref(true)
 
@@ -41,6 +46,7 @@ const needsVip = computed(() => {
   if (!isLoggedIn.value) return true
   return user.value?.membership !== 'vip'
 })
+const isVip = computed(() => isLoggedIn.value && user.value?.membership === 'vip')
 
 const question = ref('')
 const selectedCategory = ref<QuestionCategory | null>(null)
@@ -49,11 +55,36 @@ const selectedSub = ref<SubCategory | null>(null)
 const questionValid = computed(() => question.value.length >= 5 && question.value.length <= 200)
 
 /** 根据问题文本 + 分类智能推荐牌阵（问题有效后展示，点击可直接开始占卜） */
-const recommendedSpreads = computed(() =>
-  questionValid.value
-    ? recommendSpreads(question.value, selectedCategory.value?.id ?? null, 3)
-    : [],
+const recommendedSpreads = computed(() => {
+  if (!questionValid.value) return []
+
+  const recommendations = recommendSpreads(
+    question.value,
+    selectedCategory.value?.id ?? null,
+    readerSpreads.length,
+  )
+  if (isVip.value) return recommendations.slice(0, 3)
+
+  // A free reader should always lead to a usable spread, never directly to checkout.
+  const available = [...recommendations, ...readerSpreads]
+    .filter((spread) => spread.accessLevel === 'free')
+  return available.filter((spread, index) => available.findIndex((item) => item.id === spread.id) === index).slice(0, 3)
+})
+const localizedRecommendedSpreads = computed(() =>
+  recommendedSpreads.value.map(spread => localizedSpread(spread, locale.value)),
 )
+
+function categoryName(category: QuestionCategory) {
+  return isEnglish.value ? category.nameEn : category.name
+}
+
+function subCategoryName(subCategory: SubCategory) {
+  return isEnglish.value ? subCategory.nameEn : subCategory.name
+}
+
+function subCategorySuggestions(subCategory: SubCategory) {
+  return isEnglish.value ? subCategory.suggestionsEn : subCategory.suggestions
+}
 
 function selectCategory(cat: QuestionCategory) {
   if (selectedCategory.value?.id === cat.id) {
@@ -80,7 +111,7 @@ function goNext() {
     params: { readerId },
     query: {
       q: question.value,
-      cat: selectedCategory.value?.name || '综合',
+      cat: selectedCategory.value?.id || 'general',
     },
   })
 }
@@ -98,7 +129,7 @@ function goWithSpread(spreadId: string) {
     params: { readerId },
     query: {
       q: question.value,
-      cat: selectedCategory.value?.name || '综合',
+      cat: selectedCategory.value?.id || 'general',
       spread: spreadId,
     },
   })
@@ -118,13 +149,13 @@ function goWithSpread(spreadId: string) {
           wrapper-class="w-20 h-20 mx-auto rounded-2xl flex items-center justify-center overflow-hidden mb-4"
           emoji-class="text-4xl"
         />
-        <h2 class="text-xl font-bold font-serif text-white mb-2">{{ reader?.name }} 是VIP专属塔罗师</h2>
-        <p class="text-gray-400 mb-6">升级会员即可解锁全部塔罗师</p>
+        <h2 class="text-xl font-bold font-serif text-white mb-2">{{ t('pages.reader.vipTitle', { name: reader?.name }) }}</h2>
+        <p class="text-gray-400 mb-6">{{ t('pages.reader.vipDescription') }}</p>
         <RouterLink to="/membership" class="inline-block px-8 py-3 rounded-full bg-gradient-to-r from-amber-600 to-yellow-500 text-white font-medium hover:shadow-lg transition-all">
-          升级VIP
+          {{ t('pages.reader.upgradeVip') }}
         </RouterLink>
         <div class="mt-4">
-          <RouterLink to="/tarot" class="text-gray-400 text-sm hover:text-gold-300 transition-colors">← 返回选择塔罗师</RouterLink>
+          <RouterLink to="/tarot" class="text-gray-400 text-sm hover:text-gold-300 transition-colors">{{ t('pages.reader.backToReaders') }}</RouterLink>
         </div>
       </div>
 
@@ -138,7 +169,7 @@ function goWithSpread(spreadId: string) {
             emoji-class="text-3xl"
           />
           <div>
-            <h1 class="text-xl font-bold font-serif text-white">向 {{ reader.name }} 提问</h1>
+            <h1 class="text-xl font-bold font-serif text-white">{{ t('pages.reader.askTitle', { name: reader.name }) }}</h1>
             <span class="text-xs px-2 py-0.5 rounded-full" :class="reader.accessLevel === 'free' ? 'bg-gold-500/20 text-gold-300' : 'bg-amber-500/20 text-amber-300'">
               {{ reader.badge }}
             </span>
@@ -147,17 +178,17 @@ function goWithSpread(spreadId: string) {
 
         <!-- Question input -->
         <div class="mb-6 animate-fade-in-up anim-delay-1">
-          <label class="text-gray-300 text-sm mb-2 block">描述你的问题</label>
+          <label class="text-gray-300 text-sm mb-2 block">{{ t('pages.reader.questionLabel') }}</label>
           <textarea
             v-model="question"
             rows="4"
             maxlength="200"
-            placeholder="请输入你想问的问题，比如：我和TA的关系未来会怎样？"
+            :placeholder="t('pages.reader.questionPlaceholder')"
             class="w-full px-4 py-3 rounded-xl bg-white/4 border border-gold-500/10 text-white placeholder-gray-500 text-sm resize-none focus:border-gold-400/80 focus:outline-none transition-colors"
           />
           <div class="flex justify-between mt-1">
             <span :class="question.length < 5 ? 'text-gray-500' : 'text-green-400'" class="text-xs">
-              {{ question.length < 5 ? `还需${5 - question.length}字` : '✓ 有效问题' }}
+              {{ question.length < 5 ? t('pages.reader.charactersRemaining', { count: 5 - question.length }) : `✓ ${t('pages.reader.validQuestion')}` }}
             </span>
             <span class="text-gray-500 text-xs">{{ question.length }}/200</span>
           </div>
@@ -165,7 +196,7 @@ function goWithSpread(spreadId: string) {
 
         <!-- Inspiration categories -->
         <div class="mb-6 animate-fade-in-up anim-delay-2">
-          <p class="text-gray-400 text-sm mb-3">灵感分类 <span class="text-gray-600">（可选，帮助AI更精准解读）</span></p>
+          <p class="text-gray-400 text-sm mb-3">{{ t('pages.reader.inspiration') }} <span class="text-gray-600">{{ t('pages.reader.inspirationHint') }}</span></p>
           <div class="flex flex-wrap gap-2 mb-3">
             <button
               v-for="cat in questionCategories"
@@ -177,7 +208,7 @@ function goWithSpread(spreadId: string) {
               @click="selectCategory(cat)"
             >
               <component :is="categoryIcon(cat.id)" class="w-3.5 h-3.5" :stroke-width="1.8" />
-              {{ cat.name }}
+              {{ categoryName(cat) }}
             </button>
           </div>
 
@@ -193,15 +224,15 @@ function goWithSpread(spreadId: string) {
                   : 'bg-white/4 text-gray-400 hover:bg-white/10'"
                 @click="selectSub(sub)"
               >
-                {{ sub.name }}
+                {{ subCategoryName(sub) }}
               </button>
             </div>
 
             <!-- Suggestions -->
             <div v-if="selectedSub" class="space-y-2">
-              <p class="text-gray-500 text-xs">点击填入问题框：</p>
+              <p class="text-gray-500 text-xs">{{ t('pages.reader.fillQuestion') }}</p>
               <button
-                v-for="s in selectedSub.suggestions"
+                v-for="s in subCategorySuggestions(selectedSub)"
                 :key="s"
                 class="block w-full text-left px-3 py-2 rounded-lg bg-white/[0.03] border border-gold-500/10 text-gray-300 text-sm hover:border-gold-500/30 hover:bg-gold-500/5 transition-all"
                 @click="useSuggestion(s)"
@@ -213,14 +244,14 @@ function goWithSpread(spreadId: string) {
         </div>
 
         <!-- 智能推荐牌阵 -->
-        <div v-if="recommendedSpreads.length" class="mb-6 animate-fade-in-up">
+        <div v-if="localizedRecommendedSpreads.length" class="mb-6 animate-fade-in-up">
           <p class="text-gray-400 text-sm mb-3">
-            为你推荐牌阵
-            <span class="text-gray-600">（根据问题智能匹配，点击直接开始）</span>
+            {{ t('pages.reader.recommendedTitle') }}
+            <span class="text-gray-600">{{ t('pages.reader.recommendedHint') }}</span>
           </p>
           <div class="space-y-2">
             <button
-              v-for="(sp, i) in recommendedSpreads"
+              v-for="(sp, i) in localizedRecommendedSpreads"
               :key="sp.id"
               class="w-full text-left p-3 rounded-xl border transition-all cursor-pointer flex items-center gap-3"
               :class="i === 0
@@ -234,8 +265,8 @@ function goWithSpread(spreadId: string) {
               <div class="min-w-0 flex-1">
                 <div class="flex items-center gap-2 flex-wrap">
                   <h3 class="text-white font-medium font-serif text-sm">{{ sp.name }}</h3>
-                  <span v-if="i === 0" class="text-[10px] px-1.5 py-0.5 rounded-full bg-gold-500/25 text-gold-200">最契合</span>
-                  <span class="text-gray-500 text-xs">{{ sp.cardCount }}张牌</span>
+                  <span v-if="i === 0" class="text-[10px] px-1.5 py-0.5 rounded-full bg-gold-500/25 text-gold-200">{{ t('pages.reader.bestMatch') }}</span>
+                  <span class="text-gray-500 text-xs">{{ t('pages.reader.cardCount', { count: sp.cardCount }) }}</span>
                 </div>
                 <p class="text-gray-400 text-xs leading-snug truncate">{{ sp.description }}</p>
               </div>
@@ -254,10 +285,10 @@ function goWithSpread(spreadId: string) {
               : 'bg-gray-700 border-transparent text-gray-400 cursor-not-allowed'"
             @click="goNext"
           >
-            {{ recommendedSpreads.length ? '查看全部牌阵 →' : '选择牌阵 →' }}
+            {{ recommendedSpreads.length ? t('pages.reader.viewAllSpreads') : t('pages.reader.chooseSpreadAction') }}
           </button>
           <div class="text-center mt-4">
-            <RouterLink to="/tarot" class="text-gray-500 text-sm hover:text-gold-300 transition-colors">← 返回选择塔罗师</RouterLink>
+            <RouterLink to="/tarot" class="text-gray-500 text-sm hover:text-gold-300 transition-colors">{{ t('pages.reader.backToReaders') }}</RouterLink>
           </div>
         </div>
       </template>

@@ -58,10 +58,10 @@ function isHtml(block: LegalBlock): block is Extract<LegalBlock, { type: 'html' 
     <section class="w-full max-w-4xl mx-auto px-4 py-16 text-center reveal-on-scroll">
       <h3 class="text-2xl font-bold font-serif text-white mb-3">{{ t('pages.privacy.ctaTitle') }}</h3>
       <p class="text-gray-400 mb-8">{{ t('pages.privacy.ctaSub') }}</p>
-      <RouterLink
-        to="/yes-no-tarot"
+      <a
+        href="mailto:luckycn521@gmail.com"
         class="inline-block px-10 py-4 rounded-full cta-button text-white font-semibold text-lg hover:shadow-2xl hover:shadow-gold-500/30 transition-all"
-      >{{ t('pages.privacy.ctaButton') }}</RouterLink>
+      >{{ t('pages.privacy.ctaButton') }}</a>
     </section>
   </div>
 </template>

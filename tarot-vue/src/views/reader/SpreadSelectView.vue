@@ -8,16 +8,27 @@ import { spreadIcon } from '../../utils/uiIcons'
 import { useDynamicSeoTitle } from '../../composables/useDynamicSeoTitle'
 import { useAuth } from '../../composables/useAuth'
 import ReaderAvatarMedia from '../../components/ui/ReaderAvatarMedia.vue'
+import { questionCategories } from '../../data/questionCategories'
+import { localizedReader, localizedSpread, normalizeLocale } from '../../utils/readerLocalization'
 
 const route = useRoute()
 const router = useRouter()
-const { t } = useI18n()
+const { t, locale } = useI18n()
 const { user, isLoggedIn } = useAuth()
 
 const readerId = route.params.readerId as string
-const reader = computed(() => getReaderById(readerId))
+const reader = computed(() => {
+  const value = getReaderById(readerId)
+  return value ? localizedReader(value, locale.value) : undefined
+})
 const question = (route.query.q as string) || ''
-const category = (route.query.cat as string) || '综合'
+const category = (route.query.cat as string) || 'general'
+const localizedSpreads = computed(() => readerSpreads.map(spread => localizedSpread(spread, locale.value)))
+const categoryLabel = computed(() => {
+  const match = questionCategories.find(item => item.id === category)
+  if (!match) return category
+  return normalizeLocale(locale.value) === 'en-US' ? match.nameEn : match.name
+})
 
 const ready = ref(false)
 
@@ -85,8 +96,8 @@ function goNext() {
             emoji-class="text-xl"
           />
           <div>
-            <h1 class="text-lg font-bold font-serif text-white">选择牌阵</h1>
-            <p class="text-gray-500 text-xs">{{ reader.name }} · {{ category }}</p>
+            <h1 class="text-lg font-bold font-serif text-white">{{ t('pages.reader.spreadSelectTitle') }}</h1>
+            <p class="text-gray-500 text-xs">{{ reader.name }} · {{ categoryLabel }}</p>
           </div>
         </div>
         <!-- Question echo -->
@@ -98,7 +109,7 @@ function goNext() {
       <!-- Spread grid -->
       <div class="grid grid-cols-1 sm:grid-cols-2 gap-4 pb-36">
         <button
-          v-for="spread in readerSpreads"
+          v-for="spread in localizedSpreads"
           :key="spread.id"
           class="text-left p-4 rounded-xl border transition-all cursor-pointer"
           :class="selectedSpread?.id === spread.id
@@ -114,7 +125,7 @@ function goNext() {
             </span>
             <div>
               <h3 class="text-white font-medium font-serif text-sm">{{ spread.name }}</h3>
-              <span class="text-gray-500 text-xs">{{ spread.cardCount }}张牌</span>
+              <span class="text-gray-500 text-xs">{{ t('pages.reader.cardCount', { count: spread.cardCount }) }}</span>
               <span v-if="spread.accessLevel === 'vip'" class="rounded bg-amber-400/15 px-1.5 py-0.5 text-[10px] font-medium text-amber-200">VIP</span>
             </div>
             <div v-if="selectedSpread?.id === spread.id" class="ml-auto text-gold-400">
@@ -122,7 +133,7 @@ function goNext() {
             </div>
           </div>
           <p class="text-gray-400 text-xs leading-relaxed">{{ spread.description }}</p>
-          <p v-if="isLocked(spread)" class="mt-3 text-xs text-amber-200/80">升级 VIP 后可解锁深度解读</p>
+          <p v-if="isLocked(spread)" class="mt-3 text-xs text-amber-200/80">{{ t('pages.reader.lockedSpread') }}</p>
           <div v-if="selectedSpread?.id === spread.id" class="mt-3 flex flex-wrap gap-1.5">
             <span
               v-for="(pos, i) in spread.positions"
@@ -150,11 +161,11 @@ function goNext() {
             : 'bg-gray-700/80 text-gray-400 cursor-not-allowed'"
           @click="goNext"
         >
-          {{ canProceed ? `开始占卜 · ${selectedSpread?.name}` : '请选择一个牌阵' }}
+          {{ canProceed ? t('pages.reader.startReadingWith', { spread: selectedSpread?.name }) : t('pages.reader.chooseOneSpread') }}
         </button>
         <div class="text-center mt-2">
           <button class="text-gray-500 text-sm hover:text-gold-300 transition-colors cursor-pointer" @click="router.back()">
-            ← 返回修改问题
+            {{ t('pages.reader.backToQuestion') }}
           </button>
         </div>
       </div>

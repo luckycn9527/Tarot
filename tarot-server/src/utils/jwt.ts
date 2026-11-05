@@ -12,6 +12,11 @@ export interface AccessTokenPayload extends TokenPayload {
   exp: number;
 }
 
+export interface RefreshTokenPayload extends TokenPayload {
+  exp: number;
+  nativeSession?: true;
+}
+
 const ALLOWED_EXPIRES_IN = ['15m', '30m', '1h', '12h', '1d', '7d', '30d', '365d'] as const;
 type ExpiresInString = typeof ALLOWED_EXPIRES_IN[number];
 
@@ -32,8 +37,11 @@ export function signAccessToken(payload: TokenPayload): string {
   );
 }
 
-export function signRefreshToken(payload: TokenPayload): string {
-  return jwt.sign(payload, env.JWT_REFRESH_SECRET, {
+export function signRefreshToken(payload: TokenPayload & { nativeSession?: true }, expiresAt?: Date): string {
+  if (expiresAt) {
+    return jwt.sign({ ...payload, jti: randomUUID(), exp: Math.floor(expiresAt.getTime() / 1000) }, env.JWT_REFRESH_SECRET);
+  }
+  return jwt.sign({ ...payload, jti: randomUUID() }, env.JWT_REFRESH_SECRET, {
     expiresIn: normalizeExpiresIn(env.JWT_REFRESH_EXPIRES_IN),
   });
 }
@@ -42,6 +50,6 @@ export function verifyAccessToken(token: string): AccessTokenPayload {
   return jwt.verify(token, env.JWT_ACCESS_SECRET) as AccessTokenPayload;
 }
 
-export function verifyRefreshToken(token: string): TokenPayload {
-  return jwt.verify(token, env.JWT_REFRESH_SECRET) as TokenPayload;
+export function verifyRefreshToken(token: string): RefreshTokenPayload {
+  return jwt.verify(token, env.JWT_REFRESH_SECRET) as RefreshTokenPayload;
 }

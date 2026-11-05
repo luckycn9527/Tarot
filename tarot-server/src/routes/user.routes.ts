@@ -37,6 +37,7 @@ const updateBirthInfoSchema = z.object({
     .string()
     .regex(/^\d{4}-\d{2}-\d{2}$/, '日期格式必须为 YYYY-MM-DD')
     .nullable(),
+  birthTime: z.string().regex(/^(?:[01]\d|2[0-3]):[0-5]\d$/, '出生时刻需为 HH:mm（00:00–23:59）').nullable().optional(),
 });
 
 const updateSettingsSchema = z.object({

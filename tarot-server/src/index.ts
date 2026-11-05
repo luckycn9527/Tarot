@@ -22,6 +22,8 @@ import referenceRoutes from './routes/reference.routes.js';
 import adminRoutes from './routes/admin.routes.js';
 import fateRoutes from './routes/fate.routes.js';
 import paymentRoutes from './routes/payment.routes.js';
+import mobileRoutes from './routes/mobile.routes.js';
+import { recoverExpired as recoverExpiredMobileRequests } from './models/mobileRequest.model.js';
 import { ensureDefaultUploadAssets } from './utils/ensureDefaultUploadAssets.js';
 import { getUploadsRoot } from './config/uploadsRoot.js';
 import { startHoroscopeScheduler } from './services/horoscope.service.js';
@@ -64,7 +66,9 @@ app.use(helmet({
 }));
 app.use(cors(corsOptions));
 // Creem signature covers the exact byte sequence. This must run before express.json().
-app.use('/api/payments/webhook', express.raw({ type: 'application/json', limit: '512kb' }));
+if (env.CREEM_ENABLED) {
+  app.use('/api/payments/webhook', express.raw({ type: 'application/json', limit: '512kb' }));
+}
 app.use(express.json({ limit: '1mb' }));
 app.use(cookieParser());
 app.use(assignRequestId);
@@ -123,6 +127,7 @@ app.use('/api/reference', referenceRoutes);
 app.use('/api/admin', adminRoutes);
 app.use('/api/fate', fateRoutes);
 app.use('/api/payments', paymentRoutes);
+app.use('/api/mobile', mobileRoutes);
 
 // Production: 可选由本进程托管前端；SERVE_STATIC_FRONTEND=false 时仅提供 API（前后端部署分离）
 const frontendDist = path.resolve(__dirname, '..', '..', 'tarot-vue', 'dist');
@@ -180,6 +185,13 @@ app.use(errorHandler);
 async function start() {
   try {
     await testConnection();
+    // Interrupted native requests are never regenerated automatically. Their durable
+    // reservations are released once after the bounded upstream deadline has elapsed.
+    const recoverMobile = () => recoverExpiredMobileRequests().catch(() => {
+      console.error(JSON.stringify({ event: 'mobile_request_recovery_unavailable' }));
+    });
+    await recoverMobile();
+    setInterval(() => { void recoverMobile(); }, 60_000).unref();
     const rh = await getRedisHealth();
     if (rh.status === 'ok') {
       console.log('✅ Redis: connected');

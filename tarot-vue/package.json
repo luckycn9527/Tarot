@@ -4,12 +4,34 @@
   "version": "1.0.0",
   "type": "module",
   "scripts": {
+    "test": "tsx --test tests/*.test.ts",
     "dev": "vite",
     "build": "vue-tsc -b && vite build",
     "build:prod": "vite build",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "mobile:assets": "node scripts/mobile-assets.mjs",
+    "mobile:build": "node scripts/mobile-build.mjs",
+    "mobile:build:domestic": "node scripts/mobile-build.mjs --site=domestic",
+    "mobile:build:overseas": "node scripts/mobile-build.mjs --site=overseas",
+    "mobile:sync": "cap sync",
+    "mobile:android": "node scripts/mobile-android.mjs",
+    "mobile:ios": "node scripts/mobile-ios.mjs",
+    "mobile:icons:ios": "node scripts/mobile-ios-icon.mjs",
+    "mobile:update-feed": "node scripts/mobile-update-feed.mjs",
+    "mobile:open:android": "cap open android",
+    "mobile:open:ios": "cap open ios",
+    "mobile:icons": "node scripts/mobile-launcher-icons.mjs"
   },
   "dependencies": {
+    "@aparajita/capacitor-secure-storage": "8.0.1",
+    "@capacitor/android": "8.5.3",
+    "@capacitor/app": "8.1.2",
+    "@capacitor/browser": "8.0.5",
+    "@capacitor/core": "8.5.3",
+    "@capacitor/haptics": "8.0.2",
+    "@capacitor/ios": "8.5.3",
+    "@capacitor/keyboard": "8.0.6",
+    "@capacitor/network": "8.0.1",
     "@vueuse/core": "^14.2.1",
     "axios": "^1.18.1",
     "iztro": "^2.5.8",
@@ -21,11 +43,14 @@
     "zod": "^4.3.6"
   },
   "devDependencies": {
+    "@capacitor/assets": "3.0.5",
+    "@capacitor/cli": "8.5.3",
     "@tailwindcss/vite": "^4.0.0",
     "@vitejs/plugin-vue": "^5.2.1",
     "tailwindcss": "^4.0.0",
+    "tsx": "^4.21.0",
     "typescript": "~5.7.2",
-    "vite": "^6.2.0",
+    "vite": "^6.4.5",
     "vue-tsc": "^2.2.0"
   }
 }

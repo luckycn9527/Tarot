@@ -5,8 +5,10 @@ const orientation = z.enum(['upright', 'reversed'], {
   errorMap: () => ({ message: '牌面方向须为 upright 或 reversed' }),
 });
 const readingQuestion = z.string({ required_error: '请输入问题' }).trim().min(5, '问题长度应在5-200字之间').max(200, '问题长度应在5-200字之间');
+const readerLocale = z.enum(['zh-CN', 'en-US']).default('zh-CN');
 
 export const singleCardSchema = z.object({
+  requestId: z.string().uuid().optional(),
   question: readingQuestion,
   cardId,
   orientation,
@@ -37,6 +39,7 @@ export const horoscopeQuerySchema = z.object({
   period: z.enum(['today', 'tomorrow', 'week'], {
     errorMap: () => ({ message: '运势周期须为 today、tomorrow 或 week' }),
   }).default('today'),
+  locale: readerLocale,
 });
 
 export const historyQuerySchema = z.object({
@@ -47,6 +50,8 @@ export const historyQuerySchema = z.object({
   dateFrom: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, '开始日期格式须为 YYYY-MM-DD').optional(),
   dateTo: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, '结束日期格式须为 YYYY-MM-DD').optional(),
 });
+
+export const insightsQuerySchema = z.object({ locale: readerLocale });
 
 const optionalReaderCards = z.object({
   cardIds: z.array(cardId).min(1).max(10).optional(),
@@ -69,6 +74,7 @@ export const readerReadingSchema = z.object({
   spreadType: z.string({ required_error: '请选择牌阵' }).trim().min(1, '请选择牌阵').max(50),
   question: readingQuestion,
   category: z.string().trim().max(30, '问题分类不能超过 30 字').optional(),
+  locale: readerLocale,
 }).and(optionalReaderCards);
 
 export const readerFollowupSchema = z.object({
@@ -78,6 +84,7 @@ export const readerFollowupSchema = z.object({
     question: z.string().trim().min(1).max(200),
     answer: z.string().trim().min(1).max(2000),
   })).max(10, '最多提交最近 10 轮追问').optional(),
+  locale: readerLocale,
 });
 
 export const readingOutcomeSchema = z.object({

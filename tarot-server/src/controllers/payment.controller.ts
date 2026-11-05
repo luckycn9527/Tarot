@@ -35,6 +35,22 @@ export async function getSubscription(req: Request, res: Response) {
   }
 }
 
+export async function getOrderStatus(req: Request, res: Response) {
+  try {
+    const orderId = String(req.params.orderId || '');
+    if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(orderId)) {
+      res.status(400).json(fail('支付订单编号无效'));
+      return;
+    }
+    res.set('Cache-Control', 'no-store');
+    res.json(success(await PaymentService.getOrderStatus(req.userId!, orderId)));
+  } catch (error) {
+    const status = error instanceof PaymentService.PaymentError ? error.statusCode : 500;
+    const message = error instanceof Error ? error.message : '获取支付订单状态失败';
+    res.status(status).json(fail(message));
+  }
+}
+
 export async function cancelSubscription(req: Request, res: Response) {
   try {
     res.json(success(await PaymentService.cancelSubscription(req.userId!), '已取消自动续费，权益将保留至当前周期结束'));

@@ -40,6 +40,7 @@ const editValue = ref('')
 const invitationCode = ref('')
 const invitationMsg = ref('')
 const invitationSuccess = ref(false)
+const invitationBusy = ref(false)
 
 // Avatar upload
 const avatarUploading = ref(false)
@@ -252,15 +253,24 @@ async function saveGender(value: string) {
 }
 
 async function redeemInvitation() {
-  if (!invitationCode.value.trim()) return
+  const code = invitationCode.value.trim().toUpperCase()
+  if (!code || invitationBusy.value) {
+    if (!code) {
+      invitationMsg.value = t('pages.profile.inviteRequired')
+      invitationSuccess.value = false
+    }
+    return
+  }
+  invitationCode.value = code
   invitationMsg.value = ''
+  invitationBusy.value = true
   try {
-    const res = await api.post('/invitations/redeem', { code: invitationCode.value.trim() })
+    const res = await api.post('/invitations/redeem', { code })
     if (res.data.success) {
       invitationMsg.value = res.data.message || t('pages.profile.redeemOk')
       invitationSuccess.value = true
       invitationCode.value = ''
-      fetchQuota(true)
+      await Promise.all([refreshUser(), fetchQuota(true)])
     } else {
       invitationMsg.value = res.data.message || t('pages.profile.redeemFail')
       invitationSuccess.value = false
@@ -268,6 +278,8 @@ async function redeemInvitation() {
   } catch (err: any) {
     invitationMsg.value = err.response?.data?.message || t('pages.profile.redeemFail')
     invitationSuccess.value = false
+  } finally {
+    invitationBusy.value = false
   }
 }
 
@@ -473,6 +485,13 @@ async function handleDeleteAccount() {
               <dt class="text-gray-500 text-sm">{{ t('pages.profile.membershipExpiry') }}</dt>
               <dd class="min-w-0 sm:text-right">
                 <span class="text-sm" :class="user.membership === 'vip' ? 'text-yellow-400' : 'text-gray-500'">{{ membershipExpiry }}</span>
+              </dd>
+            </div>
+
+            <div class="profile-field-row grid grid-cols-1 gap-1 py-3.5 sm:grid-cols-[minmax(7rem,10rem)_1fr] sm:gap-x-6 sm:items-center">
+              <dt class="text-gray-500 text-sm">{{ t('pages.profile.support') }}</dt>
+              <dd class="min-w-0 sm:text-right">
+                <a href="mailto:luckycn521@gmail.com" class="text-sm text-gold-400 hover:text-gold-300 transition-colors break-all">luckycn521@gmail.com</a>
               </dd>
             </div>
 
@@ -701,18 +720,25 @@ async function handleDeleteAccount() {
               <input
                 v-model="invitationCode"
                 type="text"
+                maxlength="50"
+                autocomplete="off"
+                autocapitalize="characters"
+                spellcheck="false"
                 :placeholder="t('pages.profile.invitePh')"
                 :aria-label="t('pages.profile.inviteAria')"
+                :disabled="invitationBusy"
                 class="w-full min-w-0 px-3 py-2.5 rounded-lg bg-white/5 border border-gold-500/12 text-white text-sm placeholder:text-stone-500/75 focus:border-gold-400/80 focus:outline-none focus:ring-2 focus:ring-gold-500/15"
                 @keyup.enter="redeemInvitation"
               />
               <button
                 type="button"
-                class="w-full sm:w-auto shrink-0 inline-flex items-center justify-center gap-1.5 px-5 py-2.5 rounded-lg bg-gradient-to-r from-gold-500 to-gold-600 text-abyss text-sm font-semibold transition-all hover:shadow-lg hover:shadow-gold-500/25"
+                class="w-full sm:w-auto shrink-0 inline-flex items-center justify-center gap-1.5 px-5 py-2.5 rounded-lg bg-gradient-to-r from-gold-500 to-gold-600 text-abyss text-sm font-semibold transition-all hover:shadow-lg hover:shadow-gold-500/25 disabled:cursor-not-allowed disabled:opacity-60"
+                :disabled="invitationBusy || !invitationCode.trim()"
                 @click="redeemInvitation"
               >
-                <Ticket :size="16" class="opacity-90" />
-                {{ t('pages.profile.redeem') }}
+                <LoaderCircle v-if="invitationBusy" :size="16" class="animate-spin opacity-90" />
+                <Ticket v-else :size="16" class="opacity-90" />
+                {{ invitationBusy ? t('pages.profile.redeeming') : t('pages.profile.redeem') }}
               </button>
             </div>
             <p v-if="invitationMsg" class="text-xs mt-2" :class="invitationSuccess ? 'text-green-400' : 'text-red-400'">

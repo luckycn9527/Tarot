@@ -5,6 +5,9 @@ import { useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { useEventListener } from '@vueuse/core'
 import LayoutDashboard from '@icons/layout-dashboard.vue'
+import HistoryIcon from '@icons/history.vue'
+import AdminConfigHistoryView from '../../components/admin/AdminConfigHistoryView.vue'
+import type { ConfigScope, ConfigVersion } from '../../types/configHistory'
 import UsersIcon from '@icons/users.vue'
 import Images from '@icons/images.vue'
 import Library from '@icons/library.vue'
@@ -19,21 +22,27 @@ import RefreshCw from '@icons/refresh-cw.vue'
 import SaveIcon from '@icons/save.vue'
 import PlusIcon from '@icons/plus.vue'
 import SearchIcon from '@icons/search.vue'
+import Ticket from '@icons/ticket.vue'
 import adminApi, { setAdminToken } from '../../services/adminApi'
 import { publicAssetUrl } from '../../utils/publicAssetUrl'
 import { formatAdminApiError } from '../../utils/adminApiError'
 import { useFetchEpoch } from '../../composables/useFetchEpoch'
+import AdminUserQuestionsDialog from '../../components/admin/AdminUserQuestionsDialog.vue'
+import type { AdminUserRow } from '../../types/adminUsers'
+import { adminDateTime } from '../../utils/adminDateTime'
 
-type TabKey = 'overview' | 'users' | 'backs' | 'cards' | 'prompts' | 'feedback'
+type TabKey = 'overview' | 'users' | 'invitations' | 'backs' | 'cards' | 'prompts' | 'feedback' | 'history'
 const activeTab = ref<TabKey>('overview')
 /** 按 Tab 区分的加载态，避免在「用户」页请求时误禁用「牌背」等按钮 */
 const tabLoading = ref<Record<TabKey, boolean>>({
   overview: false,
   users: false,
+  invitations: false,
   backs: false,
   cards: false,
   prompts: false,
   feedback: false,
+  history: false,
 })
 function setTabLoading(tab: TabKey, v: boolean) {
   tabLoading.value[tab] = v
@@ -41,7 +50,7 @@ function setTabLoading(tab: TabKey, v: boolean) {
 const toast = ref('')
 const toastType = ref<'ok' | 'err'>('ok')
 const router = useRouter()
-const { t } = useI18n()
+const { t, locale } = useI18n()
 const adminName = ref(localStorage.getItem('admin_display_name') || 'Admin')
 const fetchEpoch = useFetchEpoch()
 
@@ -62,7 +71,7 @@ onUnmounted(() => {
   if (toastTimer) clearTimeout(toastTimer)
 })
 // ===== Stats =====
-const stats = ref({ totalUsers: 0, todayUsers: 0, totalReadings: 0, todayReadings: 0, totalFeedback: 0, pendingFeedback: 0 })
+const stats = ref({ totalUsers: 0, todayUsers: 0, totalReadings: 0, todayReadings: 0, totalFeedback: 0, pendingFeedback: 0, timeZone: '', businessDate: '' })
 async function fetchStats() {
   const token = fetchEpoch.begin('overview')
   setTabLoading('overview', true)
@@ -80,11 +89,15 @@ async function fetchStats() {
 }
 
 // ===== Users =====
-const users = ref<Record<string, unknown>[]>([])
+const users = ref<AdminUserRow[]>([])
 const userTotal = ref(0)
 const userPage = ref(1)
 const userPageSize = 15
 const userKeyword = ref('')
+const userSort = ref<'newest' | 'last-login'>('newest')
+const userLoadError = ref(false)
+const questionsUser = ref<AdminUserRow | null>(null)
+const formatUserTime = (value: unknown) => adminDateTime(value, String(locale.value), t('pages.admin.noTimeRecord'))
 const editUser = ref<Record<string, unknown> | null>(null)
 const userForm = ref({ nickname: '', membership: 'free', remaining_free_quota: 0, membership_expires_at: '' })
 const userFormIsVip = computed(() => userForm.value.membership === 'vip')
@@ -167,13 +180,18 @@ const vipExpiryStatus = computed(() => {
 async function fetchUsers() {
   const token = fetchEpoch.begin('users')
   setTabLoading('users', true)
+  userLoadError.value = false
   try {
-    const r = await adminApi.get('/users', { params: { page: userPage.value, pageSize: userPageSize, keyword: userKeyword.value || undefined } })
+    const r = await adminApi.get('/users', { params: { page: userPage.value, pageSize: userPageSize, keyword: userKeyword.value || undefined, sort: userSort.value } })
     if (fetchEpoch.isStale('users', token)) return
     users.value = r.data?.data?.rows ?? []
     userTotal.value = r.data?.data?.total ?? 0
+    userPage.value = r.data?.data?.page ?? userPage.value
   } catch (e) {
-    if (!fetchEpoch.isStale('users', token)) showToast(formatAdminApiError(e, t('pages.admin.errGeneric')), 'err')
+    if (!fetchEpoch.isStale('users', token)) {
+      userLoadError.value = true
+      showToast(formatAdminApiError(e, t('pages.admin.errGeneric')), 'err')
+    }
   } finally {
     if (!fetchEpoch.isStale('users', token)) setTabLoading('users', false)
   }
@@ -276,6 +294,180 @@ async function saveUser() {
   finally { setTabLoading('users', false) }
 }
 
+// ===== Invitation codes =====
+interface InvitationCodeRow {
+  id: number
+  code: string
+  type: 'quota' | 'vip_days'
+  value: number
+  max_uses: number
+  used_count: number
+  expires_at: string | null
+  is_active: number | boolean
+  created_at: string
+}
+
+const invitationCodes = ref<InvitationCodeRow[]>([])
+const invitationForm = ref({
+  code: '',
+  type: 'vip_days' as 'quota' | 'vip_days',
+  value: 30,
+  maxUses: 1,
+  expiresAt: '',
+})
+const invitationVipPreset = ref<number | 'custom'>(30)
+const invitationValueInput = ref<HTMLInputElement | null>(null)
+const createdInvitationCode = ref<Pick<InvitationCodeRow, 'code' | 'type' | 'value' | 'max_uses' | 'expires_at'> | null>(null)
+const invitationCopyFallback = ref('')
+const invitationSearch = ref('')
+const invitationStatusFilter = ref<'all' | 'active' | 'disabled' | 'expired' | 'used'>('all')
+const filteredInvitationCodes = computed(() => {
+  const search = invitationSearch.value.trim().toUpperCase()
+  return invitationCodes.value.filter(row =>
+    (!search || row.code.toUpperCase().includes(search))
+    && (invitationStatusFilter.value === 'all' || invitationStatus(row) === invitationStatusFilter.value),
+  )
+})
+
+async function setInvitationVipPreset(preset: number | 'custom') {
+  invitationVipPreset.value = preset
+  if (preset !== 'custom') invitationForm.value.value = preset
+  else {
+    await nextTick()
+    invitationValueInput.value?.focus()
+    invitationValueInput.value?.select()
+  }
+}
+watch(() => invitationForm.value.type, () => {
+  invitationVipPreset.value = [30, 90, 365].includes(invitationForm.value.value) ? invitationForm.value.value : 'custom'
+})
+
+async function fetchInvitationCodes() {
+  const token = fetchEpoch.begin('invitations')
+  setTabLoading('invitations', true)
+  try {
+    const r = await adminApi.get('/invitations')
+    if (fetchEpoch.isStale('invitations', token)) return
+    invitationCodes.value = r.data?.data ?? []
+  } catch (e) {
+    if (!fetchEpoch.isStale('invitations', token)) {
+      showToast(formatAdminApiError(e, t('pages.admin.errGeneric')), 'err')
+    }
+  } finally {
+    if (!fetchEpoch.isStale('invitations', token)) setTabLoading('invitations', false)
+  }
+}
+
+function invitationStatus(row: InvitationCodeRow): 'active' | 'disabled' | 'expired' | 'used' {
+  if (!row.is_active) return 'disabled'
+  if (row.expires_at && new Date(row.expires_at).getTime() <= Date.now()) return 'expired'
+  if (Number(row.used_count) >= Number(row.max_uses)) return 'used'
+  return 'active'
+}
+
+function invitationStatusLabel(row: InvitationCodeRow): string {
+  const status = invitationStatus(row)
+  if (status === 'active') return t('pages.admin.inviteStatusActive')
+  if (status === 'disabled') return t('pages.admin.inviteStatusDisabled')
+  if (status === 'expired') return t('pages.admin.inviteStatusExpired')
+  return t('pages.admin.inviteStatusUsed')
+}
+
+function invitationStatusClass(row: InvitationCodeRow): string {
+  const status = invitationStatus(row)
+  if (status === 'active') return 'bg-emerald-500/12 text-emerald-300 border-emerald-500/20'
+  if (status === 'disabled') return 'bg-gray-500/10 text-gray-500 border-gray-500/15'
+  if (status === 'expired') return 'bg-red-500/10 text-red-300 border-red-500/20'
+  return 'bg-amber-500/10 text-amber-300 border-amber-500/20'
+}
+
+function invitationTypeLabel(row: Pick<InvitationCodeRow, 'type' | 'value'>): string {
+  return row.type === 'vip_days'
+    ? t('pages.admin.inviteVipDays', { n: row.value })
+    : t('pages.admin.inviteQuota', { n: row.value })
+}
+
+async function createInvitationCode() {
+  setTabLoading('invitations', true)
+  try {
+    const payload = {
+      code: invitationForm.value.code.trim() || undefined,
+      type: invitationForm.value.type,
+      value: Number(invitationForm.value.value),
+      maxUses: Number(invitationForm.value.maxUses),
+      expiresAt: invitationForm.value.expiresAt
+        ? `${invitationForm.value.expiresAt}T23:59:59.999Z`
+        : null,
+    }
+    const r = await adminApi.post('/invitations', payload)
+    const code = String(r.data?.data?.code || payload.code || '')
+    createdInvitationCode.value = {
+      code,
+      type: payload.type,
+      value: payload.value,
+      max_uses: payload.maxUses,
+      expires_at: payload.expiresAt,
+    }
+    invitationCopyFallback.value = ''
+    invitationForm.value.code = ''
+    showToast(t('pages.admin.toastInvitationCreated', { code }))
+    await fetchInvitationCodes()
+  } catch (e) {
+    showToast(formatAdminApiError(e, t('pages.admin.errGeneric')), 'err')
+  } finally {
+    setTabLoading('invitations', false)
+  }
+}
+
+async function toggleInvitationCode(row: InvitationCodeRow) {
+  setTabLoading('invitations', true)
+  try {
+    await adminApi.patch(`/invitations/${row.id}`, { isActive: !row.is_active })
+    showToast(row.is_active ? t('pages.admin.toastInvitationDisabled') : t('pages.admin.toastInvitationEnabled'))
+    await fetchInvitationCodes()
+  } catch (e) {
+    showToast(formatAdminApiError(e, t('pages.admin.errGeneric')), 'err')
+  } finally {
+    setTabLoading('invitations', false)
+  }
+}
+
+async function copyInvitationCode(code: string) {
+  try {
+    await navigator.clipboard.writeText(code)
+    invitationCopyFallback.value = ''
+    showToast(t('pages.admin.toastInvitationCopied'))
+  } catch {
+    invitationCopyFallback.value = code
+    showToast(t('pages.admin.toastInvitationCopyFail'), 'err')
+  }
+}
+
+// Configuration pages retain the server revision they were loaded from.
+const configVersions = ref<Record<ConfigScope, ConfigVersion | null>>({ 'card-backs': null, cards: null, 'readers-prompts': null, 'featured-readers': null })
+const configReason = ref('')
+const historyInitialScope = ref<ConfigScope | undefined>()
+const historyRefreshKey = ref(0)
+const activeConfigScope = computed<ConfigScope | null>(() => ({ backs: 'card-backs', cards: 'cards', prompts: 'readers-prompts' } as const)[activeTab.value as 'backs' | 'cards' | 'prompts'] ?? null)
+function configMatch(scope: ConfigScope) {
+  const version = configVersions.value[scope]
+  if (!version) throw new Error(t('pages.admin.configHistory.versionMissing'))
+  return { expectedRevision: version.revision, expectedHash: version.hash, reason: configReason.value.trim() || undefined }
+}
+function savedConfig(scope: ConfigScope, response: { data: { data: { configVersion: ConfigVersion; changed: boolean } } }) {
+  configVersions.value[scope] = response.data.data.configVersion
+  configReason.value = ''
+  return response.data.data.changed
+}
+function openConfigHistory() {
+  historyInitialScope.value = activeConfigScope.value ?? undefined
+  activeTab.value = 'history'
+}
+function onConfigRestored(scope: ConfigScope) {
+  configVersions.value[scope] = null
+  showToast(t('pages.admin.configHistory.rollbackDone'))
+}
+
 // ===== Upload helper =====
 async function uploadImage(file: File, type: string): Promise<{ url: string; thumbUrl?: string }> {
   const form = new FormData()
@@ -294,6 +486,7 @@ async function fetchCardBacks() {
   try {
     const r = await adminApi.get('/config/card-backs')
     if (fetchEpoch.isStale('backs', token)) return
+    configVersions.value['card-backs'] = r.data?.configVersion ?? null
     cardBacks.value = (r.data?.data ?? []).map((b: Record<string, unknown>) => ({ ...b, is_active: !!b.is_active }))
   } catch (e) {
     if (!fetchEpoch.isStale('backs', token)) showToast(formatAdminApiError(e, t('pages.admin.errGeneric')), 'err')
@@ -316,9 +509,10 @@ async function uploadCardBackImage(idx: number, event: Event) {
 async function saveCardBacks() {
   setTabLoading('backs', true)
   try {
-    await adminApi.put('/config/card-backs', {
+    const response = await adminApi.put('/config/card-backs', {
+      ...configMatch('card-backs'),
       items: cardBacks.value.map((b) => ({
-        code: b.code, name: b.name,
+        id: b.id || undefined, code: b.code, name: b.name,
         description: b.description || null,
         assetUrl: b.asset_url || null,
         isActive: !!b.is_active,
@@ -327,17 +521,22 @@ async function saveCardBacks() {
         sortOrder: Number(b.sort_order || 0),
       })),
     })
-    showToast(t('pages.admin.toastBacksSaved'))
+    const changed = savedConfig('card-backs', response)
+    if (!changed) showToast(t('pages.admin.configHistory.unchanged'))
+    else showToast(t('pages.admin.toastBacksSaved'))
     await fetchCardBacks()
   } catch (e) { showToast(formatAdminApiError(e, t('pages.admin.errGeneric')), 'err') }
   finally { setTabLoading('backs', false) }
 }
 async function removeCardBack(idx: number) {
+  if (tabLoading.value.backs) return
   const b = cardBacks.value[idx]
   if (b.id) {
+    if (!window.confirm(t('pages.admin.configHistory.deleteBackConfirm'))) return
     setTabLoading('backs', true)
     try {
-      await adminApi.delete(`/config/card-backs/${b.id}`)
+      const response = await adminApi.delete(`/config/card-backs/${b.id}`, { data: configMatch('card-backs') })
+      savedConfig('card-backs', response)
       showToast(t('pages.admin.toastBackDeleted'))
     } catch (e) {
       showToast(formatAdminApiError(e, t('pages.admin.errGeneric')), 'err')
@@ -359,6 +558,7 @@ async function fetchCards() {
   try {
     const r = await adminApi.get('/config/cards')
     if (fetchEpoch.isStale('cards', token)) return
+    configVersions.value['cards'] = r.data?.configVersion ?? null
     cards.value = (r.data?.data ?? []).map((c: Record<string, unknown>) => ({ ...c, is_active: !!c.is_active }))
   } catch (e) {
     if (!fetchEpoch.isStale('cards', token)) showToast(formatAdminApiError(e, t('pages.admin.errGeneric')), 'err')
@@ -387,14 +587,17 @@ function clearCardSearch() {
 async function saveCards() {
   setTabLoading('cards', true)
   try {
-    await adminApi.put('/config/cards', {
+    const response = await adminApi.put('/config/cards', {
+      ...configMatch('cards'),
       items: cards.value.map((c) => ({
         id: c.id, name: c.name, nameEn: c.name_en, uprightKeywords: c.upright_keywords,
         reversedKeywords: c.reversed_keywords, yesNoTendency: c.yes_no_tendency,
         imageUrl: c.image_url || null, isActive: !!c.is_active,
       })),
     })
-    showToast(t('pages.admin.toastCardsSaved'))
+    const changed = savedConfig('cards', response)
+    if (!changed) showToast(t('pages.admin.configHistory.unchanged'))
+    else showToast(t('pages.admin.toastCardsSaved'))
   } catch (e) { showToast(formatAdminApiError(e, t('pages.admin.errGeneric')), 'err') }
   finally { setTabLoading('cards', false) }
 }
@@ -618,6 +821,7 @@ async function fetchPrompts(opts?: { skipLoading?: boolean }) {
       showToast(typeof r.data?.message === 'string' ? r.data.message : t('pages.admin.toastPromptsLoadFail'), 'err')
       return
     }
+    configVersions.value['readers-prompts'] = r.data?.configVersion ?? null
     const rows = (r.data?.data ?? []) as Record<string, unknown>[]
     prompts.value = rows.map((row) => ({
       readerCode: String(row.readerCode ?? ''),
@@ -664,7 +868,8 @@ async function savePrompt(code: string) {
     const p = ensurePromptRow(code)
     const acc = String(p.accessLevel ?? '')
     const accessLevel = acc === 'free' || acc === 'vip' ? acc : null
-    await adminApi.put('/config/readers-prompts', {
+    const response = await adminApi.put('/config/readers-prompts', {
+      ...configMatch('readers-prompts'),
       items: [{
         readerCode: code,
         displayName: String(p.displayName ?? '').trim() || null,
@@ -675,7 +880,9 @@ async function savePrompt(code: string) {
         greeting: String(p.greeting ?? ''),
       }],
     })
-    showToast(t('pages.admin.toastReaderSaved', { name: readerLocalizedName(code) }))
+    const changed = savedConfig('readers-prompts', response)
+    if (!changed) showToast(t('pages.admin.configHistory.unchanged'))
+    else showToast(t('pages.admin.toastReaderSaved', { name: readerLocalizedName(code) }))
     await fetchPrompts({ skipLoading: true })
   } catch (e) { showToast(formatAdminApiError(e, t('pages.admin.errGeneric')), 'err') }
   finally { setTabLoading('prompts', false) }
@@ -695,12 +902,15 @@ function featuredRow(code: string): FeaturedReaderRow {
 }
 
 async function fetchFeatured() {
+  const token = fetchEpoch.begin('featured')
   try {
     const r = await adminApi.get('/config/featured-readers')
+    if (fetchEpoch.isStale('featured', token)) return
     if (!r.data?.success) {
       showToast(typeof r.data?.message === 'string' ? r.data.message : t('pages.admin.toastFeaturedLoadFail'), 'err')
       return
     }
+    configVersions.value['featured-readers'] = r.data?.configVersion ?? null
     const rows = (r.data?.data ?? []) as Record<string, unknown>[]
     const byCode = new Map(rows.map((row) => [String(row.readerCode ?? ''), row]))
     featuredList.value = readerMeta.map((m) => {
@@ -717,14 +927,17 @@ async function fetchFeatured() {
 async function saveFeatured() {
   setTabLoading('prompts', true)
   try {
-    await adminApi.put('/config/featured-readers', {
+    const response = await adminApi.put('/config/featured-readers', {
+      ...configMatch('featured-readers'),
       items: featuredList.value.map((row) => ({
         readerCode: row.readerCode,
         isActive: Boolean(row.isActive),
         sortOrder: Number(row.sortOrder) || 0,
       })),
     })
-    showToast(t('pages.admin.toastFeaturedSaved'))
+    const changed = savedConfig('featured-readers', response)
+    if (!changed) showToast(t('pages.admin.configHistory.unchanged'))
+    else showToast(t('pages.admin.toastFeaturedSaved'))
   } catch (e) { showToast(formatAdminApiError(e, t('pages.admin.errGeneric')), 'err') }
   finally { setTabLoading('prompts', false) }
 }
@@ -819,9 +1032,12 @@ async function submitReply() {
 function logout() { setAdminToken(null); localStorage.removeItem('admin_display_name'); void router.replace('/admin/login') }
 
 watch(activeTab, (tab, prev) => {
+  questionsUser.value = null
   if (prev) fetchEpoch.invalidate(prev)
+  if (prev === 'prompts') fetchEpoch.invalidate('featured')
   if (tab === 'overview') void fetchStats()
   if (tab === 'users') void fetchUsers()
+  if (tab === 'invitations') void fetchInvitationCodes()
   if (tab === 'backs') void fetchCardBacks()
   if (tab === 'cards') void fetchCards()
   if (tab === 'prompts') { void fetchPrompts(); void fetchFeatured() }
@@ -833,19 +1049,23 @@ onMounted(() => { void fetchStats() })
 const tabIconComponents: Record<TabKey, Component> = {
   overview: LayoutDashboard,
   users: UsersIcon,
+  invitations: Ticket,
   backs: Images,
   cards: Library,
   prompts: Sparkles,
   feedback: MessageSquare,
+  history: HistoryIcon,
 }
 
 const tabs = computed(() => [
   { key: 'overview' as TabKey, label: t('pages.admin.tabOverview') },
   { key: 'users' as TabKey, label: t('pages.admin.tabUsers') },
+  { key: 'invitations' as TabKey, label: t('pages.admin.tabInvitations') },
   { key: 'backs' as TabKey, label: t('pages.admin.tabBacks') },
   { key: 'cards' as TabKey, label: t('pages.admin.tabCards') },
   { key: 'prompts' as TabKey, label: t('pages.admin.tabPrompts') },
   { key: 'feedback' as TabKey, label: t('pages.admin.tabFeedback') },
+  { key: 'history' as TabKey, label: t('pages.admin.configHistory.title') },
 ])
 
 const activeTabMeta = computed(() => (
@@ -857,16 +1077,19 @@ const activeTabDescription = computed(() => {
   const descriptions: Record<TabKey, string> = {
     overview: t('pages.admin.descOverview'),
     users: t('pages.admin.descUsers'),
+    invitations: t('pages.admin.descInvitations'),
     backs: t('pages.admin.descBacks'),
     cards: t('pages.admin.descCards'),
     prompts: t('pages.admin.descPrompts'),
     feedback: t('pages.admin.descFeedback'),
+    history: t('pages.admin.configHistory.description'),
   }
   return descriptions[activeTab.value]
 })
 
 function tabBadge(tab: TabKey): string {
   if (tab === 'users' && userTotal.value > 0) return String(userTotal.value)
+  if (tab === 'invitations' && invitationCodes.value.length > 0) return String(invitationCodes.value.length)
   if (tab === 'backs' && cardBacks.value.length > 0) return String(cardBacks.value.length)
   if (tab === 'cards' && cards.value.length > 0) return String(cards.value.length)
   if (tab === 'feedback' && stats.value.pendingFeedback > 0) return String(stats.value.pendingFeedback)
@@ -874,8 +1097,10 @@ function tabBadge(tab: TabKey): string {
 }
 
 async function refreshCurrentTab() {
+  if (activeTab.value === 'history') { historyRefreshKey.value++; return }
   if (activeTab.value === 'overview') return fetchStats()
   if (activeTab.value === 'users') return fetchUsers()
+  if (activeTab.value === 'invitations') return fetchInvitationCodes()
   if (activeTab.value === 'backs') return fetchCardBacks()
   if (activeTab.value === 'cards') return fetchCards()
   if (activeTab.value === 'prompts') {
@@ -918,9 +1143,9 @@ function cardBackRowKey(b: Record<string, unknown>, index: number): string {
 </script>
 
 <template>
-  <div class="flex min-h-screen bg-[#07060e] text-gray-200">
+  <div class="admin-shell flex min-h-screen bg-[#07060e] text-gray-200">
     <!-- Sidebar -->
-    <aside class="w-56 flex-shrink-0 bg-[#0c0a16] border-r border-gold-500/8 flex flex-col">
+    <aside class="admin-sidebar w-56 flex-shrink-0 bg-[#0c0a16] border-r border-gold-500/8 flex flex-col">
         <div class="px-5 py-5 border-b border-gold-500/8">
         <div class="flex items-center gap-2.5">
           <div class="w-8 h-8 rounded-lg bg-gradient-to-br from-gold-500 to-gold-600 flex items-center justify-center text-[#07060e]">
@@ -977,6 +1202,9 @@ function cardBackRowKey(b: Record<string, unknown>, index: number): string {
             <RefreshCw :size="14" :class="activeTabLoading ? 'motion-safe:animate-spin' : ''" />
             {{ t('pages.admin.refresh') }}
           </button>
+          <button v-if="activeConfigScope" type="button" class="admin-btn-ghost inline-flex items-center gap-1.5" :disabled="activeTabLoading" @click="openConfigHistory">
+            <HistoryIcon :size="14" />{{ t('pages.admin.configHistory.title') }}
+          </button>
           <button v-if="activeTab === 'users'" type="button" class="admin-btn-primary inline-flex items-center gap-1.5" :disabled="tabLoading.users" @click="userPage = 1; fetchUsers()">
             <SearchIcon :size="14" />
             {{ t('pages.admin.search') }}
@@ -1011,7 +1239,14 @@ function cardBackRowKey(b: Record<string, unknown>, index: number): string {
         >{{ toast }}</div>
       </Transition>
 
-      <main class="flex-1 overflow-auto p-6">
+      <main class="admin-content flex-1 overflow-auto p-6">
+        <div v-if="activeConfigScope" class="admin-config-panel mb-5">
+          <label class="block text-xs text-gray-400">{{ t('pages.admin.configHistory.saveReason') }}
+            <input v-model="configReason" maxlength="500" class="admin-input mt-2 w-full" :disabled="activeTabLoading" :placeholder="t('pages.admin.configHistory.saveReasonPh')" />
+          </label>
+          <p class="mt-2 text-xs text-gray-500">{{ t('pages.admin.configHistory.saveHint') }}</p>
+        </div>
+        <AdminConfigHistoryView v-if="activeTab === 'history'" :initial-scope="historyInitialScope" :refresh-key="historyRefreshKey" @loading="setTabLoading('history', $event)" @restored="onConfigRestored" />
         <!-- Overview -->
         <section
           v-if="activeTab === 'overview'"
@@ -1019,6 +1254,7 @@ function cardBackRowKey(b: Record<string, unknown>, index: number): string {
           :aria-label="t('pages.admin.tabOverview')"
         >
           <p v-if="tabLoading.overview" class="sr-only">{{ t('pages.admin.statsLoading') }}</p>
+          <p v-if="stats.timeZone" class="mb-4 text-xs text-gray-500">{{ t('pages.admin.statsDayBoundary', { date: stats.businessDate, zone: stats.timeZone }) }}</p>
           <div
             class="grid grid-cols-2 lg:grid-cols-3 gap-4 mb-8 transition-opacity duration-200"
             :class="tabLoading.overview ? 'motion-safe:animate-pulse opacity-70' : ''"
@@ -1092,7 +1328,13 @@ function cardBackRowKey(b: Record<string, unknown>, index: number): string {
               </button>
             </div>
             <span class="text-xs text-gray-600">{{ t('pages.admin.totalRows', { n: userTotal }) }}</span>
+            <select v-model="userSort" class="admin-input text-sm" :aria-label="t('pages.admin.userSortLabel')" :disabled="tabLoading.users" @change="userPage = 1; fetchUsers()">
+              <option value="newest">{{ t('pages.admin.userSortNewest') }}</option>
+              <option value="last-login">{{ t('pages.admin.userSortLastLogin') }}</option>
+            </select>
           </div>
+          <p class="mb-4 text-xs leading-relaxed text-gray-500">{{ t('pages.admin.loginTrackingNote') }}</p>
+          <p v-if="userLoadError" role="alert" class="mb-3 text-sm text-amber-300">{{ t('pages.admin.usersLoadFailed') }}</p>
           <div class="admin-config-panel admin-users-note mb-4">
             <div>
               <p class="text-sm font-medium text-gold-100">{{ t('pages.admin.userQuotaRuleTitle') }}</p>
@@ -1101,9 +1343,9 @@ function cardBackRowKey(b: Record<string, unknown>, index: number): string {
             <span class="admin-badge bg-violet-500/12 text-violet-200 border-violet-400/20">{{ t('pages.admin.quotaUnlimited') }}</span>
           </div>
           <div class="admin-table-wrap max-h-[62vh]">
-            <table class="w-full text-sm" :aria-label="t('pages.admin.tabUsers')">
+            <table class="w-full min-w-[1200px] text-sm" :aria-label="t('pages.admin.tabUsers')">
               <thead class="sticky top-0 bg-[#0c0a16] z-10"><tr class="text-left text-gray-500 border-b border-gold-500/8 text-xs">
-                <th class="px-4 py-3">{{ t('pages.admin.thId') }}</th><th>{{ t('pages.admin.thEmail') }}</th><th>{{ t('pages.admin.thNickname') }}</th><th>{{ t('pages.admin.thAvatar') }}</th><th>{{ t('pages.admin.thMembership') }}</th><th>{{ t('pages.admin.thQuota') }}</th><th>{{ t('pages.admin.thCreated') }}</th><th>{{ t('pages.admin.thAction') }}</th>
+                <th class="px-4 py-3">{{ t('pages.admin.thId') }}</th><th>{{ t('pages.admin.thEmail') }}</th><th>{{ t('pages.admin.thNickname') }}</th><th>{{ t('pages.admin.thAvatar') }}</th><th>{{ t('pages.admin.thMembership') }}</th><th>{{ t('pages.admin.thQuota') }}</th><th>{{ t('pages.admin.thCreated') }}</th><th>{{ t('pages.admin.thLastLogin') }}</th><th>{{ t('pages.admin.thLatestQuestion') }}</th><th>{{ t('pages.admin.thAction') }}</th>
               </tr></thead>
               <tbody>
                 <tr v-for="u in users" :key="(u.id as number)" class="border-b border-white/4 hover:bg-gold-500/3 transition-colors">
@@ -1117,8 +1359,20 @@ function cardBackRowKey(b: Record<string, unknown>, index: number): string {
                   </td>
                   <td><span class="admin-badge border" :class="adminQuotaClass(u)">{{ adminQuotaText(u) }}</span></td>
                   <td class="text-xs text-gray-600">{{ (u.created_at as string)?.slice(0, 10) }}</td>
-                  <td><button type="button" class="admin-btn-sm" @click="openEditUser(u, $event)">{{ t('pages.admin.edit') }}</button></td>
+                  <td class="whitespace-nowrap pr-4 text-xs text-gray-300">{{ formatUserTime(u.last_login_at) }}</td>
+                  <td class="min-w-[220px] max-w-[280px] py-3 pr-4">
+                    <template v-if="u.latestQuestion">
+                      <p class="line-clamp-2 break-words text-xs leading-relaxed text-gray-200" :title="u.latestQuestion.question">{{ u.latestQuestion.question }}</p>
+                      <p class="mt-1 text-[11px] text-gray-500">{{ formatUserTime(u.latestQuestion.askedAt) }}</p>
+                    </template>
+                    <span v-else class="text-xs text-gray-500">{{ t('pages.admin.noQuestions') }}</span>
+                  </td>
+                  <td class="pr-3"><div class="flex flex-wrap gap-2">
+                    <button type="button" class="admin-btn-sm whitespace-nowrap" @click="questionsUser = u">{{ t('pages.admin.viewUserQuestions') }}</button>
+                    <button type="button" class="admin-btn-sm" @click="openEditUser(u, $event)">{{ t('pages.admin.edit') }}</button>
+                  </div></td>
                 </tr>
+                <tr v-if="!users.length"><td colspan="10" class="px-4 py-8 text-center text-sm text-gray-500">{{ t(tabLoading.users ? 'pages.admin.tabSectionLoading' : userLoadError ? 'pages.admin.usersLoadFailed' : 'pages.admin.usersEmpty') }}</td></tr>
               </tbody>
             </table>
           </div>
@@ -1131,6 +1385,7 @@ function cardBackRowKey(b: Record<string, unknown>, index: number): string {
             </div>
           </div>
           <!-- Edit modal -->
+          <AdminUserQuestionsDialog v-if="questionsUser" :user="questionsUser" @close="questionsUser = null" />
           <Transition name="modal">
             <div v-if="editUser" class="admin-modal-overlay" @click.self="editUser = null">
               <div
@@ -1218,6 +1473,140 @@ function cardBackRowKey(b: Record<string, unknown>, index: number): string {
           </Transition>
         </section>
 
+        <!-- Invitation codes -->
+        <section
+          v-if="activeTab === 'invitations'"
+          class="min-w-0"
+          :aria-busy="tabLoading.invitations"
+          :aria-label="t('pages.admin.tabInvitations')"
+        >
+          <p v-if="tabLoading.invitations" class="sr-only">{{ t('pages.admin.tabSectionLoading') }}</p>
+
+          <form class="admin-config-panel mb-5" @submit.prevent="createInvitationCode">
+            <div class="mb-4">
+              <h3 class="text-sm font-medium text-gold-100">{{ t('pages.admin.inviteCreateTitle') }}</h3>
+              <p class="mt-1 text-xs leading-relaxed text-gray-500">{{ t('pages.admin.inviteCreateHint') }}</p>
+            </div>
+            <div class="grid min-w-0 gap-4 md:grid-cols-2 xl:grid-cols-3">
+              <label class="block min-w-0">
+                <span class="admin-label">{{ t('pages.admin.inviteBenefitLabel') }}</span>
+                <select v-model="invitationForm.type" class="admin-input w-full min-w-0" :disabled="tabLoading.invitations">
+                  <option value="vip_days">{{ t('pages.admin.inviteTypeVip') }}</option>
+                  <option value="quota">{{ t('pages.admin.inviteTypeQuota') }}</option>
+                </select>
+              </label>
+              <div v-if="invitationForm.type === 'vip_days'" class="min-w-0 md:col-span-2 xl:col-span-2">
+                <span id="invite-vip-presets" class="admin-label">{{ t('pages.admin.inviteVipPresetLabel') }}</span>
+                <div class="flex flex-wrap gap-2" role="group" aria-labelledby="invite-vip-presets">
+                  <button
+                    v-for="days in [30, 90, 365]"
+                    :key="days"
+                    type="button"
+                    class="admin-btn-sm admin-invite-preset"
+                    :aria-pressed="invitationVipPreset === days"
+                    :disabled="tabLoading.invitations"
+                    @click="setInvitationVipPreset(days)"
+                  >{{ t('pages.admin.invitePresetDays', { n: days }) }}</button>
+                  <button type="button" class="admin-btn-sm admin-invite-preset" :aria-pressed="invitationVipPreset === 'custom'" :disabled="tabLoading.invitations" @click="setInvitationVipPreset('custom')">{{ t('pages.admin.invitePresetCustom') }}</button>
+                </div>
+              </div>
+              <label class="block min-w-0">
+                <span class="admin-label">{{ t(invitationForm.type === 'vip_days' ? 'pages.admin.inviteVipValueLabel' : 'pages.admin.inviteQuotaValueLabel') }}</span>
+                <input ref="invitationValueInput" v-model.number="invitationForm.value" type="number" min="1" max="3650" step="1" required class="admin-input w-full min-w-0" :disabled="tabLoading.invitations" :aria-describedby="invitationForm.type === 'vip_days' ? 'invite-vip-value-hint' : undefined" @input="invitationVipPreset = 'custom'">
+                <p v-if="invitationForm.type === 'vip_days'" id="invite-vip-value-hint" class="admin-help mt-1">{{ t('pages.admin.inviteVipValueHint') }}</p>
+              </label>
+              <label class="block min-w-0">
+                <span class="admin-label">{{ t('pages.admin.inviteMaxUsesLabel') }}</span>
+                <input v-model.number="invitationForm.maxUses" type="number" min="1" max="1000000" step="1" required class="admin-input w-full min-w-0" :disabled="tabLoading.invitations" aria-describedby="invite-max-uses-hint">
+                <p id="invite-max-uses-hint" class="admin-help mt-1">{{ t('pages.admin.inviteMaxUsesHint') }}</p>
+              </label>
+              <label class="block min-w-0">
+                <span class="admin-label">{{ t('pages.admin.inviteExpiryLabel') }}</span>
+                <input v-model="invitationForm.expiresAt" type="date" class="admin-input w-full min-w-0" :disabled="tabLoading.invitations" aria-describedby="invite-expiry-hint">
+                <p id="invite-expiry-hint" class="admin-help mt-1">{{ t('pages.admin.inviteExpiryHint') }}</p>
+              </label>
+              <label class="block min-w-0 md:col-span-2 xl:col-span-2">
+                <span class="admin-label">{{ t('pages.admin.inviteCodeLabel') }}</span>
+                <input
+                  v-model="invitationForm.code"
+                  maxlength="50"
+                  autocomplete="off"
+                  spellcheck="false"
+                  class="admin-input w-full min-w-0 uppercase"
+                  :placeholder="t('pages.admin.inviteCodePh')"
+                  :disabled="tabLoading.invitations"
+                >
+              </label>
+              <div class="flex items-end">
+                <button type="submit" class="admin-btn-primary w-full md:w-auto" :disabled="tabLoading.invitations">
+                  {{ tabLoading.invitations ? t('pages.admin.saving') : t('pages.admin.inviteCreateButton') }}
+                </button>
+              </div>
+            </div>
+          </form>
+
+          <div v-if="createdInvitationCode" class="admin-config-panel admin-invite-result mb-5" aria-live="polite">
+            <h3 class="text-sm font-medium text-gold-100">{{ t('pages.admin.inviteCreatedTitle') }}</h3>
+            <p class="admin-help mt-1">{{ t('pages.admin.inviteCreatedHint') }}</p>
+            <div class="mt-3 flex min-w-0 flex-col gap-2 sm:flex-row">
+              <textarea :value="createdInvitationCode.code" readonly rows="3" class="admin-input w-full min-w-0 resize-none font-mono text-base text-gold-100" :aria-label="t('pages.admin.inviteCreatedCodeLabel')" @focus="($event.target as HTMLTextAreaElement).select()" />
+              <button type="button" class="admin-btn-primary shrink-0 self-stretch whitespace-nowrap" @click="copyInvitationCode(createdInvitationCode.code)">{{ t('pages.admin.inviteCopyButton') }}</button>
+            </div>
+            <dl class="mt-3 grid min-w-0 gap-3 text-xs sm:grid-cols-3">
+              <div><dt class="text-gray-500">{{ t('pages.admin.inviteBenefitLabel') }}</dt><dd class="mt-1 text-gold-200">{{ invitationTypeLabel(createdInvitationCode) }}</dd></div>
+              <div><dt class="text-gray-500">{{ t('pages.admin.inviteMaxUsesLabel') }}</dt><dd class="mt-1 text-gray-300">{{ t('pages.admin.invitePeopleLimit', { n: createdInvitationCode.max_uses }) }}</dd></div>
+              <div><dt class="text-gray-500">{{ t('pages.admin.inviteExpiryLabel') }}</dt><dd class="mt-1 text-gray-300">{{ createdInvitationCode.expires_at ? formatAdminDate(createdInvitationCode.expires_at) : t('pages.admin.inviteNeverExpires') }}</dd></div>
+            </dl>
+          </div>
+
+          <div v-if="invitationCopyFallback" class="admin-config-panel mb-5" role="status">
+            <label class="block min-w-0">
+              <span class="admin-label">{{ t('pages.admin.inviteCopyFallbackHint') }}</span>
+              <textarea :value="invitationCopyFallback" readonly rows="3" class="admin-input w-full min-w-0 resize-none font-mono" @focus="($event.target as HTMLTextAreaElement).select()" />
+            </label>
+          </div>
+
+          <div class="mb-3 grid min-w-0 gap-3 sm:grid-cols-2">
+            <label class="block min-w-0"><span class="admin-label">{{ t('pages.admin.inviteSearchLabel') }}</span><input v-model="invitationSearch" type="search" class="admin-input w-full min-w-0" :placeholder="t('pages.admin.inviteSearchPh')"></label>
+            <label class="block min-w-0"><span class="admin-label">{{ t('pages.admin.inviteStatusLabel') }}</span><select v-model="invitationStatusFilter" class="admin-input w-full min-w-0"><option value="all">{{ t('pages.admin.inviteStatusAll') }}</option><option value="active">{{ t('pages.admin.inviteStatusActive') }}</option><option value="disabled">{{ t('pages.admin.inviteStatusDisabled') }}</option><option value="expired">{{ t('pages.admin.inviteStatusExpired') }}</option><option value="used">{{ t('pages.admin.inviteStatusUsed') }}</option></select></label>
+          </div>
+          <div class="admin-table-wrap max-h-[62vh] max-w-full">
+            <table class="w-full min-w-[680px] text-sm" :aria-label="t('pages.admin.tabInvitations')">
+              <thead class="sticky top-0 bg-[#0c0a16] z-10">
+                <tr class="text-left text-gray-500 border-b border-gold-500/8 text-xs">
+                  <th class="px-4 py-3">{{ t('pages.admin.inviteCodeLabel') }}</th>
+                  <th>{{ t('pages.admin.inviteBenefitLabel') }}</th>
+                  <th>{{ t('pages.admin.inviteUsageLabel') }}</th>
+                  <th>{{ t('pages.admin.inviteExpiryLabel') }}</th>
+                  <th>{{ t('pages.admin.inviteStatusLabel') }}</th>
+                  <th>{{ t('pages.admin.thAction') }}</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr v-for="row in filteredInvitationCodes" :key="row.id" class="border-b border-white/4 hover:bg-gold-500/3 transition-colors">
+                  <td class="px-4 py-3">
+                    <button type="button" class="max-w-64 break-all text-left font-mono text-gold-200 hover:text-gold-100" :title="t('pages.admin.inviteCopyTitle')" @click="copyInvitationCode(row.code)">
+                      {{ row.code }}
+                    </button>
+                  </td>
+                  <td class="text-gray-300">{{ invitationTypeLabel(row) }}</td>
+                  <td class="text-gray-400">{{ row.used_count }} / {{ row.max_uses }}</td>
+                  <td class="text-xs text-gray-500">{{ row.expires_at ? formatAdminDate(row.expires_at) : t('pages.admin.inviteNeverExpires') }}</td>
+                  <td><span class="admin-badge border" :class="invitationStatusClass(row)">{{ invitationStatusLabel(row) }}</span></td>
+                  <td>
+                    <button type="button" class="admin-btn-sm" :disabled="tabLoading.invitations" @click="toggleInvitationCode(row)">
+                      {{ row.is_active ? t('pages.admin.inviteDisable') : t('pages.admin.inviteEnable') }}
+                    </button>
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+            <p v-if="!filteredInvitationCodes.length && !tabLoading.invitations" class="py-10 text-center text-sm text-gray-500">
+              {{ t(invitationCodes.length ? 'pages.admin.inviteNoMatches' : 'pages.admin.inviteEmpty') }}
+            </p>
+          </div>
+        </section>
+
         <!-- Card Backs -->
         <section
           v-if="activeTab === 'backs'"
@@ -1243,7 +1632,7 @@ function cardBackRowKey(b: Record<string, unknown>, index: number): string {
                       <div v-else class="w-full h-full flex items-center justify-center text-gray-600 text-xs">{{ t('pages.admin.noImage') }}</div>
                     </div>
                   </td>
-                  <td><input v-model="(b as Record<string,unknown>).code" class="admin-inline-input" /></td>
+                  <td><input v-model="(b as Record<string,unknown>).code" :readonly="!!b.id" class="admin-inline-input" /></td>
                   <td><input v-model="(b as Record<string,unknown>).name" class="admin-inline-input" /></td>
                   <td><input v-model="(b as Record<string,unknown>).description" class="admin-inline-input text-xs" :placeholder="t('pages.admin.descPh')" /></td>
                   <td class="w-40">
@@ -1857,6 +2246,10 @@ function cardBackRowKey(b: Record<string, unknown>, index: number): string {
   flex-direction: column;
   justify-content: space-between;
 }
+.admin-topbar > div:first-child {
+  min-width: 0;
+  max-width: 100%;
+}
 .admin-mini-stat span {
   color: #6b7280;
   font-size: 12px;
@@ -2080,6 +2473,17 @@ function cardBackRowKey(b: Record<string, unknown>, index: number): string {
   border-color: rgba(255,255,255,.055);
   background: rgba(255,255,255,.018);
 }
+.admin-invite-preset {
+  border: 1px solid transparent;
+}
+.admin-invite-preset[aria-pressed="true"] {
+  border-color: rgba(212,168,83,.5);
+  background: rgba(212,168,83,.2);
+  color: var(--color-gold-100);
+}
+.admin-invite-result {
+  border-color: rgba(212,168,83,.3);
+}
 .admin-users-note {
   display: flex;
   align-items: center;
@@ -2145,6 +2549,18 @@ function cardBackRowKey(b: Record<string, unknown>, index: number): string {
 .toast-leave-active { transition: opacity .2s, transform .2s; }
 .toast-enter-from { opacity: 0; transform: translateY(-12px); }
 .toast-leave-to { opacity: 0; transform: translateY(-8px); }
+@media (max-width: 767px) {
+  .admin-shell { flex-direction: column; }
+  .admin-sidebar { width: 100%; border-right: 0; border-bottom: 1px solid rgba(212,168,83,.1); }
+  .admin-sidebar > div:first-child { padding: 12px 16px; }
+  .admin-sidebar nav { display: flex; flex: none; gap: 4px; overflow-x: auto; padding: 8px; }
+  .admin-sidebar nav button { flex: none; width: max-content; white-space: nowrap; padding: 10px 12px; border: 1px solid transparent; border-radius: 8px; }
+  .admin-sidebar nav button[aria-current="page"] { border-color: rgba(212,168,83,.35); }
+  .admin-sidebar > div:last-child { display: flex; align-items: center; justify-content: space-between; padding: 8px 16px; }
+  .admin-sidebar > div:last-child button { margin-top: 0; }
+  .admin-content { padding: 16px; }
+  .admin-topbar { padding: 16px; }
+}
 @media (max-width: 900px) {
   .admin-topbar {
     align-items: flex-start;

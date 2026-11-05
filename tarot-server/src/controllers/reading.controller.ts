@@ -1,8 +1,10 @@
-import type { Request, Response } from 'express';
+import type { Request, Response, NextFunction } from 'express';
 import * as ReadingService from '../services/reading.service.js';
 import * as HoroscopeService from '../services/horoscope.service.js';
 import { isAiServiceError } from '../services/deepseek.service.js';
 import { success, fail } from '../utils/response.js';
+import { env } from '../config/env.js';
+import { quotaWindow } from '../utils/quotaDate.js';
 
 function getErrMsg(err: unknown, fallback: string): string {
   return err instanceof Error ? err.message : fallback;
@@ -26,8 +28,8 @@ function sendReadingError(res: Response, err: unknown, fallback: string) {
 
 export async function singleCard(req: Request, res: Response) {
   try {
-    const { question, cardId, orientation } = req.body;
-    const result = await ReadingService.singleCardReading(req.userId!, question, cardId, orientation);
+    const { question, cardId, orientation, requestId } = req.body;
+    const result = await ReadingService.singleCardReading(req.userId!, question, cardId, orientation, requestId);
     res.json(success(result));
   } catch (err: unknown) {
     sendReadingError(res, err, '占卜失败');
@@ -52,6 +54,7 @@ export async function dailyFortune(req: Request, res: Response) {
       zodiacSign,
       cardId,
       isReversed,
+      res.locals.quotaWindow,
     );
     res.json(success(result));
   } catch (err: unknown) {
@@ -59,10 +62,46 @@ export async function dailyFortune(req: Request, res: Response) {
   }
 }
 
+export async function dailyFortuneCache(req: Request, res: Response) {
+  try {
+    res.setHeader('Cache-Control', 'no-store');
+    res.json(success(await ReadingService.getDailyFortuneCache(req.userId!)));
+  } catch (err) {
+    sendReadingError(res, err, '每日运势获取失败');
+  }
+}
+
+export async function yesterdayDailyFortuneCache(req: Request, res: Response) {
+  try {
+    res.setHeader('Cache-Control', 'no-store');
+    res.json(success(await ReadingService.getYesterdayDailyFortuneCache(req.userId!)));
+  } catch (err) {
+    sendReadingError(res, err, '昨日运势获取失败');
+  }
+}
+
+/** Reopening today's result never consumes another generation allowance. */
+export async function reuseDailyFortune(req: Request, res: Response, next: NextFunction) {
+  try {
+    const window = quotaWindow(env.QUOTA_TIME_ZONE);
+    res.locals.quotaWindow = window;
+    res.setHeader('Cache-Control', 'no-store');
+    const cached = await ReadingService.getDailyFortuneCache(req.userId!, window);
+    if (cached.cached) res.json(success(cached));
+    else next();
+  } catch (err) {
+    sendReadingError(res, err, '每日运势获取失败');
+  }
+}
+
 export async function horoscope(req: Request, res: Response) {
   try {
-    const { sign, period } = req.validatedQuery as { sign: string; period: 'today' | 'tomorrow' | 'week' };
-    const result = await HoroscopeService.getHoroscope(sign, period);
+    const { sign, period, locale } = req.validatedQuery as {
+      sign: string;
+      period: 'today' | 'tomorrow' | 'week';
+      locale: 'zh-CN' | 'en-US';
+    };
+    const result = await HoroscopeService.getHoroscope(sign, period, locale);
     res.json(success(result));
   } catch (err: unknown) {
     const msg = getErrMsg(err, '星座运势获取失败');
@@ -134,7 +173,8 @@ export async function setOutcome(req: Request, res: Response) {
 
 export async function getInsights(req: Request, res: Response) {
   try {
-    const data = await ReadingService.getInsights(req.userId!, 6);
+    const { locale } = req.validatedQuery as { locale: 'zh-CN' | 'en-US' };
+    const data = await ReadingService.getInsights(req.userId!, 6, locale);
     res.json(success(data));
   } catch (err: unknown) {
     sendReadingError(res, err, '分析失败');
@@ -143,7 +183,7 @@ export async function getInsights(req: Request, res: Response) {
 
 export async function readerReading(req: Request, res: Response) {
   try {
-    const { readerId, spreadType, question, category, cardIds, orientations } = req.body;
+    const { readerId, spreadType, question, category, cardIds, orientations, locale } = req.body;
     const result = await ReadingService.readerReading(
       req.userId!,
       readerId,
@@ -151,7 +191,8 @@ export async function readerReading(req: Request, res: Response) {
       question,
       category || '其他',
       cardIds,
-      orientations
+      orientations,
+      locale,
     );
     res.json(success(result));
   } catch (err: unknown) {
@@ -166,13 +207,14 @@ export async function readerReading(req: Request, res: Response) {
 
 export async function readerFollowup(req: Request, res: Response) {
   try {
-    const { readingId, question, priorTurns } = req.body as {
+    const { readingId, question, priorTurns, locale } = req.body as {
       readingId: number;
       question: string;
       priorTurns?: { question: string; answer: string }[];
+      locale: 'zh-CN' | 'en-US';
     };
 
-    const result = await ReadingService.readerFollowup(req.userId!, readingId, question, priorTurns);
+    const result = await ReadingService.readerFollowup(req.userId!, readingId, question, priorTurns, locale);
     res.json(success(result));
   } catch (err: unknown) {
     const msg = getErrMsg(err, '追问失败');

@@ -1,33 +1,9 @@
 <script setup lang="ts">
-import { ref } from 'vue'
 import { useI18n } from 'vue-i18n'
-import api from '../services/api'
 
 const { t } = useI18n()
-
-const subscribeEmail = ref('')
-const subscribed = ref(false)
-const subscribing = ref(false)
-
-async function handleSubscribe() {
-  const email = subscribeEmail.value.trim()
-  if (!email || !email.includes('@') || subscribing.value) return
-  subscribing.value = true
-  try {
-    await api.post('/feedback', {
-      type: 'suggestion',
-      content: `邮箱订阅请求: ${email}`,
-      contact: email,
-    })
-    subscribed.value = true
-    subscribeEmail.value = ''
-    setTimeout(() => { subscribed.value = false }, 3000)
-  } catch {
-    subscribed.value = false
-  } finally {
-    subscribing.value = false
-  }
-}
+const legalEntityName = import.meta.env.VITE_LEGAL_ENTITY_NAME?.trim() || 'E-Tomd'
+const legalEntityAddress = import.meta.env.VITE_LEGAL_ENTITY_ADDRESS?.trim() || ''
 </script>
 
 <template>
@@ -37,31 +13,14 @@ async function handleSubscribe() {
 
     <div class="max-w-6xl mx-auto px-6 py-12">
       <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-8 mb-10">
-        <!-- Brand & Subscribe -->
+        <!-- Brand & Support -->
         <div>
           <p class="text-lg font-serif text-gold-300 tracking-wider mb-2">E-Tomd</p>
           <p class="text-gray-600 text-sm mb-4 leading-relaxed">{{ t('footer.copyrightLine') }}</p>
-          <div class="flex gap-2">
-            <input
-              v-model="subscribeEmail"
-              type="email"
-              autocomplete="email"
-              :placeholder="t('footer.emailPlaceholder')"
-              :aria-label="t('footer.subscribeEmailAria')"
-              class="flex-1 min-w-0 px-4 py-2 rounded-lg bg-white/4 border border-gold-500/10 text-white text-sm placeholder:text-stone-500/80 focus:outline-none focus:border-gold-400 focus:ring-2 focus:ring-gold-400/20 transition-colors"
-            >
-            <button
-              type="button"
-              class="shrink-0 px-4 py-2 rounded-lg text-sm font-medium transition-all focus:outline-none focus-visible:ring-2 focus-visible:ring-gold-400/50 focus-visible:ring-offset-2 focus-visible:ring-offset-abyss"
-              :class="subscribed
-                ? 'bg-emerald-600 text-white'
-                : 'bg-gold-500/15 text-gold-300 hover:bg-gold-500/25 border border-gold-500/20'"
-              :disabled="subscribing"
-              @click="handleSubscribe"
-            >
-              {{ subscribed ? t('footer.subscribed') : subscribing ? t('footer.subscribing') : t('footer.subscribe') }}
-            </button>
-          </div>
+          <a href="mailto:luckycn521@gmail.com" class="text-sm text-gold-300 hover:text-gold-200 transition-colors">luckycn521@gmail.com</a>
+          <p class="mt-2 text-xs leading-relaxed text-gray-600">{{ t('footer.supportResponse') }}</p>
+          <p class="mt-3 text-xs leading-relaxed text-gray-600">{{ t('footer.operator') }}: {{ legalEntityName }}</p>
+          <p v-if="legalEntityAddress" class="mt-1 text-xs leading-relaxed text-gray-700">{{ legalEntityAddress }}</p>
         </div>
 
         <!-- About -->
@@ -70,8 +29,9 @@ async function handleSubscribe() {
           <ul class="space-y-2">
             <li><RouterLink to="/privacy" class="text-gray-500 text-sm hover:text-gold-300 transition-colors">{{ t('footer.privacy') }}</RouterLink></li>
             <li><RouterLink to="/terms" class="text-gray-500 text-sm hover:text-gold-300 transition-colors">{{ t('footer.terms') }}</RouterLink></li>
+            <li><RouterLink to="/refund-policy" class="text-gray-500 text-sm hover:text-gold-300 transition-colors">{{ t('footer.refundPolicy') }}</RouterLink></li>
             <li><RouterLink to="/feedback" class="text-gray-500 text-sm hover:text-gold-300 transition-colors">{{ t('footer.feedback') }}</RouterLink></li>
-            <li><a href="mailto:contact@e-tomd.com" class="text-gray-500 text-sm hover:text-gold-300 transition-colors">{{ t('footer.contactEmail') }}</a></li>
+            <li><a href="mailto:luckycn521@gmail.com" class="text-gray-500 text-sm hover:text-gold-300 transition-colors">{{ t('footer.contactEmail') }}</a></li>
           </ul>
         </div>
 
@@ -101,7 +61,7 @@ async function handleSubscribe() {
       </div>
 
       <div class="text-center text-gray-700 text-xs pt-4 border-t border-gold-500/6">
-        <p>E-Tomd</p>
+        <p>{{ legalEntityName }}</p>
       </div>
     </div>
   </footer>
