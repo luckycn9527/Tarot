@@ -5,6 +5,7 @@ import type { HistoryPage, ReadingHistoryEntry } from '@/stores/readingHistory'
 import { readMobileValue, writeMobileValue, mobileSite } from './mobileStorage'
 import type { MobileReadingPayload, MobileFollowupPayload, MobileTask } from './types'
 import { mergeMobileQuota, validMobileRedemption, type MobileRedemption } from './mobileMembershipModel'
+import { nicknameInputError } from './mobileProfile'
 
 const explicitBase = import.meta.env.VITE_PUBLIC_API_BASE_URL?.trim().replace(/\/+$/, '')
 const explicitOrigin = import.meta.env.VITE_PUBLIC_API_ORIGIN?.trim().replace(/\/+$/, '')
@@ -159,6 +160,21 @@ async function acceptProfileChange(user: User, generation: number, userId: numbe
   await writeMobileValue('session', session)
   if (generation !== epoch || session?.user.id !== userId) throw new MobileSessionChangedError()
   return user
+}
+export async function saveMobileNickname(nickname: string) {
+  const value = nickname.trim(), generation = epoch, current = session
+  if (!current) throw new MobileSessionChangedError()
+  const error = nicknameInputError(value)
+  if (error) throw new Error(error)
+  profileRevision++
+  const response = await mobileApi.put('/user/profile', { nickname: value })
+  confirmedMutation(response)
+  const profile = response.data.data as User | null
+  if (generation !== epoch || !session || session.user.id !== current.user.id || profile?.id !== current.user.id) throw new MobileSessionChangedError()
+  if (typeof profile.nickname !== 'string' || nicknameInputError(profile.nickname) || profile.nickname !== value) throw new Error('Invalid profile response')
+  // This operation changes the name only. A full profile response may have been
+  // read before another profile field or the user's credit balance changed.
+  return acceptProfileChange({ ...session.user, nickname: profile.nickname }, generation, current.user.id)
 }
 export async function uploadMobileAvatar(file: File) {
   const generation = epoch, current = session

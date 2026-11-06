@@ -1,8 +1,16 @@
 # E-Tomd 原生工程与内测构建
 
-当前 Android 体验版本：`0.1.22`，`versionCode=23`（仅国内 APK，已发布并通过公开 HTTPS 字节校验；交付目录 `output/app-p1-fixes-20261106/`）。
+当前 Android 体验版本：`0.1.23`，`versionCode=24`（仅国内 APK，已发布并通过公开 HTTPS 字节校验；交付目录 `output/app-foundations-0.1.23-20261106/`）。
 `0.1.0` / `0.1.1` 旧包和封存记录保留。
 iOS 源工程同步为 `0.1.21 / build 22`；Mac 操作见 [IOS_BUILD.md](./IOS_BUILD.md)。本轮没有进行 Xcode 编译、签名或 iPhone 真机验收。
+
+## 2026-11-06 APP 基础功能完善：0.1.23
+
+- 历史详情失败可重试原记录，404 与网络失败分开提示；返回保留历史条件。
+- 更新失败按原因提示，已验证下载包可重试安装或去设置，安全校验保持。
+- 复盘按业务日自动跨日刷新，前后台切换和当前牌面/追问保留已验证。
+- 新增昵称编辑，同步首页和个人中心，支持失败重试与持久化。
+- 国内 APK 已发布并经公网全字节核验。228 项前端、3 项原生单测、4 项发布器测试通过；实际范围与隔离测试边界见 [RELEASE_20261106_APP_FOUNDATIONS.md](./RELEASE_20261106_APP_FOUNDATIONS.md)。
 
 ## 2026-11-06 APP 基础体验修复：0.1.22
 
@@ -222,7 +230,7 @@ Capacitor 同步及 Gradle 构建，并校验原生/网页版本一致、API 地
 | Android | SDK 36，最低 API 24；最低版本是工程声明，实际设备覆盖需单独记录 |
 | Android 国内包名 | `cn.zaopic.etomd` |
 | Android 海外包名 | `cn.zaopic.etomd.global` |
-| Android 版本 | `versionName=0.1.22`，`versionCode=23`，已发布；统一读取 `mobile-version.json` |
+| Android 版本 | `versionName=0.1.23`，`versionCode=24`，已发布；统一读取 `mobile-version.json` |
 | Android 调试包 | 默认开发证书签名，仅供内测；不能作为正式商店签名配置 |
 | Android 原生页面来源 | `https://localhost` |
 | iOS 原生页面来源 | `capacitor://localhost` |

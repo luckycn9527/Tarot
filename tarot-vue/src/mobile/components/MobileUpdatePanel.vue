@@ -2,6 +2,7 @@
 import { computed, ref } from 'vue'
 import { mobileUpdateState, mobileUpdaterPlatform, mobileUpdaterSupported, checkMobileUpdate, downloadMobileUpdate, cancelMobileUpdate, installMobileUpdate, openMobileInstallSettings, refreshMobileUpdater } from '../mobileUpdater'
 import { classifyUpdate, isUpdateBusy } from '../mobileUpdateModel'
+import { updateErrorRecovery } from '../mobileUpdatePresentation'
 
 const props = defineProps<{ english: boolean }>()
 const t = (zh: string, en: string) => props.english ? en : zh
@@ -11,6 +12,7 @@ const busy = computed(() => isUpdateBusy(state.value.status))
 const newer = computed(() => mobileUpdaterSupported && !!state.value.latest && classifyUpdate(state.value.latest, state.value.currentVersionCode, state.value.sdkInt) === 'available')
 const notes = computed(() => props.english ? state.value.latest?.releaseNotesEn || state.value.latest?.releaseNotes : state.value.latest?.releaseNotes)
 const size = computed(() => state.value.latest ? `${(state.value.latest.bytes / 1024 / 1024).toFixed(1)} MB` : '')
+const recovery = computed(() => updateErrorRecovery(state.value, props.english))
 const statusText = computed(() => {
   const status = state.value.status
   if (mobileUpdaterPlatform === 'ios') return t('iOS 更新请使用新的签名安装包，或通过你收到的测试邀请更新。', 'For iOS updates, install the new signed build or follow your testing invitation.')
@@ -25,14 +27,15 @@ const statusText = computed(() => {
   if (status === 'permissionRequired') return t('请先允许 E-Tomd 安装更新，返回这里后继续。', 'Allow E-Tomd to install updates, then return here to continue.')
   if (status === 'installing') return t('请在安卓提示中确认安装。取消后可返回重试。', 'Confirm installation in Android. If cancelled, return here to retry.')
   if (status === 'cancelled') return t('下载已取消，可以重新下载。', 'Download cancelled. You can try again.')
-  if (status === 'error') {
-    if (/INCOMPATIBLE/.test(state.value.errorCode || '')) return t('此更新需要更高版本的安卓系统。', 'This update requires a newer Android version.')
-    if (/HASH|SIZE|SIGN|PACKAGE|APPLICATION|SITE|VERSION|APK|MANIFEST|VERIFY|INVALID_|DOWNLOAD_URL|RELEASE_NOTES|PUBLISHED_AT/.test(state.value.errorCode || '')) return t('更新包未通过检查，请重新检查版本或下载。', 'The update could not be verified. Check again or download it again.')
-    return t('更新暂时失败，请检查网络后重试。', 'The update failed. Check your connection and try again.')
-  }
+  if (status === 'error') return recovery.value.message
   return t('检查新版，查看更新内容并在这里下载安装。', 'Check what’s new and download updates here.')
 })
 async function act(action: () => Promise<void>) { if (working.value) return; working.value = true; try { await action() } finally { working.value = false } }
+async function recover() {
+  const actions = { install: installMobileUpdate, settings: openMobileInstallSettings, download: downloadMobileUpdate, refresh: refreshMobileUpdater, check: checkMobileUpdate }
+  const action = recovery.value.action
+  if (action) await act(actions[action])
+}
 </script>
 
 <template>
@@ -51,7 +54,8 @@ async function act(action: () => Promise<void>) { if (working.value) return; wor
       <button v-if="state.status === 'downloading'" type="button" class="mobile-secondary" @click="cancelMobileUpdate">{{ t('取消下载', 'Cancel download') }}</button>
       <button v-else-if="state.status === 'downloaded' || state.status === 'permissionRequired'" type="button" class="mobile-primary" :disabled="working" @click="act(state.installPermissionGranted ? installMobileUpdate : openMobileInstallSettings)">{{ state.installPermissionGranted ? t('安装更新', 'Install update') : t('允许安装此来源', 'Allow app updates') }}</button>
       <button v-else-if="state.status === 'installing'" type="button" class="mobile-secondary" :disabled="working" @click="act(refreshMobileUpdater)">{{ t('返回后重试', 'Retry after returning') }}</button>
-      <button v-else-if="newer && ['available', 'cancelled', 'error'].includes(state.status)" type="button" class="mobile-primary" :disabled="working" @click="act(downloadMobileUpdate)">{{ state.status === 'available' ? t('下载更新', 'Download update') : t('重新下载', 'Download again') }}</button>
+      <button v-else-if="state.status === 'error' && recovery.action && recovery.action !== 'check'" type="button" class="mobile-primary" :disabled="working" @click="recover">{{ recovery.label }}</button>
+      <button v-else-if="newer && ['available', 'cancelled'].includes(state.status)" type="button" class="mobile-primary" :disabled="working" @click="act(downloadMobileUpdate)">{{ state.status === 'available' ? t('下载更新', 'Download update') : t('重新下载', 'Download again') }}</button>
       <button type="button" class="mobile-update-check" :disabled="busy || working" @click="act(checkMobileUpdate)">{{ state.status === 'checking' ? t('正在检查…', 'Checking…') : t('检查更新', 'Check for updates') }}</button>
     </div>
   </section>

@@ -40,7 +40,7 @@ function accept(value: UpdateState) {
   if (manifest && !manifest.valid) {
     mobileUpdateState.value = { ...initialState(), status: 'error', errorCode: 'INVALID_MANIFEST' }; return
   }
-  let status = value.status
+  let status = value.status, errorCode = value.errorCode
   const latest = manifest?.valid ? manifest.value : undefined
   // Cache recovery can start verifying before its saved manifest has been read.
   // This state offers no install action; native verification publishes the result.
@@ -48,13 +48,14 @@ function accept(value: UpdateState) {
     if (!latest) { mobileUpdateState.value = { ...initialState(), status: 'error', errorCode: 'INVALID_MANIFEST' }; return }
     const availability = classifyUpdate(latest, value.currentVersionCode, value.sdkInt)
     if (availability === 'upToDate') status = 'upToDate'
-    else if (availability === 'incompatible') status = 'error'
+    else if (availability === 'incompatible') { status = 'error'; errorCode = 'INCOMPATIBLE_SDK' }
   }
   mobileUpdateState.value = { status, currentVersion: value.currentVersion, currentVersionCode: value.currentVersionCode,
     applicationId: UPDATE_APPLICATION_ID, site: 'domestic', sdkInt: value.sdkInt, ...(latest ? { latest } : {}),
     downloadedBytes: Math.max(0, Number(value.downloadedBytes) || 0), totalBytes: Math.max(0, Number(value.totalBytes) || 0),
     progress: Math.min(100, Math.max(0, Number(value.progress) || 0)), installPermissionGranted: value.installPermissionGranted === true,
-    ...(value.errorCode ? { errorCode: value.errorCode } : {}) }
+    downloadReady: value.downloadReady === true,
+    ...(errorCode ? { errorCode } : {}) }
 }
 
 type Action = 'getState' | 'checkForUpdate' | 'downloadUpdate' | 'cancelDownload' | 'installUpdate' | 'openInstallSettings'

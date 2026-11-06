@@ -24,6 +24,7 @@ const emit = defineEmits<{
   logout: []
   avatar: []
   birth: []
+  nickname: []
   history: []
   redeem: []
   benefits: []
@@ -112,7 +113,7 @@ function showPreferences() {
 
     <div v-if="user && profileExpanded" id="account-profile-details" class="account-profile-details" role="region" :aria-label="t('个人资料', 'Profile details')">
       <div class="account-profile-email"><span>{{ t('当前账号', 'Current account') }}</span><span class="account-email">{{ user.email }}</span></div>
-      <div class="account-profile-actions"><button type="button" :disabled="unavailable" @click="editAvatar">{{ t('更换头像', 'Change photo') }}</button><button type="button" :disabled="unavailable" @click="editBirth">{{ t('设置生辰', 'Edit birth details') }}</button><button type="button" :disabled="unavailable" @click="emit('security', 'password')">{{ t('修改密码', 'Change password') }}</button><button type="button" :disabled="unavailable" @click="emit('security', 'delete')">{{ t('注销账号', 'Delete account') }}</button></div>
+      <div class="account-profile-actions"><button type="button" :disabled="unavailable" @click="emit('nickname')">{{ t('修改昵称', 'Edit nickname') }}</button><button type="button" :disabled="unavailable" @click="editAvatar">{{ t('更换头像', 'Change photo') }}</button><button type="button" :disabled="unavailable" @click="editBirth">{{ t('设置生辰', 'Edit birth details') }}</button><button type="button" :disabled="unavailable" @click="emit('security', 'password')">{{ t('修改密码', 'Change password') }}</button><button type="button" :disabled="unavailable" @click="emit('security', 'delete')">{{ t('注销账号', 'Delete account') }}</button></div>
     </div>
 
     <div v-if="!user" class="account-sign-in">

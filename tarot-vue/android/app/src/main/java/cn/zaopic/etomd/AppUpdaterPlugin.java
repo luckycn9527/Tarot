@@ -20,8 +20,14 @@ import java.io.File;
 import java.io.FileInputStream;
 import java.io.FileOutputStream;
 import java.io.InputStream;
+import java.io.IOException;
 import java.net.HttpURLConnection;
+import java.net.ConnectException;
+import java.net.NoRouteToHostException;
+import java.net.SocketTimeoutException;
+import java.net.UnknownHostException;
 import java.net.URL;
+import javax.net.ssl.SSLException;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.util.HashSet;
@@ -44,6 +50,7 @@ public class AppUpdaterPlugin extends Plugin {
     private long generation;
     private String status = "idle", errorCode, message, currentVersion = "";
     private long currentVersionCode, downloadedBytes, totalBytes;
+    private boolean downloadReady;
     private JSONObject latest;
     private File directory, partFile, apkFile, manifestFile;
 
@@ -74,6 +81,7 @@ public class AppUpdaterPlugin extends Plugin {
             if (busy()) { call.resolve(snapshot()); return; }
             token = ++generation;
             latest = null;
+            downloadReady = false;
             downloadedBytes = totalBytes = 0;
             change("checking", null, null);
         }
@@ -117,6 +125,7 @@ public class AppUpdaterPlugin extends Plugin {
                         if (manifest.getLong("versionCode") <= currentVersionCode) change("upToDate", null, null);
                         else if (manifest.getInt("minSdk") > Build.VERSION.SDK_INT) throw new UpdateFailure("INCOMPATIBLE_SDK", "This update needs a newer Android version");
                         else {
+                            downloadReady = cached;
                             downloadedBytes = cached ? totalBytes : 0;
                             change(cached ? "downloaded" : "available", null, null);
                         }
@@ -138,6 +147,7 @@ public class AppUpdaterPlugin extends Plugin {
                 require(manifest.getInt("minSdk") <= Build.VERSION.SDK_INT, "INCOMPATIBLE_SDK", "This update needs a newer Android version");
             } catch (Exception e) { change("error", code(e), detail(e)); call.resolve(snapshot()); return; }
             token = ++generation;
+            downloadReady = false;
             downloadedBytes = 0;
             totalBytes = manifest.optLong("bytes");
             change("downloading", null, null);
@@ -166,6 +176,7 @@ public class AppUpdaterPlugin extends Plugin {
         synchronized (lock) {
             if (busy()) { call.resolve(snapshot()); return; }
             if (latest == null || !apkFile.isFile()) {
+                downloadReady = false;
                 change("error", "NO_DOWNLOAD", "Download the update first"); call.resolve(snapshot()); return;
             }
             if (!installPermission()) {
@@ -182,6 +193,7 @@ public class AppUpdaterPlugin extends Plugin {
                 getActivity().runOnUiThread(() -> {
                     synchronized (lock) {
                         if (token != generation) return;
+                        downloadReady = true;
                         if (!installPermission()) { change("permissionRequired", null, "Allow installation from this app, then try again"); return; }
                         try {
                             Uri uri = FileProvider.getUriForFile(getContext(), getContext().getPackageName() + ".updater.fileprovider", apkFile);
@@ -219,7 +231,7 @@ public class AppUpdaterPlugin extends Plugin {
         synchronized (lock) {
             if (("installing".equals(status) && installerAway) || "permissionRequired".equals(status)) {
                 installerAway = false;
-                change(latest != null && apkFile.isFile() ? "downloaded" : "idle", null, null);
+                change(downloadReady && latest != null && apkFile.isFile() ? "downloaded" : "idle", null, null);
             } else emit();
         }
     }
@@ -251,6 +263,7 @@ public class AppUpdaterPlugin extends Plugin {
             result.put("totalBytes", totalBytes);
             result.put("progress", totalBytes > 0 ? Math.min(100, Math.max(0, downloadedBytes * 100 / totalBytes)) : 0);
             result.put("installPermissionGranted", installPermission());
+            result.put("downloadReady", downloadReady && latest != null && apkFile.isFile());
             if (latest != null) result.put("latest", latest);
             if (errorCode != null) result.put("errorCode", errorCode);
             if (message != null) result.put("message", message);
@@ -265,9 +278,14 @@ public class AppUpdaterPlugin extends Plugin {
         synchronized (lock) { if (token == generation) change(next, null, null); }
     }
     private void fail(long token, Exception e) {
-        synchronized (lock) { if (token == generation) change("error", code(e), detail(e)); }
+        synchronized (lock) { if (token == generation) { downloadReady = false; change("error", code(e), detail(e)); } }
     }
-    private static String code(Exception e) { return e instanceof UpdateFailure ? ((UpdateFailure) e).code : "UPDATE_FAILED"; }
+    private static String code(Exception e) {
+        if (e instanceof UpdateFailure) return ((UpdateFailure) e).code;
+        if (e instanceof SSLException) return "SECURE_CONNECTION_ERROR";
+        if (e instanceof SocketTimeoutException || e instanceof UnknownHostException || e instanceof ConnectException || e instanceof NoRouteToHostException) return "NETWORK_ERROR";
+        return "UPDATE_FAILED";
+    }
     private static String detail(Exception e) { return e instanceof UpdateFailure ? e.getMessage() : "The update could not be completed. Please try again."; }
     private static void require(boolean value, String code, String message) throws UpdateFailure {
         if (!value) throw new UpdateFailure(code, message);
@@ -315,6 +333,22 @@ public class AppUpdaterPlugin extends Plugin {
             return new String(output.toByteArray(), StandardCharsets.UTF_8);
         }
     }
+    private static FileOutputStream updateOutput(File target) throws UpdateFailure {
+        try { return new FileOutputStream(target); }
+        catch (IOException | SecurityException e) { throw new UpdateFailure("STORAGE_ERROR", "Update storage could not be opened"); }
+    }
+    private static void writeUpdate(FileOutputStream output, byte[] bytes, int count) throws UpdateFailure {
+        try { output.write(bytes, 0, count); }
+        catch (IOException e) { throw new UpdateFailure("STORAGE_ERROR", "The update could not be stored"); }
+    }
+    private static void syncUpdate(FileOutputStream output) throws UpdateFailure {
+        try { output.getFD().sync(); }
+        catch (IOException e) { throw new UpdateFailure("STORAGE_ERROR", "The update could not be saved"); }
+    }
+    private static int readDownload(InputStream input, byte[] bytes) throws UpdateFailure {
+        try { return input.read(bytes); }
+        catch (IOException e) { throw new UpdateFailure(e instanceof SSLException ? "SECURE_CONNECTION_ERROR" : "NETWORK_ERROR", "The update connection was interrupted"); }
+    }
     private void download(long token, JSONObject manifest) {
         try {
             checkToken(token);
@@ -324,20 +358,21 @@ public class AppUpdaterPlugin extends Plugin {
             apkFile.delete();
             manifestFile.delete();
             long expected = manifest.getLong("bytes");
+            require(directory.getUsableSpace() >= expected + 1024 * 1024, "INSUFFICIENT_STORAGE", "Free device storage before downloading the update");
             HttpURLConnection c = open(manifest.getString("downloadUrl"), token);
             try {
                 require(c.getResponseCode() == 200, "HTTP_ERROR", "The update download was not available");
                 long contentLength = c.getContentLengthLong();
                 require(contentLength < 0 || contentLength == expected, "SIZE_MISMATCH", "Update file size does not match the manifest");
-                try (InputStream input = c.getInputStream(); FileOutputStream output = new FileOutputStream(partFile)) {
+                try (InputStream input = c.getInputStream(); FileOutputStream output = updateOutput(partFile)) {
                     byte[] buffer = new byte[32768];
                     long received = 0, lastEmit = 0;
                     int count;
-                    while ((count = input.read(buffer)) != -1) {
+                    while ((count = readDownload(input, buffer)) != -1) {
                         checkToken(token);
                         received += count;
                         require(received <= expected && received <= MAX_BYTES, "SIZE_MISMATCH", "Update file is larger than expected");
-                        output.write(buffer, 0, count);
+                        writeUpdate(output, buffer, count);
                         synchronized (lock) {
                             if (token == generation) {
                                 downloadedBytes = received;
@@ -346,7 +381,7 @@ public class AppUpdaterPlugin extends Plugin {
                             }
                         }
                     }
-                    output.getFD().sync();
+                    syncUpdate(output);
                     require(received == expected, "SIZE_MISMATCH", "Update download was incomplete");
                 }
             } finally { close(c); }
@@ -357,6 +392,7 @@ public class AppUpdaterPlugin extends Plugin {
                 checkToken(token);
                 require(partFile.renameTo(apkFile), "STORAGE_ERROR", "The verified update could not be saved");
                 persist(manifest);
+                downloadReady = true;
                 downloadedBytes = totalBytes = expected;
                 change("downloaded", null, null);
             }
@@ -367,9 +403,10 @@ public class AppUpdaterPlugin extends Plugin {
     }
     private void persist(JSONObject manifest) throws Exception {
         File temporary = new File(directory, "validated-manifest.json.tmp");
-        try (FileOutputStream output = new FileOutputStream(temporary)) {
-            output.write(manifest.toString().getBytes(StandardCharsets.UTF_8));
-            output.getFD().sync();
+        try (FileOutputStream output = updateOutput(temporary)) {
+            byte[] bytes = manifest.toString().getBytes(StandardCharsets.UTF_8);
+            writeUpdate(output, bytes, bytes.length);
+            syncUpdate(output);
         }
         require(temporary.renameTo(manifestFile), "STORAGE_ERROR", "The verified update record could not be saved");
     }
@@ -385,12 +422,14 @@ public class AppUpdaterPlugin extends Plugin {
             synchronized (lock) {
                 checkToken(token);
                 latest = manifest;
+                downloadReady = true;
                 downloadedBytes = totalBytes = manifest.getLong("bytes");
                 change("downloaded", null, null);
             }
         } catch (Exception e) {
             synchronized (lock) {
                 if (token != generation) return;
+                downloadReady = false;
                 apkFile.delete(); manifestFile.delete();
                 if (e instanceof UpdateFailure && "VERSION_MISMATCH".equals(code(e))) change("idle", null, null);
                 else change("error", code(e), detail(e));

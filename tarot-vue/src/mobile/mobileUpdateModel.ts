@@ -38,6 +38,8 @@ export interface UpdateState extends InstalledAppInfo {
   totalBytes: number
   progress: number
   installPermissionGranted: boolean
+  /** Native confirms a complete, verified APK is still present; installation verifies it again. */
+  downloadReady?: boolean
   errorCode?: string
   message?: string
 }

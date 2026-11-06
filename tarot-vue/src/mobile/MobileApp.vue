@@ -31,6 +31,7 @@ import MobileAccountAccess from './components/MobileAccountAccess.vue'
 import MobileReadingReview from './components/MobileReadingReview.vue'
 import { historyFilterError, normalizeMobileOutcome, type MobileHistoryFilters } from './mobileHistoryModel'
 import MobileProfileEditor from './components/MobileProfileEditor.vue'
+import MobileNicknameEditor from './components/MobileNicknameEditor.vue'
 import MobileMembershipRedeem from './components/MobileMembershipRedeem.vue'
 import MobileMembershipBenefits from './components/MobileMembershipBenefits.vue'
 import { useMobileMembership } from './useMobileMembership'
@@ -47,7 +48,7 @@ import { mobileDeck, questionValid, followupValid, validDraft, validPendingTask,
 import { readMobileValue, writeMobileValue, mobileSite } from './mobileStorage'
 import { mobileUser, mobileSessionReady, initializeMobileSession, loginMobile, logoutMobile, refreshMobileProfile,
   fetchMobileReference, fetchMobileHistory, fetchMobileReading, deleteMobileReading, postMobileTask, fetchMobileTask,
-  mobileError, mobileHttpStatus, mobileRetryAfter, mobileWebsiteOrigin, uploadMobileAvatar, fetchMobileBirthInfo, saveMobileBirthInfo, saveMobileReadingOutcome } from './mobileApi'
+  mobileError, mobileHttpStatus, mobileRetryAfter, mobileWebsiteOrigin, uploadMobileAvatar, fetchMobileBirthInfo, saveMobileBirthInfo, saveMobileReadingOutcome, saveMobileNickname } from './mobileApi'
 import type { MobileCard, MobileReader, MobileSpread, MobileDraft, PendingMobileTask, MobileTask, MobileHistoryEntry, MobileReadingPayload, MobileFollowupPayload, MobileReaderPreference } from './types'
 import { availableMobileReaders, defaultMobileReaderId, restoredMobileReaderId, resolveReadingReader, validReaderPreference } from './mobileReaderModel'
 import type { ReaderReadingResult } from '@/services/tarotAiReading'
@@ -55,6 +56,7 @@ import { localizedSpreadPositions } from '@/utils/readerLocalization'
 import { applyLocaleToDocument, setStoredLocale } from '@/utils/localeStorage'
 import { beginReadingRefresh, completedReadingId, completionIsVisible, consumeFollowupDraft, continueCardSelection, isDrawLocked, persistedDrawPhase, previousDrawPhase, restoredDrawPhase, responseScopeIsCurrent, taskBelongsToReading, taskMatchesDraw, taskReadingId, validCompletionNotice, validHistoryReturn } from './mobileNavigation'
 import { loadMobileHistoryPage } from './mobileHistoryLoader'
+import { createMobileReviewClock, reviewEligibleAt } from './mobileReviewClock'
 import type { MobileCompletionNotice, MobileHistoryReturn, MobileTaskFeedback } from './mobileNavigation'
 import './mobile.css'
 import './mobileReading.css'
@@ -101,6 +103,7 @@ const pending = ref<PendingMobileTask | null>(null), taskBusy = ref(false), task
 const readingPreparation = ref<symbol | null>(null)
 const failedTask = ref<PendingMobileTask | null>(null), completionNotice = ref<MobileCompletionNotice | null>(null)
 const current = ref<MobileHistoryEntry | null>(null), currentLoading = ref(false), currentError = ref(''), cachedDetail = ref(false)
+const currentMissing = ref(false)
 const activeReadingId = ref<number | null>(null), followupDrafts = ref<Record<number, string>>({}), historyReturn = ref<MobileHistoryReturn | null>(null)
 const followup = ref(''), toast = ref(''), storageError = ref(''), operationError = ref('')
 const history = ref<MobileHistoryEntry[]>([]), historyLoading = ref(false), historyError = ref(''), historyPage = ref(1), historyPages = ref(1), historyTotal = ref(0), search = ref(''), historyCached = ref(false)
@@ -118,14 +121,13 @@ async function refreshQuota() {
 }
 let reviewSequence = 0
 const readingOutcome = computed(() => normalizeMobileOutcome((current.value?.resultData as { outcome?: unknown } | null)?.outcome))
-const reviewEligible = computed(() => {
-  const created = new Date(current.value?.createdAt || '')
-  return Number.isFinite(created.getTime()) && created.getTime() <= membershipNow.value && created.toDateString() !== new Date(membershipNow.value).toDateString()
-})
+const reviewNow = ref(Date.now())
+const reviewEligible = computed(() => reviewEligibleAt(current.value?.createdAt, reviewNow.value, reviewTimeZone.value))
 const accountMode = ref<'register' | 'forgot' | 'password' | 'delete' | null>(null)
 const accountAccess = ref<{ requestClose: () => void } | null>(null)
 let accountAccessOwner: number | null = null
 let disposed = false, historySequence = 0, detailSequence = 0, hydrationSequence = 0, restoringPrivate = true
+let appInForeground = !document.hidden
 let readerSelectionSequence = 0
 let drawIntentRevision = 0
 let referenceRequest: Promise<void> | null = null
@@ -176,8 +178,31 @@ watch(membershipOpen, async (open, wasOpen) => {
 const { backImageUrl: backImage } = useMobileCardBack()
 const profileMode = ref<'avatar' | 'birth' | null>(null), profileUser = ref<User | null>(null)
 const profileBusy = ref(false), profileLoading = ref(false), profileError = ref('')
+const nicknameOpen = ref(false), nicknameBusy = ref(false), nicknameError = ref(''), nicknameInitial = ref('')
+let nicknameSequence = 0
 let profileSequence = 0
 watch(owner, () => { profileSequence++; profileMode.value = null; profileUser.value = null; profileBusy.value = false; profileLoading.value = false; profileError.value = '' }, { flush: 'sync' })
+watch(owner, () => { nicknameSequence++; nicknameOpen.value = false; nicknameBusy.value = false; nicknameError.value = ''; nicknameInitial.value = '' }, { flush: 'sync' })
+function openNickname() {
+  if (!startupReady.value || logoutBusy.value) return
+  if (!mobileUser.value) { requestLogin(); return }
+  nicknameSequence++; nicknameInitial.value = mobileUser.value.nickname; nicknameError.value = ''; nicknameOpen.value = true
+}
+function closeNickname() {
+  if (nicknameBusy.value) return
+  nicknameSequence++; nicknameOpen.value = false; nicknameError.value = ''
+}
+async function updateNickname(value: string) {
+  if (!nicknameOpen.value || nicknameBusy.value || !mobileUser.value) return
+  const id = owner.value, action = ++nicknameSequence
+  nicknameBusy.value = true; nicknameError.value = ''
+  try {
+    await saveMobileNickname(value)
+    if (id !== owner.value || action !== nicknameSequence || disposed) return
+    nicknameOpen.value = false; notify(text('昵称已更新。', 'Nickname updated.'))
+  } catch (error) { if (id === owner.value && action === nicknameSequence && !disposed) nicknameError.value = mobileError(error, text('昵称保存失败，请重试。', 'Could not save your nickname. Please retry.')) }
+  finally { if (action === nicknameSequence && id === owner.value) nicknameBusy.value = false }
+}
 function closeProfile() {
   if (profileBusy.value) return
   profileSequence++; profileMode.value = null; profileUser.value = null; profileLoading.value = false; profileError.value = ''
@@ -298,6 +323,27 @@ function refreshMembershipClock() {
   }
 }
 watch(mobileUser, refreshMembershipClock, { immediate: true })
+const reviewTimeZone = computed(() => {
+  for (const zone of [mobileUser.value?.quotaTimeZone, dailyResponse.value?.timeZone]) {
+    if (!zone) continue
+    try { new Intl.DateTimeFormat('en', { timeZone: zone }); return zone } catch { /* Use the site's default until a valid server zone is available. */ }
+  }
+  return mobileSite === 'domestic' ? 'Asia/Shanghai' : 'UTC'
+})
+let reviewClock: ReturnType<typeof createMobileReviewClock> | null = null
+function stopReviewClock() { reviewClock?.dispose(); reviewClock = null }
+function syncReviewClock() {
+  stopReviewClock()
+  if (disposed || !appInForeground || tab.value !== 'ask' || phase.value !== 'result' || !current.value?.createdAt) return
+  reviewClock = createMobileReviewClock({
+    timeZone: () => reviewTimeZone.value,
+    onTick: value => { reviewNow.value = value },
+    setTimer: (callback, delay) => window.setTimeout(callback, delay),
+    clearTimer: id => window.clearTimeout(id as number),
+  })
+  reviewClock.refresh()
+}
+watch([tab, phase, () => current.value?.id, () => current.value?.createdAt, reviewTimeZone], syncReviewClock, { flush: 'post' })
 function ensureInitialReader() {
   if (!restoringPrivate && !readerId.value) readerId.value = readerPreference.value?.readerId || defaultMobileReaderId(referenceReaders.value)
 }
@@ -391,6 +437,7 @@ watch([question, count, readerId, carried, deck, selected, revealed, phase, foll
 function setReadingContext(id: number | null) {
   if (activeReadingId.value !== null) followupDrafts.value[activeReadingId.value] = followup.value
   activeReadingId.value = id
+  currentMissing.value = false
   followup.value = id === null ? '' : followupDrafts.value[id] || ''
 }
 watch(count, () => {
@@ -468,7 +515,7 @@ watch(loginOpen, async (login, wasLogin) => {
   }
 })
 function modalKeydown(event: KeyboardEvent) {
-  if (accountMode.value) return
+  if (accountMode.value || nicknameOpen.value) return
   const dialog = loginOpen.value ? loginDialog.value : null
   if (!dialog) return
   if (event.key === 'Escape') { event.preventDefault(); if (!loginBusy.value) { loginOpen.value = false; readersOpen.value = false } return }
@@ -536,7 +583,7 @@ function resetPrivate() {
   reviewSequence++; reviewSaving.value = false; reviewError.value = ''; historyFilters.value = { type: '', from: '', to: '' }
   window.clearTimeout(pollTimer); window.clearTimeout(draftTimer); historySequence++; detailSequence++; hydrationSequence++; restoringPrivate = true; pollingRequest = null
   readingRefreshVersions.clear(); historyRefreshNeeded = false
-  pending.value = null; failedTask.value = null; current.value = null; nextDraft.value = null; taskError.value = ''; currentError.value = ''; followup.value = ''
+  pending.value = null; failedTask.value = null; current.value = null; nextDraft.value = null; taskError.value = ''; currentError.value = ''; currentMissing.value = false; followup.value = ''
   archivedAskDrafts.value = []; recentReading.value = null; askOpened = false; askActionSequence++; startingNewQuestion.value = false
   activeReadingId.value = null; followupDrafts.value = {}; historyReturn.value = null; completionNotice.value = null
   history.value = []; historyTotal.value = 0; search.value = ''; historyError.value = ''; taskNeedsResend.value = false
@@ -721,6 +768,7 @@ function goBack() {
   if (membershipOpen.value) { closeMembership(); return }
   if (benefitsOpen.value) { closeBenefits(); return }
   if (yesterdayOpen.value) { closeYesterday(); return }
+  if (nicknameOpen.value) { closeNickname(); return }
   if (profileMode.value) { closeProfile(); return }
   if (loginOpen.value) { if (!loginBusy.value) loginOpen.value = false; return }
   if (readersOpen.value) { readersOpen.value = false; return }
@@ -1046,11 +1094,16 @@ async function openReading(id: number, navigate = true) {
     if (!responseScopeIsCurrent({ owner: userId, sequence }, owner.value, detailSequence, disposed)) return
     currentError.value = mobileError(error)
     if (mobileHttpStatus(error) === 404) {
+      currentMissing.value = true
       current.value = null; history.value = history.value.filter(entry => entry.id !== id)
       await privateWrite('last', null, userId).catch(() => {})
       await privateWrite('history', null, userId).catch(() => {})
     }
   } finally { if (sequence === detailSequence && owner.value === userId) currentLoading.value = false }
+}
+function retryCurrentReading() {
+  if (activeReadingId.value === null || currentLoading.value || currentMissing.value || tab.value !== 'ask' || phase.value !== 'result') return
+  void openReading(activeReadingId.value, false)
 }
 async function removeReading(id: number) {
   if (pending.value || deletingId.value) { notify(text('请先等当前解读完成。', 'Wait until the current reading finishes.')); return }
@@ -1087,8 +1140,12 @@ function refreshVisibleHistory() {
   else void loadHistory(historyPage.value)
 }
 function onVisible() {
-  if (!document.hidden) { refreshMembershipClock(); void pollTask(); void refreshDailyFortune(); if (mobileUser.value) void refreshMobileProfile().catch(() => {}); void refreshMobileUpdater().then(quietlyCheckMobileUpdate) }
-  else { window.clearTimeout(pollTimer); void saveDraft().catch(() => {}) }
+  applyForegroundState(!document.hidden)
+}
+function applyForegroundState(active: boolean) {
+  appInForeground = active
+  if (active) { refreshMembershipClock(); syncReviewClock(); void pollTask(); void refreshDailyFortune(); if (mobileUser.value) void refreshMobileProfile().catch(() => {}); void refreshMobileUpdater().then(quietlyCheckMobileUpdate) }
+  else { stopReviewClock(); window.clearTimeout(pollTimer); void saveDraft().catch(() => {}) }
 }
 function viewportChanged() { if (!Capacitor.isNativePlatform() && window.visualViewport) keyboardOpen.value = window.innerHeight - window.visualViewport.height > 140 }
 onMounted(async () => {
@@ -1109,10 +1166,10 @@ onMounted(async () => {
   if (!Capacitor.isNativePlatform() || disposed) return
   const addHandle = async (promise: Promise<PluginListenerHandle>) => { const handle = await promise; if (disposed) await handle.remove(); else handles.push(handle) }
   void addHandle(NativeApp.addListener('appStateChange', state => {
-    if (state.isActive) onVisible(); else { window.clearTimeout(pollTimer); void saveDraft().catch(() => {}) }
+    applyForegroundState(state.isActive)
   })).catch(() => {})
   void addHandle(NativeApp.addListener('backButton', () => {
-    if (tab.value === 'home' && !accountMode.value && !loginOpen.value && !readersOpen.value && !yesterdayOpen.value && !membershipOpen.value && !benefitsOpen.value) void NativeApp.exitApp()
+    if (tab.value === 'home' && !accountMode.value && !loginOpen.value && !readersOpen.value && !yesterdayOpen.value && !membershipOpen.value && !benefitsOpen.value && !nicknameOpen.value) void NativeApp.exitApp()
     else goBack()
   })).catch(() => {})
   void addHandle(Network.addListener('networkStatusChange', status => { const reconnected = !online.value && status.connected; online.value = status.connected; if (reconnected) { void loadReference(); void pollTask(); refreshVisibleHistory() } })).catch(() => {})
@@ -1120,6 +1177,7 @@ onMounted(async () => {
   void addHandle(Keyboard.addListener('keyboardWillHide', () => { keyboardOpen.value = false })).catch(() => {})
 })
 onBeforeUnmount(() => {
+  stopReviewClock()
   disposeMobileUpdater()
   disposed = true; historySequence++; detailSequence++; window.clearTimeout(pollTimer); window.clearTimeout(draftTimer); window.clearTimeout(toastTimer); window.clearTimeout(membershipTimer)
   window.removeEventListener('online', onConnectivity); window.removeEventListener('offline', onConnectivity); document.removeEventListener('visibilitychange', onVisible)
@@ -1225,7 +1283,7 @@ onBeforeUnmount(() => {
           <div class="mobile-waiting"><span class="mobile-orbit" aria-hidden="true"><Sparkles :size="44" /></span><h1>{{ text('正在听懂你的问题…', 'Reading your cards…') }}</h1><p>{{ question }}</p><p class="mobile-subtitle">{{ text('可以切到其他页面，回来仍是同一次解读。', 'You can leave this screen and return to the same reading.') }}</p><p v-if="taskError" role="status" class="mobile-error">{{ taskError }}</p><button v-if="taskNeedsResend" type="button" class="mobile-primary" :disabled="taskBusy || !online" @click="transmitTask">{{ text('继续原请求', 'Retry original request') }}</button><button v-else type="button" class="mobile-secondary" :disabled="taskBusy || !online" @click="pollTask">{{ text('查看进度', 'Check progress') }}</button></div>
         </template>
         <template v-else>
-          <p v-if="currentLoading" role="status" class="mobile-subtitle">{{ text('正在同步记录…','Syncing your reading…') }}</p><p v-if="currentError" role="alert" class="mobile-error">{{ currentError }}<button v-if="current" type="button" class="mobile-text-button" @click="openReading(current.id)">{{ text('重试','Retry') }}</button></p>
+          <p v-if="currentLoading" role="status" class="mobile-subtitle">{{ text('正在同步记录…','Syncing your reading…') }}</p><p v-if="currentError && current" role="alert" class="mobile-error">{{ currentError }}<button type="button" class="mobile-text-button" :disabled="currentLoading || !online" @click="retryCurrentReading">{{ text('重试','Retry') }}</button><button type="button" class="mobile-text-button" @click="returnToHistory">{{ text('返回记录','Back to readings') }}</button></p>
           <template v-if="current">
             <p v-if="cachedDetail" class="mobile-cache-note">{{ text('本机缓存 · 联网后同步最新记录', 'Cached copy · Syncs when connected') }}</p>
             <MobileReadingConversation :key="current.id" :entry="current" :english="english" :reader="readingReader" :reader-name="readingReaderName" :positions="readingPositions" :image-overrides="imageOverrides" :pending-question="pendingConversationQuestion" />
@@ -1236,6 +1294,7 @@ onBeforeUnmount(() => {
             <MobileReadingReview v-if="current.question" :key="`review-${current.id}`" :english="english" :value="readingOutcome" :loading="currentLoading" :saving="reviewSaving" :error="reviewError" :eligible="reviewEligible" :online="online && !cachedDetail" @save="saveReadingReview" @retry="openReading(current.id, false)" />
             <MobileFollowupComposer v-if="canFollowup" v-model="followup" :key="current.id" :question="current.question || text('每日启发','Daily guidance')" :reader-name="readingReaderName" :english="english" :busy="!!pending" :pending-for-current="!!currentPendingFollowup" :online="online" :active-vip="activeVip" :remaining-quota="mobileUser?.remainingFreeQuota ?? null" :resets-at="mobileUser?.quotaResetsAt" :quota-refreshing="quotaRefreshing" @refresh-quota="refreshQuota" @submit="sendFollowup" @open-pending="openPendingReading" />
           </template>
+          <div v-else-if="!currentLoading && activeReadingId !== null" class="mobile-empty" role="alert"><h1>{{ currentMissing ? text('这条记录已不存在。','This reading is no longer available.') : text('暂时无法加载这条记录。','This reading could not be loaded.') }}</h1><p>{{ currentMissing ? text('记录可能已被删除，请返回记录列表查看其他解读。','It may have been deleted. Return to your readings to view another one.') : text('请重试，或返回记录列表后再打开。原问题和牌面会保留。','Retry or return to your readings. Your original question and cards are kept.') }}</p><button v-if="!currentMissing" type="button" class="mobile-primary" :disabled="!online" @click="retryCurrentReading">{{ text('重试','Retry') }}</button><button type="button" class="mobile-secondary" @click="returnToHistory">{{ text('返回记录','Back to readings') }}</button></div>
           <div v-else-if="!currentLoading" class="mobile-empty"><h1>{{ text('从一个问题开始。','Begin with a question.') }}</h1><button type="button" class="mobile-primary" @click="startFreshQuestion">{{ text('开始问卜','Ask a question') }}</button></div>
         </template>
         </template>
@@ -1247,7 +1306,7 @@ onBeforeUnmount(() => {
       </section>
 
       <section v-else :aria-label="text('我的','Me')" class="mobile-me">
-        <MobileAccountPanel :user="mobileUser" :active-vip="activeVip" :locale="String(locale)" :site="mobileSite" :session-ready="mobileSessionReady && startupReady" :logout-busy="logoutBusy" @login="requestLogin()" @logout="signOut" @update:locale="changeLanguage" @website="openWebsite" @avatar="openProfile('avatar')" @birth="openProfile('birth')" @history="changeTab('history')" @redeem="openMembership" @benefits="openBenefits" @security="openAccountAccess">
+        <MobileAccountPanel :user="mobileUser" :active-vip="activeVip" :locale="String(locale)" :site="mobileSite" :session-ready="mobileSessionReady && startupReady" :logout-busy="logoutBusy" @login="requestLogin()" @logout="signOut" @update:locale="changeLanguage" @website="openWebsite" @avatar="openProfile('avatar')" @birth="openProfile('birth')" @nickname="openNickname" @history="changeTab('history')" @redeem="openMembership" @benefits="openBenefits" @security="openAccountAccess">
           <template #updates><MobileUpdatePanel :english="english" /></template>
         </MobileAccountPanel>
       </section>
@@ -1259,6 +1318,7 @@ onBeforeUnmount(() => {
     <MobileAccountAccess v-if="accountMode" ref="accountAccess" :key="accountMode" :mode="accountMode" :english="english" :online="online" :email="mobileUser?.email || identifier" @close="closeAccountAccess" @signin="signInToAccount" @session-ended="accountSessionEnded" />
     <MobileReaderPicker :open="readersOpen" :readers="availableReaders" :selected-id="readerId" :loading="referenceLoading" :error="readerLoadError" :unavailable-message="readerUnavailableMessage" :english="english" @select="selectReader" @close="readersOpen = false" @retry="loadReference" />
     <MobileProfileEditor v-if="profileMode && profileUser" :key="profileMode" :mode="profileMode" :user="profileUser" :english="english" :busy="profileBusy" :loading="profileLoading" :error="profileError" @close="closeProfile" @avatar="updateAvatar" @birth="updateBirth" @retry="loadBirthProfile" @change="profileError = ''" />
+    <MobileNicknameEditor v-if="nicknameOpen" :nickname="nicknameInitial" :english="english" :busy="nicknameBusy" :error="nicknameError" @close="closeNickname" @save="updateNickname" @change="nicknameError = ''" />
     <MobileMembershipBenefits v-if="benefitsOpen" :user="mobileUser" :active-vip="activeVip" :english="english" :online="online" @close="closeBenefits" @redeem="redeemFromBenefits" />
     <MobileMembershipRedeem v-if="membershipOpen" v-model:code="membershipCode" :english="english" :busy="redemptionBusy" :syncing="membershipSyncing" :error="redemptionError" :profile-error="membershipProfileError" :profile-updated="membershipProfileUpdated" :grant="membershipGrant" :return-to-benefits="membershipReturnsToBenefits" @close="closeMembership" @submit="redeemMembership" @refresh="syncMembership" />
   </div>

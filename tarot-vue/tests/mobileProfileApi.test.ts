@@ -90,3 +90,99 @@ test('a failed save leaves the prior birth details and persisted profile intact'
   assert.equal(api.mobileUser.value?.birthday, initial.birthday)
   assert.equal((stored.get('session') as any).user.birthTime, '08:30')
 })
+
+test('nickname saves a trimmed value and restores the same name from local storage', async () => {
+  const { api, stored } = boot(); await api.initializeMobileSession(false)
+  const calls: string[] = []
+  api.mobileApi.defaults.adapter = async config => {
+    calls.push(config.url!)
+    assert.equal(config.method, 'put'); assert.equal(config.url, '/user/profile')
+    assert.deepEqual(JSON.parse(config.data), { nickname: '星语旅人' })
+    return response(config, user(1, { nickname: '星语旅人' }))
+  }
+  const saved = await api.saveMobileNickname('  星语旅人  ')
+  assert.equal(saved.nickname, '星语旅人')
+  assert.equal(api.mobileUser.value?.nickname, '星语旅人')
+  assert.equal((stored.get('session') as any).user.nickname, '星语旅人')
+  const restarted = boot((stored.get('session') as any).user)
+  await restarted.api.initializeMobileSession(false)
+  assert.equal(restarted.api.mobileUser.value?.nickname, '星语旅人')
+  assert.deepEqual(calls, ['/user/profile'])
+})
+
+test('a profile request started before a nickname save cannot replace the new name', async () => {
+  const { api, stored } = boot(); await api.initializeMobileSession(false)
+  let completeProfile!: () => void
+  api.mobileApi.defaults.adapter = config => {
+    if (config.url === '/user/profile' && config.method === 'get') return new Promise(resolve => { completeProfile = () => resolve(response(config, user())) })
+    if (config.url === '/user/quota') return Promise.resolve(response(config, { remaining: 18 }))
+    assert.equal(config.url, '/user/profile'); assert.equal(config.method, 'put')
+    return Promise.resolve(response(config, user(1, { nickname: 'Updated seeker' })))
+  }
+  const refresh = api.refreshMobileProfile(); await settle()
+  await api.saveMobileNickname('Updated seeker')
+  completeProfile(); await refresh
+  assert.equal(api.mobileUser.value?.nickname, 'Updated seeker')
+  assert.equal((stored.get('session') as any).user.nickname, 'Updated seeker')
+})
+
+test('a late nickname response cannot write to the next account', async () => {
+  const { api, stored } = boot(); await api.initializeMobileSession(false)
+  let complete!: () => void
+  api.mobileApi.defaults.adapter = config => new Promise(resolve => { complete = () => resolve(response(config, user(1, { nickname: 'Old account name' }))) })
+  const save = api.saveMobileNickname('Old account name')
+  const rejected = assert.rejects(save, { name: 'MobileSessionChangedError' })
+  await settle(); await api.forgetMobileSession()
+  stored.set('session', session(user(2, { nickname: 'Second account' })))
+  await api.initializeMobileSession(false); complete(); await rejected
+  assert.equal(api.mobileUser.value?.id, 2)
+  assert.equal(api.mobileUser.value?.nickname, 'Second account')
+  assert.equal((stored.get('session') as any).user.nickname, 'Second account')
+})
+
+test('nickname edits preserve unrelated fields accepted while their save is in flight', async () => {
+  const { api, stored } = boot(); await api.initializeMobileSession(false)
+  let complete!: () => void
+  api.mobileApi.defaults.adapter = async config => {
+    if (config.url === '/user/profile') return new Promise(resolve => { complete = () => resolve(response(config, user(1, { nickname: 'New name' }))) })
+    assert.equal(config.url, '/user/birth-info')
+    return response(config, { birthday: '1990-05-17', birthTime: '00:00', zodiacSign: 'Taurus' })
+  }
+  const name = api.saveMobileNickname('New name'); await settle()
+  await api.saveMobileBirthInfo({ birthday: '1990-05-17', birthTime: '00:00' })
+  complete(); await name
+  assert.equal(api.mobileUser.value?.nickname, 'New name')
+  assert.equal(api.mobileUser.value?.birthday, '1990-05-17')
+  assert.equal((stored.get('session') as any).user.birthTime, '00:00')
+})
+
+test('failed nickname requests keep the previous name and support a later retry', async () => {
+  const { api, stored } = boot(); await api.initializeMobileSession(false)
+  let calls = 0
+  api.mobileApi.defaults.adapter = async config => {
+    if (++calls === 1) throw new Error('Local simulated connection failure')
+    return response(config, user(1, { nickname: 'Retried name' }))
+  }
+  await assert.rejects(api.saveMobileNickname('Retried name'))
+  assert.equal(api.mobileUser.value?.nickname, 'User 1')
+  assert.equal((stored.get('session') as any).user.nickname, 'User 1')
+  await api.saveMobileNickname('Retried name')
+  assert.equal(api.mobileUser.value?.nickname, 'Retried name'); assert.equal(calls, 2)
+})
+
+test('invalid or unconfirmed nickname responses never update the local profile', async () => {
+  for (const body of [{ success: false, data: user(1, { nickname: 'Unconfirmed' }) }, { success: true, data: user(2, { nickname: 'Other account' }) }, { success: true, data: user(1, { nickname: '' }) }, { success: true, data: user() }]) {
+    const { api, stored } = boot(); await api.initializeMobileSession(false)
+    api.mobileApi.defaults.adapter = async config => ({ ...response(config, body.data), data: body })
+    await assert.rejects(api.saveMobileNickname('Changed name'))
+    assert.equal(api.mobileUser.value?.nickname, 'User 1')
+    assert.equal((stored.get('session') as any).user.nickname, 'User 1')
+  }
+})
+
+test('invalid nickname input is rejected before any API request', async () => {
+  const { api } = boot(); await api.initializeMobileSession(false)
+  let calls = 0; api.mobileApi.defaults.adapter = async () => { calls++; throw new Error('Unexpected request') }
+  for (const value of ['', '  ', 'a', '字'.repeat(21)]) await assert.rejects(api.saveMobileNickname(value))
+  assert.equal(calls, 0)
+})

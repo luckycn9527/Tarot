@@ -2,6 +2,13 @@ export function localDateOnly(date = new Date()): string {
   return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`
 }
 
+export function nicknameInputError(value: string, english = false): string {
+  const length = value.trim().length
+  return length < 2 || length > 20
+    ? english ? 'Use 2–20 characters for your name.' : '昵称请填写 2–20 个字符。'
+    : ''
+}
+
 export function birthInputError(birthday: string, birthTime: string, unknownTime: boolean, english = false, today = localDateOnly()): string {
   const t = (zh: string, en: string) => english ? en : zh
   if (!birthday) return !unknownTime && birthTime ? t('请先选择出生日期。', 'Choose your birth date first.') : ''
