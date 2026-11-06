@@ -1,8 +1,15 @@
 # E-Tomd 原生工程与内测构建
 
-当前 Android 体验版本：`0.1.21`，`versionCode=22`（仅国内 APK，已发布并通过公开 HTTPS 字节校验；交付目录 `output/app-improvements-20261106/`）。
+当前 Android 体验版本：`0.1.22`，`versionCode=23`（仅国内 APK，已发布并通过公开 HTTPS 字节校验；交付目录 `output/app-p1-fixes-20261106/`）。
 `0.1.0` / `0.1.1` 旧包和封存记录保留。
 iOS 源工程同步为 `0.1.21 / build 22`；Mac 操作见 [IOS_BUILD.md](./IOS_BUILD.md)。本轮没有进行 Xcode 编译、签名或 iPhone 真机验收。
+
+## 2026-11-06 APP 基础体验修复：0.1.22
+
+- 历史缓存优先展示、联网后台同步；明确离线不请求历史。刷新中可打开记录，未知总数不再显示为零。
+- 弱网退出先清本机登录状态，后台撤销旧凭证；存储删除失败准确提示，迟到响应不恢复旧账号。
+- 翻牌后锁定整组牌及方向，返回可改问题、继续原牌；新问卜重新开始，旧草稿和三牌部分翻开均兼容。
+- 198 项前端测试、4 项发布器测试及最终 APK 的浏览器/安卓 API35 回归通过，国内应用内更新已发布。范围与证据见 [RELEASE_20261106_P1.md](./RELEASE_20261106_P1.md)。
 
 ## 2026-11-06 账号操作、记录复盘及反馈修复：0.1.21
 
@@ -215,7 +222,7 @@ Capacitor 同步及 Gradle 构建，并校验原生/网页版本一致、API 地
 | Android | SDK 36，最低 API 24；最低版本是工程声明，实际设备覆盖需单独记录 |
 | Android 国内包名 | `cn.zaopic.etomd` |
 | Android 海外包名 | `cn.zaopic.etomd.global` |
-| Android 版本 | `versionName=0.1.20`，`versionCode=21`，已发布；统一读取 `mobile-version.json` |
+| Android 版本 | `versionName=0.1.22`，`versionCode=23`，已发布；统一读取 `mobile-version.json` |
 | Android 调试包 | 默认开发证书签名，仅供内测；不能作为正式商店签名配置 |
 | Android 原生页面来源 | `https://localhost` |
 | iOS 原生页面来源 | `capacitor://localhost` |

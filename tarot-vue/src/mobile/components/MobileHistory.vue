@@ -14,6 +14,7 @@ import { historyFilterError, type MobileHistoryFilters } from '../mobileHistoryM
 const props = withDefaults(defineProps<{
   entries: ReadingHistoryEntry[]
   loading: boolean
+  loaded?: boolean
   error: string
   page: number
   totalPages: number
@@ -23,7 +24,7 @@ const props = withDefaults(defineProps<{
   deletingId?: number | null
   readers?: MobileReader[]
   filters?: MobileHistoryFilters
-}>(), { deletingId: null, readers: () => [], filters: () => ({ type: '', from: '', to: '' }) })
+}>(), { loaded: true, deletingId: null, readers: () => [], filters: () => ({ type: '', from: '', to: '' }) })
 
 const emit = defineEmits<{
   search: [value: string]
@@ -184,7 +185,7 @@ function readerAvatar(entry: ReadingHistoryEntry) {
     </form>
 
     <div class="mh-list-meta">
-      <p>{{ english ? `${total} ${total === 1 ? 'reading' : 'readings'}${hasQuery ? ' found' : ''}` : `${hasQuery ? '找到' : '共'} ${total} 条记录` }}</p>
+      <p v-if="loaded">{{ english ? `${total} ${total === 1 ? 'reading' : 'readings'}${hasQuery ? ' found' : ''}` : `${hasQuery ? '找到' : '共'} ${total} 条记录` }}</p>
       <button v-if="query || hasSearch" type="button" class="mh-text-button" :disabled="loading" @click="clearSearch">{{ english ? 'Clear search' : '清除搜索' }}</button>
     </div>
 
@@ -207,7 +208,7 @@ function readerAvatar(entry: ReadingHistoryEntry) {
           <button
               type="button"
               class="mh-entry-main"
-              :disabled="loading || deletingId === entry.id"
+              :disabled="deletingId === entry.id"
               :aria-label="`${english ? 'Open reading: ' : '查看占卜：'}${question(entry)}`"
               @click="emit('open', entry.id)"
           >
@@ -248,14 +249,14 @@ function readerAvatar(entry: ReadingHistoryEntry) {
       </ol>
     </template>
 
-    <div v-else-if="!error" class="mh-empty" role="status">
+    <div v-else-if="loaded && !error" class="mh-empty" role="status">
       <p class="mh-empty-title">{{ hasQuery ? (english ? 'No matching readings.' : '没有找到符合条件的记录。') : (english ? 'Your story starts with a question.' : '从一个问题，开始记录。') }}</p>
       <p>{{ hasQuery ? (english ? 'Try another keyword or adjust your filters.' : '试试其他关键词，或调整筛选条件。') : (english ? 'Completed readings will be saved here so you can revisit them.' : '完成问卜后，解读会保存在这里，方便随时回看。') }}</p>
       <button v-if="hasFilters" type="button" class="mh-secondary" :disabled="loading" @click="clearFilters">{{ english ? 'Clear filters' : '清除筛选' }}</button>
       <button v-else-if="hasSearch" type="button" class="mh-secondary" :disabled="loading" @click="clearSearch">{{ english ? 'Clear search' : '清除搜索' }}</button>
     </div>
 
-    <nav v-if="total > 0" class="mh-pagination" :aria-label="english ? 'Reading pages' : '占卜记录分页'">
+    <nav v-if="loaded && total > 0" class="mh-pagination" :aria-label="english ? 'Reading pages' : '占卜记录分页'">
       <button type="button" class="mh-secondary" :disabled="loading || currentPage <= 1" @click="emit('page', currentPage - 1)">{{ english ? 'Previous' : '上一页' }}</button>
       <span aria-live="polite">{{ currentPage }} / {{ pages }}</span>
       <button type="button" class="mh-secondary" :disabled="loading || currentPage >= pages" @click="emit('page', currentPage + 1)">{{ english ? 'Next' : '下一页' }}</button>

@@ -15,9 +15,18 @@ type MobileRequest = InternalAxiosRequestConfig & { _mobileEpoch?: number; _retr
 export const mobileUser = shallowRef<User | null>(null)
 export const mobileSessionReady = shallowRef(false)
 let session: Session | null = null, epoch = 0, profileRevision = 0
-let refreshing: Promise<void> | null = null
+interface MobileRefresh { generation: number; promise: Promise<void> }
+let refreshing: MobileRefresh | null = null
 const anonymous = axios.create({ baseURL: mobileApiBase, timeout: 20_000, withCredentials: false })
 export const mobileApi = axios.create({ baseURL: mobileApiBase, timeout: 20_000, withCredentials: false })
+
+function revokeDeviceSession(credentials: Session) {
+  // This client never reads the active account or refreshes a rejected request.
+  // An old device logout must not use a later sign-in's credentials.
+  void anonymous.post('/auth/native/logout', { refreshToken: credentials.refreshToken }, {
+    headers: { Authorization: `Bearer ${credentials.accessToken}` }, timeout: 5_000,
+  }).catch(() => {})
+}
 
 class MobileSessionChangedError extends Error { constructor() { super('Account changed. Please try again.'); this.name = 'MobileSessionChangedError' } }
 function validSession(value: unknown): value is Session {
@@ -34,21 +43,29 @@ async function acceptSession(data: Omit<Session, 'site'>, expectedEpoch: number)
   session = next; mobileUser.value = next.user
 }
 export async function refreshMobileSession() {
-  if (refreshing) return refreshing
   const current = session, generation = epoch
+  if (refreshing?.generation === generation) return refreshing.promise
   if (!current) throw new Error('请先登录')
-  refreshing = (async () => {
+  const flight: MobileRefresh = { generation, promise: Promise.resolve() }
+  flight.promise = (async () => {
+    let rotated: Session | null = null
     try {
       const response = await anonymous.post('/auth/native/refresh', { refreshToken: current.refreshToken })
+      const next = { ...response.data.data, site: mobileSite }
+      if (validSession(next) && next.user.id === current.user.id) rotated = next
       if (generation !== epoch) throw new MobileSessionChangedError()
       if (response.data.data?.user?.id !== current.user.id) throw new MobileSessionChangedError()
       await acceptSession(response.data.data, generation)
     } catch (error) {
+      // A request already on the wire can rotate after local logout. Revoke its
+      // replacement token without restoring it or touching the new account.
+      if (generation !== epoch && rotated) revokeDeviceSession(rotated)
       if (axios.isAxiosError(error) && error.response?.status === 401 && generation === epoch) await forgetMobileSession()
       throw error
     }
-  })().finally(() => { refreshing = null })
-  return refreshing
+  })().finally(() => { if (refreshing === flight) refreshing = null })
+  refreshing = flight
+  return flight.promise
 }
 mobileApi.interceptors.request.use(config => {
   ;(config as MobileRequest)._mobileEpoch = epoch
@@ -109,13 +126,16 @@ export async function deleteMobileAccount(password: string) {
   await forgetMobileSession()
 }
 export async function forgetMobileSession() {
-  epoch++; session = null; mobileUser.value = null
+  const generation = ++epoch
+  // A failed device-store deletion must not claim a completed local logout.
   await writeMobileValue('session', null)
+  if (generation !== epoch) throw new MobileSessionChangedError()
+  session = null; mobileUser.value = null
 }
 export async function logoutMobile() {
-  try {
-    if (session) { await refreshMobileSession(); await mobileApi.post('/auth/native/logout', { refreshToken: session?.refreshToken }) }
-  } finally { await forgetMobileSession() }
+  const credentials = session
+  await forgetMobileSession()
+  if (credentials) revokeDeviceSession(credentials)
 }
 export async function refreshMobileProfile() {
   const generation = epoch, revision = profileRevision

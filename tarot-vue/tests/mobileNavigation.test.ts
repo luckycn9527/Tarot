@@ -1,6 +1,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { beginReadingRefresh, completedReadingId, completionIsVisible, consumeFollowupDraft, continueCardSelection, persistedDrawPhase, previousDrawPhase, responseScopeIsCurrent, taskBelongsToReading, taskMatchesDraw, validCompletionNotice, validHistoryReturn } from '../src/mobile/mobileNavigation'
+import { beginReadingRefresh, completedReadingId, completionIsVisible, consumeFollowupDraft, continueCardSelection, isDrawLocked, persistedDrawPhase, previousDrawPhase, restoredDrawPhase, responseScopeIsCurrent, taskBelongsToReading, taskMatchesDraw, validCompletionNotice, validHistoryReturn } from '../src/mobile/mobileNavigation'
+import { blankAskDraft } from '../src/mobile/mobileAskEntry'
 import type { MobileCompletionNotice, MobileHistoryReturn } from '../src/mobile/mobileNavigation'
 import type { MobileTask, PendingMobileTask } from '../src/mobile/types'
 
@@ -110,4 +111,39 @@ test('back and continue preserve card order, orientations, choices and revealed 
   const fewerCards = continueCardSelection(deck, selected, revealed, 1)
   assert.equal(fewerCards.deck, deck); assert.deepEqual(fewerCards.selected, [17]); assert.deepEqual(fewerCards.revealed, [17])
   assert.deepEqual(continueCardSelection(deck, [99, 5], [99, 5], 3).revealed, [5])
+})
+
+test('revealing any chosen card locks the complete draw and back returns to the question', () => {
+  const selected = [17, 5, 0], revealed = [5]
+  assert.equal(isDrawLocked(null, selected, []), false)
+  assert.equal(isDrawLocked(null, selected, [99]), false)
+  const locked = isDrawLocked(null, selected, revealed)
+  assert.equal(locked, true)
+  assert.equal(previousDrawPhase('reveal', false, locked), 'question')
+  assert.equal(previousDrawPhase('reveal', false, false), 'select')
+  assert.deepEqual(selected, [17, 5, 0]); assert.deepEqual(revealed, [5])
+})
+
+test('carried cards and fully revealed single-card draws remain locked', () => {
+  assert.equal(isDrawLocked({ id: 17, isReversed: true }, [], []), true)
+  assert.equal(isDrawLocked(null, [17], [17]), true)
+  assert.equal(previousDrawPhase('reveal', true, true), 'question')
+})
+
+test('restoring an older revealed selection cannot reopen the editable deck', () => {
+  const draft = { carried: null, selected: [17, 5, 0], revealed: [5], phase: 'select' as const }
+  const restored = JSON.parse(JSON.stringify(draft))
+  assert.equal(restoredDrawPhase(restored), 'reveal')
+  assert.equal(restoredDrawPhase({ ...draft, phase: 'question' }), 'question')
+  assert.equal(restoredDrawPhase({ ...draft, revealed: [] }), 'select')
+  assert.equal(restoredDrawPhase({ ...draft, carried: { id: 17, isReversed: true }, phase: 'reveal' }), 'question')
+})
+
+test('starting an explicit new question clears the lock without mutating the previous draw', () => {
+  const previous = { carried: null, selected: [17, 5, 0], revealed: [5], phase: 'question' as const }
+  const fresh = blankAskDraft(owner, 'qinghe')
+  assert.equal(isDrawLocked(fresh.carried, fresh.selected, fresh.revealed), false)
+  assert.equal(restoredDrawPhase(fresh), 'question')
+  assert.equal(isDrawLocked(previous.carried, previous.selected, previous.revealed), true)
+  assert.deepEqual(previous.selected, [17, 5, 0])
 })

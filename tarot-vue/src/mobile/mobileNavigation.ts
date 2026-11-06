@@ -66,8 +66,16 @@ export function continueCardSelection(deck: MobileCard[], selected: number[], re
   const retained = selected.filter(id => deck.some(card => card.id === id)).slice(0, count)
   return { deck, selected: retained, revealed: revealed.filter(id => retained.includes(id)) }
 }
-export function previousDrawPhase(phase: string, carried: boolean): 'question' | 'select' {
-  return phase === 'reveal' && !carried ? 'select' : 'question'
+export function isDrawLocked(carried: MobileCard | null, selected: number[], revealed: number[]) {
+  return carried !== null || revealed.some(id => selected.includes(id))
+}
+export function previousDrawPhase(phase: string, carried: boolean, locked = false): 'question' | 'select' {
+  return phase === 'reveal' && !carried && !locked ? 'select' : 'question'
+}
+export function restoredDrawPhase(draft: Pick<MobileDraft, 'carried' | 'selected' | 'revealed' | 'phase'>): MobileDraft['phase'] {
+  if (draft.carried && draft.phase === 'reveal') return 'question'
+  if (draft.phase === 'select' && isDrawLocked(draft.carried, draft.selected, draft.revealed)) return 'reveal'
+  return draft.phase
 }
 export function persistedDrawPhase(phase: string, activeReadingId: number | null): MobileDraft['phase'] {
   if (phase === 'result' && activeReadingId !== null) return 'result'

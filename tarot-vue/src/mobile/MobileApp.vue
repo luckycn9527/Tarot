@@ -53,7 +53,8 @@ import { availableMobileReaders, defaultMobileReaderId, restoredMobileReaderId, 
 import type { ReaderReadingResult } from '@/services/tarotAiReading'
 import { localizedSpreadPositions } from '@/utils/readerLocalization'
 import { applyLocaleToDocument, setStoredLocale } from '@/utils/localeStorage'
-import { beginReadingRefresh, completedReadingId, completionIsVisible, consumeFollowupDraft, continueCardSelection, persistedDrawPhase, previousDrawPhase, responseScopeIsCurrent, taskBelongsToReading, taskMatchesDraw, taskReadingId, validCompletionNotice, validHistoryReturn } from './mobileNavigation'
+import { beginReadingRefresh, completedReadingId, completionIsVisible, consumeFollowupDraft, continueCardSelection, isDrawLocked, persistedDrawPhase, previousDrawPhase, restoredDrawPhase, responseScopeIsCurrent, taskBelongsToReading, taskMatchesDraw, taskReadingId, validCompletionNotice, validHistoryReturn } from './mobileNavigation'
+import { loadMobileHistoryPage } from './mobileHistoryLoader'
 import type { MobileCompletionNotice, MobileHistoryReturn, MobileTaskFeedback } from './mobileNavigation'
 import './mobile.css'
 import './mobileReading.css'
@@ -103,6 +104,7 @@ const current = ref<MobileHistoryEntry | null>(null), currentLoading = ref(false
 const activeReadingId = ref<number | null>(null), followupDrafts = ref<Record<number, string>>({}), historyReturn = ref<MobileHistoryReturn | null>(null)
 const followup = ref(''), toast = ref(''), storageError = ref(''), operationError = ref('')
 const history = ref<MobileHistoryEntry[]>([]), historyLoading = ref(false), historyError = ref(''), historyPage = ref(1), historyPages = ref(1), historyTotal = ref(0), search = ref(''), historyCached = ref(false)
+const historyLoaded = ref(false)
 const deletingId = ref<number | null>(null), logoutBusy = ref(false)
 const historyFilters = ref<MobileHistoryFilters>({ type: '', from: '', to: '' })
 const reviewSaving = ref(false), reviewError = ref('')
@@ -235,7 +237,7 @@ const currentTaskError = computed(() => {
   const task = currentTaskContext.value
   if (!task || task.owner !== owner.value) return ''
   return task.kind === 'followup' ? taskBelongsToReading(task, owner.value, activeReadingId.value) ? taskError.value : ''
-    : !activeReadingId.value && (['waiting', 'reveal'].includes(phase.value) || (phase.value === 'question' && !!carried.value)) && taskMatchesDraw(task, question.value, readerId.value, chosenCards.value) ? taskError.value : ''
+    : !activeReadingId.value && (['waiting', 'reveal'].includes(phase.value) || (phase.value === 'question' && drawLocked.value)) && taskMatchesDraw(task, question.value, readerId.value, chosenCards.value) ? taskError.value : ''
 })
 const currentTaskNeedsResend = computed(() => !!currentPendingFollowup.value && taskNeedsResend.value)
 const pendingReadingQuestion = computed(() => pending.value?.owner === owner.value ? pending.value.payload.question : '')
@@ -257,6 +259,7 @@ const readerUnavailableMessage = computed(() => {
 })
 const chosenCards = computed(() => carried.value ? [carried.value] : selected.value.map(id => deck.value.find(card => card.id === id)!).filter(Boolean))
 const allRevealed = computed(() => chosenCards.value.length === count.value && (carried.value !== null || revealed.value.length === count.value))
+const drawLocked = computed(() => isDrawLocked(carried.value, selected.value, revealed.value))
 const pendingConversationQuestion = computed(() => currentPendingFollowup.value ? (currentPendingFollowup.value.payload as MobileFollowupPayload).question : '')
 const readingReader = computed(() => resolveReadingReader(current.value, referenceReaders.value))
 const readingReaderName = computed(() => readingReader.value?.name || text('原塔罗师资料暂不可用', 'Original reader details unavailable'))
@@ -376,7 +379,7 @@ function applyDraft(draft: MobileDraft) {
   question.value = draft.question; count.value = draft.count; readerId.value = draft.readerId; carried.value = draft.carried
   deck.value = draft.deck; selected.value = draft.selected; revealed.value = draft.revealed
   // Old carried-card drafts may have stopped on the redundant reveal confirmation.
-  phase.value = draft.carried && draft.phase === 'reveal' ? 'question' : draft.phase
+  phase.value = restoredDrawPhase(draft)
 }
 // An edit or navigation cancels a preparation even if the user later restores the same values.
 // Reference data may fill an initial reader automatically without changing this draw intent.
@@ -518,13 +521,16 @@ async function signOut() {
   if (!window.confirm(text('退出当前账号？云端记录会继续保留。', 'Sign out? Your saved readings remain in your account.'))) return
   logoutBusy.value = true
   const id = owner.value
-  try { await logoutMobile() }
-  catch { notify(text('已退出本机账号。', 'Signed out on this device.')) }
-  finally {
+  try {
+    await logoutMobile()
     for (const name of ['draft','next-draft','ask-drafts','pending','last','history','completion','history-view','followup-drafts','task-feedback','daily-yesterday']) await privateWrite(name, null, id).catch(() => {})
+    if (owner.value !== null) return
     await privateWrite('draft', null, null).catch(() => {})
-    resetPrivate(); await hydratePrivate(); logoutBusy.value = false; tab.value = 'home'
-  }
+    if (owner.value !== null) return
+    resetPrivate(); await hydratePrivate()
+    if (owner.value === null) tab.value = 'home'
+  } catch { notify(text('退出未完成，本机登录信息未能清理，请重试。', 'Sign-out could not finish. Your saved sign-in could not be removed. Please retry.')) }
+  finally { logoutBusy.value = false }
 }
 function resetPrivate() {
   reviewSequence++; reviewSaving.value = false; reviewError.value = ''; historyFilters.value = { type: '', from: '', to: '' }
@@ -537,7 +543,7 @@ function resetPrivate() {
   question.value = ''; count.value = 1; readerId.value = ''; readerPreference.value = null; readersOpen.value = false
   readingPreparation.value = null
   selected.value = []; revealed.value = []; carried.value = null; deck.value = []; phase.value = 'question'
-  currentLoading.value = false; historyLoading.value = false; cachedDetail.value = false; historyCached.value = false; taskBusy.value = false
+  currentLoading.value = false; historyLoading.value = false; cachedDetail.value = false; historyCached.value = false; historyLoaded.value = false; taskBusy.value = false
   historyPage.value = 1; historyPages.value = 1; operationError.value = ''; storageError.value = ''; taskNeedsResend.value = false
 }
 watch(owner, (id, previous) => {
@@ -689,7 +695,11 @@ function startSelection() {
   operationError.value = ''
   if (!questionValid(question.value)) { operationError.value = text('请用 5–200 个字描述你的问题。', 'Describe your question in 5–200 characters.'); return }
   if (pending.value) return
-  if (carried.value) { void beginReading(); return }
+  if (drawLocked.value) {
+    if (allRevealed.value) void beginReading()
+    else { phase.value = 'reveal'; tactile(); scrollTop() }
+    return
+  }
   else {
     if (!deck.value.length) deck.value = mobileDeck(activeCardIds.value)
     const continued = continueCardSelection(deck.value, selected.value, revealed.value, count.value)
@@ -697,8 +707,9 @@ function startSelection() {
   }
   tactile(); scrollTop()
 }
-function reshuffleCards() { deck.value = mobileDeck(activeCardIds.value); selected.value = []; revealed.value = []; tactile() }
+function reshuffleCards() { if (drawLocked.value) return; deck.value = mobileDeck(activeCardIds.value); selected.value = []; revealed.value = []; tactile() }
 function chooseCard(id: number) {
+  if (drawLocked.value) return
   if (selected.value.includes(id)) selected.value = selected.value.filter(value => value !== id)
   else if (selected.value.length < count.value) { selected.value = [...selected.value, id]; tactile() }
   revealed.value = revealed.value.filter(value => selected.value.includes(value))
@@ -714,7 +725,7 @@ function goBack() {
   if (loginOpen.value) { if (!loginBusy.value) loginOpen.value = false; return }
   if (readersOpen.value) { readersOpen.value = false; return }
   if (startingNewQuestion.value) { askActionSequence++; startingNewQuestion.value = false; tab.value = 'home'; scrollTop(); return }
-  if (tab.value === 'ask' && (phase.value === 'select' || phase.value === 'reveal')) phase.value = previousDrawPhase(phase.value, !!carried.value)
+  if (tab.value === 'ask' && (phase.value === 'select' || phase.value === 'reveal')) phase.value = previousDrawPhase(phase.value, !!carried.value, drawLocked.value)
   else if (tab.value === 'ask' && phase.value === 'result') { void returnToHistory(); return }
   else if (tab.value === 'history') { rememberHistory(); tab.value = 'home' }
   else tab.value = 'home'
@@ -725,7 +736,7 @@ async function beginReading() {
   if (readingPreparation.value || taskBusy.value || pending.value) return
   if (!allRevealed.value || !questionValid(question.value)) return
   const intendedPhase = phase.value
-  if (intendedPhase !== 'reveal' && !(intendedPhase === 'question' && carried.value)) return
+  if (intendedPhase !== 'reveal' && !(intendedPhase === 'question' && drawLocked.value)) return
   if (!mobileUser.value) { requestLogin('reading'); return }
   if (!online.value) { operationError.value = text('问卜需要联网，你选好的牌会保留。', 'Connect to begin. Your selected cards are saved.'); return }
   const scope = { owner: owner.value, sequence: hydrationSequence }
@@ -960,17 +971,23 @@ async function loadHistory(targetPage = 1) {
   const filtered = !!(query || filters.type || filters.from || filters.to)
   historyLoading.value = true; historyError.value = ''
   try {
-    const page = await fetchMobileHistory({ page: targetPage, search: query || undefined, type: filters.type || undefined, dateFrom: filters.from || undefined, dateTo: filters.to || undefined })
-    if (!responseScopeIsCurrent({ owner: id, sequence }, owner.value, historySequence, disposed)) return
-    history.value = page.items; historyTotal.value = page.total; historyPage.value = page.page; historyPages.value = page.totalPages; historyCached.value = false
-    if (targetPage === 1 && !filtered) await privateWrite('history', page, id).catch(() => {})
-  } catch (error) {
-    if (!responseScopeIsCurrent({ owner: id, sequence }, owner.value, historySequence, disposed)) return
-    historyError.value = mobileError(error)
-    if (!history.value.length && !filtered && targetPage === 1) {
-      const cache = await readMobileValue<{items: MobileHistoryEntry[]; total: number; page: number; totalPages: number}>(key('history', id)).catch(() => null)
-      if (cache && !disposed && sequence === historySequence && id === owner.value && Array.isArray(cache.items)) { history.value = cache.items; historyTotal.value = cache.total; historyPages.value = cache.totalPages; historyPage.value = 1; historyCached.value = true }
-    }
+    await loadMobileHistoryPage({
+      cacheEligible: targetPage === 1 && !filtered,
+      connected: online.value,
+      isCurrent: () => responseScopeIsCurrent({ owner: id, sequence }, owner.value, historySequence, disposed),
+      // Do not replace an already displayed list with an older disk snapshot.
+      readCache: () => history.value.length ? Promise.resolve(null) : readMobileValue(key('history', id)),
+      fetchPage: () => fetchMobileHistory({ page: targetPage, search: query || undefined, type: filters.type || undefined, dateFrom: filters.from || undefined, dateTo: filters.to || undefined }),
+      show: (page, cached) => {
+        history.value = page.items; historyTotal.value = page.total; historyPage.value = page.page; historyPages.value = page.totalPages
+        historyCached.value = cached; historyLoaded.value = true
+      },
+      saveCache: page => privateWrite('history', page, id),
+      fail: error => { historyError.value = mobileError(error) },
+      offline: () => { historyError.value = historyLoaded.value
+        ? text('当前离线，可以查看已保存的记录。联网后可同步最新记录。', 'You are offline. Saved readings remain available; reconnect to sync updates.')
+        : text('当前离线，暂无符合条件的本机记录。请联网后重试。', 'You are offline and no cached readings are available for this view. Reconnect and retry.') },
+    })
   } finally {
     if (sequence === historySequence && id === owner.value) {
       historyLoading.value = false
@@ -978,10 +995,10 @@ async function loadHistory(targetPage = 1) {
     }
   }
 }
-function historySearch(value: string) { search.value = value.slice(0, 100); history.value = []; historyCached.value = false; void loadHistory(1) }
+function historySearch(value: string) { search.value = value.slice(0, 100); history.value = []; historyCached.value = false; historyLoaded.value = false; void loadHistory(1) }
 function applyHistoryFilters(value: MobileHistoryFilters) {
   if (historyFilterError(value, english.value)) return
-  historyFilters.value = { ...value }; history.value = []; historyCached.value = false; void loadHistory(1)
+  historyFilters.value = { ...value }; history.value = []; historyCached.value = false; historyLoaded.value = false; void loadHistory(1)
 }
 async function saveReadingReview(value: { rating: 'full' | 'partial' | 'none' }) {
   if (!current.value || !mobileUser.value || reviewSaving.value || !online.value || cachedDetail.value || currentLoading.value || !reviewEligible.value) return
@@ -1060,8 +1077,14 @@ async function openWebsite(path: string) {
   else window.open(url, '_blank', 'noopener,noreferrer')
 }
 function onConnectivity() {
+  const reconnected = !online.value && navigator.onLine
   online.value = navigator.onLine
-  if (online.value) { void loadReference(); void pollTask() }
+  if (online.value) { void loadReference(); void pollTask(); if (reconnected) refreshVisibleHistory() }
+}
+function refreshVisibleHistory() {
+  if (tab.value !== 'history' || !mobileUser.value || !online.value) return
+  if (historyLoading.value) historyRefreshNeeded = true
+  else void loadHistory(historyPage.value)
 }
 function onVisible() {
   if (!document.hidden) { refreshMembershipClock(); void pollTask(); void refreshDailyFortune(); if (mobileUser.value) void refreshMobileProfile().catch(() => {}); void refreshMobileUpdater().then(quietlyCheckMobileUpdate) }
@@ -1092,7 +1115,7 @@ onMounted(async () => {
     if (tab.value === 'home' && !accountMode.value && !loginOpen.value && !readersOpen.value && !yesterdayOpen.value && !membershipOpen.value && !benefitsOpen.value) void NativeApp.exitApp()
     else goBack()
   })).catch(() => {})
-  void addHandle(Network.addListener('networkStatusChange', status => { const reconnected = !online.value && status.connected; online.value = status.connected; if (reconnected) { void loadReference(); void pollTask() } })).catch(() => {})
+  void addHandle(Network.addListener('networkStatusChange', status => { const reconnected = !online.value && status.connected; online.value = status.connected; if (reconnected) { void loadReference(); void pollTask(); refreshVisibleHistory() } })).catch(() => {})
   void addHandle(Keyboard.addListener('keyboardWillShow', () => { keyboardOpen.value = true })).catch(() => {})
   void addHandle(Keyboard.addListener('keyboardWillHide', () => { keyboardOpen.value = false })).catch(() => {})
 })
@@ -1151,6 +1174,7 @@ onBeforeUnmount(() => {
               <button type="button" :aria-pressed="question === text('我可以从哪件小事找回生活节奏？', 'What small step could help me find my rhythm again?')" @click="question = text('我可以从哪件小事找回生活节奏？', 'What small step could help me find my rhythm again?')">{{ text('自我成长', 'Growth') }}</button>
             </div>
             <div v-if="carried" class="mobile-carried"><img :src="getOfflineCardImageUrl(findOfflineCard(carried.id)!.nameEn)" :alt="`${cardName(carried)} · ${orientation(carried)}`" :style="{ transform: carried.isReversed ? 'rotate(180deg)' : undefined }"><div><strong>{{ cardName(carried) }} · {{ orientation(carried) }}</strong><p>{{ text('已保留刚才翻出的牌，填写问题后直接占卜。', 'Your revealed card is kept. Ask your question to get its reading.') }}</p></div></div>
+            <div v-else-if="drawLocked" class="mobile-carried"><div class="mobile-locked-cards"><img v-for="card in chosenCards" :key="card.id" :src="revealed.includes(card.id) ? getOfflineCardImageUrl(findOfflineCard(card.id)!.nameEn) : backImage" :alt="revealed.includes(card.id) ? `${cardName(card)} · ${orientation(card)}` : text('未翻开的牌', 'Unrevealed card')" :style="{ transform: revealed.includes(card.id) && card.isReversed ? 'rotate(180deg)' : undefined }"></div><div><strong>{{ text(`已保留本次 ${count} 张牌`, `${count === 1 ? 'Your card is' : 'Your cards are'} kept`) }}</strong><p>{{ text('可以修改问题，牌面和方向保持不变。', 'You can edit your question. Your cards and orientations stay the same.') }}</p></div></div>
             <fieldset v-else class="mobile-fieldset">
               <legend>{{ text('怎么抽牌', 'Choose your spread') }}</legend>
               <div class="mobile-spread-options">
@@ -1160,9 +1184,9 @@ onBeforeUnmount(() => {
             </fieldset>
             <div class="mobile-reader"><MobileReaderAvatar :reader="selectedReaderAvatar" :name="readerEntryName" /><div class="mobile-reader-copy"><span>{{ text('本次塔罗师', 'Reader for this question') }}</span><strong>{{ readerEntryName }}</strong></div><button type="button" class="mobile-text-button" @click="openReaderPicker">{{ readerId ? text('更换', 'Change') : text('选择', 'Choose') }}<ArrowUpRight :size="17" /></button></div>
             <p v-if="readerUnavailableMessage || readerLoadError" class="mobile-error" role="status">{{ readerUnavailableMessage || readerLoadError }}</p>
-            <p v-if="carried && currentTaskError" class="mobile-error" role="alert">{{ currentTaskError }}</p>
+            <p v-if="drawLocked && currentTaskError" class="mobile-error" role="alert">{{ currentTaskError }}</p>
             <p v-if="operationError" role="alert" class="mobile-error">{{ operationError }}</p>
-            <button type="submit" class="mobile-primary" :disabled="!!readingPreparation || taskBusy || !!pending">{{ readingPreparation || taskBusy ? text('正在提交…', 'Submitting…') : carried ? text('开始占卜', 'Get this card’s reading') : text('开始抽牌', 'Choose your cards') }}<ArrowRight :size="22" /></button>
+            <button type="submit" class="mobile-primary" :disabled="!!readingPreparation || taskBusy || !!pending">{{ readingPreparation || taskBusy ? text('正在提交…', 'Submitting…') : drawLocked ? allRevealed ? text('解读原牌', 'Read these cards') : text('继续翻开原牌', 'Continue revealing') : text('开始抽牌', 'Choose your cards') }}<ArrowRight :size="22" /></button>
             <p class="mobile-credit-note">{{ activeVip ? text('会员解读与追问不消耗每日免费次数。', 'VIP readings and follow-ups do not use daily free credits.') : text('选牌和翻牌免费。免费账号的解读与追问各使用 1 次额度。', 'Choosing and revealing cards is free. Free accounts use one credit per reading or follow-up.') }}</p>
           </form>
         </template>
@@ -1218,7 +1242,7 @@ onBeforeUnmount(() => {
       </section>
 
       <section v-else-if="tab === 'history'" class="mobile-history-view" :aria-label="text('历史记录','Reading history')">
-        <template v-if="mobileUser"><p v-if="historyCached" class="mobile-cache-note">{{ text('正在显示本机缓存，联网后可刷新最新记录。','Showing cached readings. Reconnect to refresh.') }}</p><MobileHistory :entries="history" :readers="referenceReaders" :loading="historyLoading" :error="historyError" :page="historyPage" :total-pages="historyPages" :total="historyTotal" :search="search" :english="english" :deleting-id="deletingId" :filters="historyFilters" @filters="applyHistoryFilters" @search="historySearch" @page="loadHistory" @retry="loadHistory(historyPage)" @open="openReading" @delete="removeReading" /></template>
+        <template v-if="mobileUser"><p v-if="historyCached" class="mobile-cache-note">{{ text('正在显示本机缓存，联网后可刷新最新记录。','Showing cached readings. Reconnect to refresh.') }}</p><MobileHistory :entries="history" :readers="referenceReaders" :loading="historyLoading" :loaded="historyLoaded" :error="historyError" :page="historyPage" :total-pages="historyPages" :total="historyTotal" :search="search" :english="english" :deleting-id="deletingId" :filters="historyFilters" @filters="applyHistoryFilters" @search="historySearch" @page="loadHistory" @retry="loadHistory(historyPage)" @open="openReading" @delete="removeReading" /></template>
         <div v-else class="mobile-empty"><span class="mobile-empty-icon" aria-hidden="true"><HistoryIcon :size="30" /></span><h1>{{ text('把启发留在这里。','Keep your insights here.') }}</h1><p>{{ text('登录后，原问题、牌面和追问会同步到你的账号。','Sign in to keep your questions, cards and conversations together.') }}</p><button type="button" class="mobile-primary" :disabled="!mobileSessionReady" @click="requestLogin('history')">{{ text('登录查看记录','Sign in to view history') }}</button></div>
       </section>
 
@@ -1241,4 +1265,6 @@ onBeforeUnmount(() => {
 </template>
 <style scoped>
 .mobile-deck button,.mobile-deck img,.mobile-slot-card img { background:#291d45; }
+.mobile-locked-cards { display:flex; flex-shrink:0; gap:5px; }
+.mobile-carried .mobile-locked-cards img { width:32px; height:55px; flex-shrink:0; }
 </style>
