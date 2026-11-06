@@ -6,6 +6,7 @@ import { readMobileValue, writeMobileValue, mobileSite } from './mobileStorage'
 import type { MobileReadingPayload, MobileFollowupPayload, MobileTask } from './types'
 import { mergeMobileQuota, validMobileRedemption, type MobileRedemption } from './mobileMembershipModel'
 import { nicknameInputError } from './mobileProfile'
+import { resolveMobileMediaUrl } from './mobileMediaUrl'
 
 const explicitBase = import.meta.env.VITE_PUBLIC_API_BASE_URL?.trim().replace(/\/+$/, '')
 const explicitOrigin = import.meta.env.VITE_PUBLIC_API_ORIGIN?.trim().replace(/\/+$/, '')
@@ -182,7 +183,14 @@ export async function uploadMobileAvatar(file: File) {
   profileRevision++
   const body = new FormData(); body.append('avatar', file)
   const response = await mobileApi.post('/user/avatar', body, { timeout: 30_000 })
-  return acceptProfileChange(response.data.data as User, generation, current.user.id)
+  confirmedMutation(response)
+  const profile = response.data.data as User | null
+  if (generation !== epoch || !session || session.user.id !== current.user.id || profile?.id !== current.user.id) throw new MobileSessionChangedError()
+  const avatar = profile.avatar
+  if (typeof avatar !== 'string' || !/^(https?:\/\/|\/uploads\/)/i.test(avatar) || !resolveMobileMediaUrl(avatar, mobileWebsiteOrigin)) throw new Error('Invalid avatar response')
+  // The upload only changes the avatar; its full response may predate a newer
+  // profile refresh, membership change or credit balance accepted while uploading.
+  return acceptProfileChange({ ...session.user, avatar }, generation, current.user.id)
 }
 export async function fetchMobileBirthInfo(): Promise<MobileBirthInfo> {
   const info = (await mobileApi.get('/user/birth-info')).data.data

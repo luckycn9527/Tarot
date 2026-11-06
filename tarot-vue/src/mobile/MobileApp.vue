@@ -47,7 +47,7 @@ import { useMobileYesterdayFortune } from './useMobileYesterdayFortune'
 import { useMobileCardBack } from './useMobileCardBack'
 import { initializeMobileUpdater, refreshMobileUpdater, quietlyCheckMobileUpdate, disposeMobileUpdater } from './mobileUpdater'
 import { mobileDeck, questionValid, followupValid, validDraft, validPendingTask, historyObject, savedFollowups } from './mobileModel'
-import { readMobileValue, writeMobileValue, mobileSite } from './mobileStorage'
+import { readMobileValue, writeMobileValue, verifyMobileValueRemoved, mobileSite } from './mobileStorage'
 import { mobileUser, mobileSessionReady, initializeMobileSession, loginMobile, logoutMobile, refreshMobileProfile,
   fetchMobileReference, fetchMobileHistory, fetchMobileReading, deleteMobileReading, postMobileTask, fetchMobileTask,
   mobileError, mobileHttpStatus, mobileRetryAfter, mobileWebsiteOrigin, uploadMobileAvatar, fetchMobileBirthInfo, saveMobileBirthInfo, saveMobileReadingOutcome, saveMobileNickname } from './mobileApi'
@@ -60,6 +60,7 @@ import { beginReadingRefresh, completedReadingId, completionIsVisible, consumeFo
 import { loadMobileHistoryPage } from './mobileHistoryLoader'
 import { createMobileReviewClock, reviewEligibleAt } from './mobileReviewClock'
 import { clearAccountData } from './mobileAccountData'
+import { abandonUnconfirmedFollowup, canAbandonUnconfirmedFollowup, type MobileTaskRecoveryState } from './mobileTaskRecoveryModel'
 import { isMobilePasswordReturnUrl, readMobilePasswordReturn, consumeMobilePasswordReturn, clearMobilePasswordReturn } from './mobilePasswordReturn'
 import type { MobileCompletionNotice, MobileHistoryReturn, MobileTaskFeedback } from './mobileNavigation'
 import './mobile.css'
@@ -106,6 +107,8 @@ const identifier = ref(''), password = ref(''), afterLogin = ref<'reading' | 'hi
 const pending = ref<PendingMobileTask | null>(null), taskBusy = ref(false), taskError = ref(''), taskNeedsResend = ref(false)
 const readingPreparation = ref<symbol | null>(null)
 const failedTask = ref<PendingMobileTask | null>(null), completionNotice = ref<MobileCompletionNotice | null>(null)
+const failedTaskCannotContinue = ref(false), taskRecoveryBusy = ref(false), taskPollBusy = ref(false)
+let taskRecoverySequence = 0
 const current = ref<MobileHistoryEntry | null>(null), currentLoading = ref(false), currentError = ref(''), cachedDetail = ref(false)
 const currentMissing = ref(false)
 const activeReadingId = ref<number | null>(null), followupDrafts = ref<Record<number, string>>({}), historyReturn = ref<MobileHistoryReturn | null>(null)
@@ -348,6 +351,13 @@ const currentTaskError = computed(() => {
     : !activeReadingId.value && (['waiting', 'reveal'].includes(phase.value) || (phase.value === 'question' && drawLocked.value)) && taskMatchesDraw(task, question.value, readerId.value, chosenCards.value) ? taskError.value : ''
 })
 const currentTaskNeedsResend = computed(() => !!currentPendingFollowup.value && taskNeedsResend.value)
+function taskRecoveryState(): MobileTaskRecoveryState {
+  return { owner: owner.value, readingId: activeReadingId.value, readingMissing: currentMissing.value, task: pending.value,
+    needsResend: taskNeedsResend.value, posting: taskBusy.value, polling: taskPollBusy.value }
+}
+const canRecoverMissingFollowup = computed(() => canAbandonUnconfirmedFollowup(taskRecoveryState()))
+const missingPendingFollowup = computed(() => currentMissing.value && taskBelongsToReading(pending.value, owner.value, activeReadingId.value))
+const abandonedCurrentFollowup = computed(() => failedTaskCannotContinue.value && taskBelongsToReading(failedTask.value, owner.value, activeReadingId.value))
 const pendingReadingQuestion = computed(() => pending.value?.owner === owner.value ? pending.value.payload.question : '')
 const pendingElsewhere = computed(() => !!pending.value && pending.value.owner === owner.value && !completionIsVisible(pending.value, owner.value, tab.value, phase.value, activeReadingId.value))
 const failedTaskElsewhere = computed(() => !!failedTask.value && failedTask.value.owner === owner.value && !!taskError.value && !currentTaskError.value)
@@ -490,7 +500,7 @@ const askResumeItems = computed<AskResumeItem[]>(() => {
   const items: AskResumeItem[] = []
   if (pending.value?.owner === owner.value) items.push({ id: `pending:${pending.value.requestId}`, kind: 'pending',
     title: pending.value.kind === 'followup' ? text('查看正在追问', 'View follow-up in progress') : text('查看正在解读', 'View reading in progress'), description: pending.value.payload.question })
-  if (failedTask.value?.owner === owner.value && failedTask.value.requestId !== pending.value?.requestId) items.push({ id: `failed:${failedTask.value.requestId}`, kind: 'failed', title: text('继续生成未完成的问卜', 'Retry an unfinished reading'), description: failedTask.value.payload.question })
+  if (failedTask.value?.owner === owner.value && failedTask.value.requestId !== pending.value?.requestId) items.push({ id: `failed:${failedTask.value.requestId}`, kind: 'failed', title: failedTaskCannotContinue.value ? text('查看未完成追问', 'View unfinished follow-up') : text('继续生成未完成的问卜', 'Retry an unfinished reading'), description: failedTask.value.payload.question })
   if (completionNotice.value?.owner === owner.value && completionNotice.value.readingId !== activeReadingId.value) items.push({ id: `completed:${completionNotice.value.requestId}`, kind: 'reading', title: text('查看刚完成的解读', 'Open your completed reading'), description: completionNotice.value.question })
   const snapshot = draftSnapshot()
   const activeKey = activeReadingId.value === null && hasAskDraftProgress(snapshot) ? askDraftKey(snapshot) : null
@@ -682,6 +692,7 @@ async function signOut() {
   finally { logoutBusy.value = false; void processPasswordReturn() }
 }
 function resetPrivate() {
+  taskRecoverySequence++; taskRecoveryBusy.value = false; taskPollBusy.value = false; failedTaskCannotContinue.value = false
   reviewSequence++; reviewSaving.value = false; reviewError.value = ''; historyFilters.value = { type: '', from: '', to: '' }
   window.clearTimeout(pollTimer); window.clearTimeout(draftTimer); historySequence++; detailSequence++; hydrationSequence++; restoringPrivate = true; pollingRequest = null
   readingRefreshVersions.clear(); historyRefreshNeeded = false
@@ -708,7 +719,7 @@ async function hydratePrivate(preserveCurrent = false, landingHome = false) {
     const [draft, savedPending, last, next, notice, historyView, savedFollowupDrafts, feedback, preference, savedAskDrafts] = await Promise.all([
       readMobileValue<MobileDraft>(key('draft', id)), readMobileValue<PendingMobileTask>(key('pending', id)), readMobileValue<MobileHistoryEntry>(key('last', id)), readMobileValue<MobileDraft>(key('next-draft', id)),
       readMobileValue<MobileCompletionNotice>(key('completion', id)), readMobileValue<MobileHistoryReturn>(key('history-view', id)),
-      readMobileValue<Record<number, string>>(key('followup-drafts', id)), readMobileValue<MobileTaskFeedback>(key('task-feedback', id)),
+      readMobileValue<Record<number, string>>(key('followup-drafts', id)), readMobileValue<MobileTaskFeedback & { recovery?: string }>(key('task-feedback', id)),
       readMobileValue<MobileReaderPreference>(key('reader-preference', id)),
       readMobileValue<unknown>(key('ask-drafts', id)),
     ])
@@ -737,14 +748,14 @@ async function hydratePrivate(preserveCurrent = false, landingHome = false) {
       if (last?.id === restoredDraft.readingId) { current.value = last; cachedDetail.value = true }
       void openReading(restoredDraft.readingId, false)
     } else if (restoredDraft && ['select', 'reveal'].includes(restoredDraft.phase)) { setReadingContext(null); if (!landingHome) tab.value = 'ask' }
-    if (feedback?.schema === 1 && validPendingTask(feedback.task, id) && typeof feedback.message === 'string') { failedTask.value = feedback.task; taskError.value = feedback.message }
+    if (feedback?.schema === 1 && validPendingTask(feedback.task, id) && typeof feedback.message === 'string') { failedTask.value = feedback.task; taskError.value = feedback.message; failedTaskCannotContinue.value = feedback.recovery === 'record-missing' && feedback.task.kind === 'followup' }
     if (validPendingTask(savedPending, id)) {
       if (preserveCurrent && hasAskDraftProgress(draftSnapshot())) {
         archivedAskDrafts.value = mergeSavedAskDrafts(archivedAskDrafts.value, [draftSnapshot()], id)
         await privateWrite('ask-drafts', archivedAskDrafts.value, id)
       }
       if (disposed || id !== owner.value || sequence !== hydrationSequence) return
-      pending.value = savedPending; failedTask.value = null; taskError.value = ''
+      pending.value = savedPending; failedTask.value = null; failedTaskCannotContinue.value = false; taskError.value = ''
       // A restored result may be another record the user was browsing while this request ran.
       if (!landingHome && (preserveCurrent || restoredDraft?.phase !== 'result')) await openPendingReading()
       void pollTask()
@@ -916,7 +927,7 @@ async function submitNewTask(kind: 'reading' | 'followup', payload: MobileReadin
   taskBusy.value = true; pending.value = task
   try { await privateWrite('pending', task) } catch { if (pending.value?.requestId === task.requestId) pending.value = null; taskBusy.value = false; return }
   if (owner.value !== task.owner || pending.value?.requestId !== task.requestId) { taskBusy.value = false; return }
-  failedTask.value = null; taskError.value = ''; taskNeedsResend.value = false; pollDelay = 5000
+  failedTask.value = null; failedTaskCannotContinue.value = false; taskError.value = ''; taskNeedsResend.value = false; pollDelay = 5000
   void privateWrite('task-feedback', null, task.owner).catch(() => {})
   if (kind === 'reading') phase.value = 'waiting'
   taskBusy.value = false
@@ -924,7 +935,7 @@ async function submitNewTask(kind: 'reading' | 'followup', payload: MobileReadin
 }
 async function transmitTask() {
   const task = pending.value
-  if (!task || task.owner !== owner.value || taskBusy.value || !online.value) return
+  if (!task || task.owner !== owner.value || taskBusy.value || taskRecoveryBusy.value || !online.value) return
   taskBusy.value = true; taskError.value = ''; taskNeedsResend.value = false
   try { await applyTask(await postMobileTask(task.kind, task.requestId, task.payload), task) }
   catch (error) {
@@ -945,8 +956,9 @@ function schedulePoll(delay = pollDelay) {
 async function pollTask() {
   const task = pending.value
   const token = task ? `${task.owner}:${task.requestId}` : null
-  if (!task || task.owner !== owner.value || pollingRequest === token || taskBusy.value || !online.value) { schedulePoll(); return }
+  if (!task || task.owner !== owner.value || pollingRequest === token || taskBusy.value || taskRecoveryBusy.value || !online.value) { schedulePoll(); return }
   pollingRequest = token
+  taskPollBusy.value = true
   try { await applyTask(await fetchMobileTask(task.requestId), task) }
   catch (error) {
     if (pending.value?.requestId !== task.requestId || owner.value !== task.owner) return
@@ -954,16 +966,51 @@ async function pollTask() {
       taskNeedsResend.value = true
       taskError.value = text('尚未确认提交成功。可安全重试原请求，牌面和请求编号保持不变。', 'Submission is unconfirmed. Retry the same request with the same cards.')
     } else { taskError.value = mobileError(error); schedulePoll(mobileHttpStatus(error) === 429 ? mobileRetryAfter(error) || 60_000 : Math.max(10_000, pollDelay)) }
-  } finally { if (pollingRequest === token) pollingRequest = null }
+  } finally { if (pollingRequest === token) { pollingRequest = null; taskPollBusy.value = false } }
 }
 function submittedTaskIsCurrent(task: PendingMobileTask) { return !disposed && owner.value === task.owner && pending.value?.requestId === task.requestId }
-async function clearSubmittedTask(task: PendingMobileTask) {
+async function clearSubmittedTask(task: PendingMobileTask, requireConfirmedRemoval = false) {
   const scope = { owner: task.owner, sequence: hydrationSequence }
   if (!submittedTaskIsCurrent(task)) return false
-  await privateWrite('pending', null, task.owner).catch(() => {})
+  if (requireConfirmedRemoval) {
+    await privateWrite('pending', null, task.owner)
+    await verifyMobileValueRemoved(key('pending', task.owner))
+  } else await privateWrite('pending', null, task.owner).catch(() => {})
   if (!submittedTaskIsCurrent(task) || !responseScopeIsCurrent(scope, owner.value, hydrationSequence, disposed)) return false
   pending.value = null
   return true
+}
+async function endMissingFollowupWait() {
+  if (taskRecoveryBusy.value || !online.value || !canAbandonUnconfirmedFollowup(taskRecoveryState())) return
+  const scope = { owner: owner.value, sequence: hydrationSequence }, action = ++taskRecoverySequence
+  const sameSession = () => action === taskRecoverySequence && responseScopeIsCurrent(scope, owner.value, hydrationSequence, disposed)
+  const message = text('原记录已不存在。这次追问不能继续，已结束本机等待；原追问内容仍保留。', 'The original reading is unavailable. This follow-up cannot continue; local waiting has ended and its text is kept.')
+  taskRecoveryBusy.value = true
+  try {
+    await abandonUnconfirmedFollowup({
+      state: taskRecoveryState, sameSession,
+      confirm: () => window.confirm(text('原记录已不存在，这次追问无法在该记录中继续。只移除本机未确认的等待状态，不会重新发送，也不会更改服务器处理结果。其他问题和草稿会保留。是否结束本机等待？', 'The original reading is unavailable. End only this app’s unconfirmed waiting state? This will not resend the follow-up or change any server processing. Your other questions and drafts are kept.')),
+      inspect: fetchMobileTask, isMissing: error => mobileHttpStatus(error) === 404,
+      accepted: async (status, task) => {
+        await applyTask(status, task)
+        if (sameSession() && status.status === 'running') notify(text('服务器已接收原追问，将继续核对进度。', 'The server has accepted the original follow-up. Its progress will keep being checked.'))
+      },
+      preserve: async task => {
+        const feedback = { schema: 1, task, message, recovery: 'record-missing' }
+        await privateWrite('task-feedback', feedback, task.owner)
+        const saved = await readMobileValue<unknown>(key('task-feedback', task.owner))
+        if (JSON.stringify(saved) !== JSON.stringify(feedback)) throw new Error('The original follow-up could not be preserved')
+      },
+      remove: task => clearSubmittedTask(task, true),
+      completed: task => {
+        failedTask.value = task; failedTaskCannotContinue.value = true; taskError.value = message; taskNeedsResend.value = false
+        window.clearTimeout(pollTimer)
+        notify(text('已结束本机等待，可开启新问卜。原追问内容已保留。', 'Local waiting has ended. You can start a new reading; the unfinished follow-up text is kept.'))
+      },
+    })
+  } catch {
+    if (sameSession()) notify(text('尚未能确认结束本机等待，原追问仍保留。请稍后重试。', 'Local waiting could not be confirmed ended. The original follow-up is kept; please retry.'))
+  } finally { if (action === taskRecoverySequence) taskRecoveryBusy.value = false }
 }
 async function failSubmittedTask(task: PendingMobileTask, message: string) {
   if (!submittedTaskIsCurrent(task)) return
@@ -972,7 +1019,7 @@ async function failSubmittedTask(task: PendingMobileTask, message: string) {
   if (!responseScopeIsCurrent(scope, owner.value, hydrationSequence, disposed)) return
   if (!await clearSubmittedTask(task)) return
   const visible = completionIsVisible(task, owner.value, tab.value, phase.value, activeReadingId.value)
-  failedTask.value = task; taskError.value = message; taskNeedsResend.value = false
+  failedTask.value = task; failedTaskCannotContinue.value = false; taskError.value = message; taskNeedsResend.value = false
   if (task.kind === 'reading' && visible) phase.value = carried.value && taskMatchesDraw(task, question.value, readerId.value, chosenCards.value) ? 'question' : 'reveal'
   if (!visible) notify(text('此前请求未完成，可回到原问题查看原因。', 'An earlier request failed. Return to its question for details.'))
 }
@@ -1394,6 +1441,8 @@ onBeforeUnmount(() => {
         </template>
         <template v-else>
           <p v-if="currentLoading" role="status" class="mobile-subtitle">{{ text('正在同步记录…','Syncing your reading…') }}</p><p v-if="currentError && current" role="alert" class="mobile-error">{{ currentError }}<button type="button" class="mobile-text-button" :disabled="currentLoading || !online" @click="retryCurrentReading">{{ text('重试','Retry') }}</button><button type="button" class="mobile-text-button" @click="returnToHistory">{{ text('返回记录','Back to readings') }}</button></p>
+          <div v-if="missingPendingFollowup" class="mobile-error mobile-orphan-followup" role="alert"><p>{{ taskNeedsResend ? text('原记录已不存在，这次追问尚未确认提交。可结束本机等待并开启新问卜。', 'The original reading is unavailable and this follow-up’s submission is unconfirmed. You can end local waiting and start a new reading.') : text('原记录已不存在，正在核对这次追问的处理状态。', 'The original reading is unavailable. This follow-up’s processing state is being checked.') }}</p><p>{{ pending?.payload.question }}</p><button v-if="canRecoverMissingFollowup" type="button" class="mobile-text-button mobile-abandon-followup" :disabled="taskRecoveryBusy || !online" @click="endMissingFollowupWait">{{ taskRecoveryBusy ? text('正在核对…', 'Checking…') : text('结束本机等待', 'End local waiting') }}</button><button v-else type="button" class="mobile-text-button" :disabled="taskBusy || taskPollBusy || taskRecoveryBusy || !online" @click="pollTask">{{ text('查看追问进度', 'Check follow-up progress') }}</button></div>
+          <div v-if="abandonedCurrentFollowup" class="mobile-cache-note mobile-abandoned-followup" role="status"><p>{{ text('原记录已不存在，这次追问不能继续。原文已保留，可开启新问卜。', 'The original reading is unavailable and this follow-up cannot continue. Its text is kept; you can start a new reading.') }}</p><p>{{ failedTask?.payload.question }}</p></div>
           <template v-if="current">
             <p v-if="cachedDetail" class="mobile-cache-note">{{ text('本机缓存 · 联网后同步最新记录', 'Cached copy · Syncs when connected') }}</p>
             <MobileReadingConversation :key="current.id" :entry="current" :english="english" :reader="readingReader" :reader-name="readingReaderName" :positions="readingPositions" :image-overrides="imageOverrides" :pending-question="pendingConversationQuestion" />
