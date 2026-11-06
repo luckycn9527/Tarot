@@ -26,6 +26,8 @@ import MobileReadingConversation from './components/MobileReadingConversation.vu
 import MobileReaderPicker from './components/MobileReaderPicker.vue'
 import MobileReaderAvatar from './components/MobileReaderAvatar.vue'
 import MobileUpdatePanel from './components/MobileUpdatePanel.vue'
+import MobileStoragePanel from './components/MobileStoragePanel.vue'
+import MobileHelpPanel from './components/MobileHelpPanel.vue'
 import MobileAccountPanel from './components/MobileAccountPanel.vue'
 import MobileAccountAccess from './components/MobileAccountAccess.vue'
 import MobileReadingReview from './components/MobileReadingReview.vue'
@@ -57,6 +59,8 @@ import { applyLocaleToDocument, setStoredLocale } from '@/utils/localeStorage'
 import { beginReadingRefresh, completedReadingId, completionIsVisible, consumeFollowupDraft, continueCardSelection, isDrawLocked, persistedDrawPhase, previousDrawPhase, restoredDrawPhase, responseScopeIsCurrent, taskBelongsToReading, taskMatchesDraw, taskReadingId, validCompletionNotice, validHistoryReturn } from './mobileNavigation'
 import { loadMobileHistoryPage } from './mobileHistoryLoader'
 import { createMobileReviewClock, reviewEligibleAt } from './mobileReviewClock'
+import { clearAccountData } from './mobileAccountData'
+import { isMobilePasswordReturnUrl, readMobilePasswordReturn, consumeMobilePasswordReturn, clearMobilePasswordReturn } from './mobilePasswordReturn'
 import type { MobileCompletionNotice, MobileHistoryReturn, MobileTaskFeedback } from './mobileNavigation'
 import './mobile.css'
 import './mobileReading.css'
@@ -124,8 +128,14 @@ const readingOutcome = computed(() => normalizeMobileOutcome((current.value?.res
 const reviewNow = ref(Date.now())
 const reviewEligible = computed(() => reviewEligibleAt(current.value?.createdAt, reviewNow.value, reviewTimeZone.value))
 const accountMode = ref<'register' | 'forgot' | 'password' | 'delete' | null>(null)
+const helpOpen = ref(false), helpPanel = ref<{ requestClose: () => void | Promise<void> } | null>(null)
+const cleanupOwner = ref<number | null>(null), cleanupBusy = ref(false)
+const showCleanupIssue = computed(() => cleanupOwner.value !== null && owner.value === null)
+let cleanupSequence = 0, passwordReturnQueued = false, passwordReturnProcessing = false
+let passwordReturnRecheck: { owner: number; until: number } | null = null
 const accountAccess = ref<{ requestClose: () => void } | null>(null)
 let accountAccessOwner: number | null = null
+let accountAccessSequence = 0
 let disposed = false, historySequence = 0, detailSequence = 0, hydrationSequence = 0, restoringPrivate = true
 let appInForeground = !document.hidden
 let readerSelectionSequence = 0
@@ -139,6 +149,79 @@ let pollTimer: number | undefined, draftTimer: number | undefined, toastTimer: n
 const handles: PluginListenerHandle[] = []
 const membershipNow = ref(Date.now())
 const owner = computed(() => mobileUser.value?.id ?? null)
+watch(owner, (id, previous) => {
+  helpOpen.value = false
+  if (passwordReturnRecheck && previous === passwordReturnRecheck.owner && id !== previous) {
+    const resume = id === null && Date.now() <= passwordReturnRecheck.until && accountMode.value !== 'delete' && accountMode.value !== 'password'
+    passwordReturnRecheck = null
+    if (resume) { passwordReturnQueued = true; void processPasswordReturn() }
+  }
+}, { flush: 'sync' })
+function openHelp() { if (startupReady.value && !logoutBusy.value) helpOpen.value = true }
+function closeHelp() { if (helpPanel.value) void helpPanel.value.requestClose(); else helpOpen.value = false }
+async function cleanSignedOutAccount(id: number) {
+  const action = ++cleanupSequence
+  cleanupBusy.value = true
+  try {
+    await clearAccountData(id)
+    if (action === cleanupSequence && cleanupOwner.value === id) cleanupOwner.value = null
+    return true
+  } catch {
+    if (action === cleanupSequence) cleanupOwner.value = id
+    return false
+  } finally { if (action === cleanupSequence) cleanupBusy.value = false }
+}
+async function retryAccountCleanup() {
+  const id = cleanupOwner.value
+  if (id === null || cleanupBusy.value || owner.value !== null) return
+  if (await cleanSignedOutAccount(id) && owner.value === null) notify(text('该账号的本机数据已清理。', 'Local data for the signed-out account has been removed.'))
+}
+function receivePasswordReturn(url: unknown) {
+  if (!isMobilePasswordReturnUrl(url)) return
+  passwordReturnQueued = true
+  void processPasswordReturn()
+}
+async function processPasswordReturn() {
+  if (!passwordReturnQueued || passwordReturnProcessing || !startupReady.value || !appInForeground || logoutBusy.value || disposed) return
+  passwordReturnProcessing = true; passwordReturnQueued = false
+  const signedOwner = owner.value, accessSequence = accountAccessSequence
+  try {
+    if (signedOwner !== null) {
+      const email = mobileUser.value?.email?.trim().toLowerCase()
+      const hint = await readMobilePasswordReturn(null).catch(() => null)
+      if (disposed) return
+      if (owner.value !== signedOwner) { if (owner.value === null) passwordReturnQueued = true; return }
+      // A normal 401 arriving after this signal may still end this same saved session.
+      // Only keep that continuation when the local hint belongs to this account's email.
+      if (hint && hint.email.toLowerCase() === email) passwordReturnRecheck = { owner: signedOwner, until: Date.now() + 60_000 }
+      notify(text('当前账号仍保持登录。可在账号页管理登录状态。', 'Your current account is still signed in. Manage sign-in from your account page.'))
+      return
+    }
+    if (helpOpen.value) {
+      await helpPanel.value?.requestClose()
+      if (helpOpen.value) { notify(text('请先保存或关闭当前反馈，再返回登录。', 'Save or close your feedback before returning to sign-in.')); return }
+    }
+    let hint: Awaited<ReturnType<typeof consumeMobilePasswordReturn>> = null
+    try { hint = await consumeMobilePasswordReturn(null) }
+    catch { if (owner.value === null) notify(text('找回提示暂时无法读取，请手动填写账号登录。', 'The saved sign-in hint could not be read. Enter your account manually.')) }
+    if (disposed || owner.value !== null || accessSequence !== accountAccessSequence) return
+    // Cold launch and appUrlOpen can deliver the same signal. An already-open
+    // form without a new hint must retain anything the user has just typed.
+    if (loginOpen.value && (!hint || accountMode.value !== 'forgot')) return
+    if (hint) identifier.value = hint.email
+    accountMode.value = null
+    requestLogin(afterLogin.value)
+    notify(text('已返回登录。你的问题、牌面和追问会保留。', 'Back to sign-in. Your question, cards and follow-up are kept.'))
+  } finally {
+    passwordReturnProcessing = false
+    if (passwordReturnQueued && startupReady.value && appInForeground && !logoutBusy.value && !disposed) void processPasswordReturn()
+  }
+}
+async function trackNativeHandle(promise: Promise<PluginListenerHandle>) {
+  const handle = await promise
+  if (disposed) await handle.remove()
+  else handles.push(handle)
+}
 const { open: membershipOpen, code: membershipCode, busy: redemptionBusy, syncing: membershipSyncing,
   error: redemptionError, profileError: membershipProfileError, profileUpdated: membershipProfileUpdated,
   grant: membershipGrant, show: showMembership, close: closeMembership, redeem: redeemMembership, refresh: syncMembership } = useMobileMembership({ owner, ready: startupReady, online, english })
@@ -483,21 +566,35 @@ function openAccountAccess(mode: NonNullable<typeof accountMode.value>) {
   if (!startupReady.value || loginBusy.value || logoutBusy.value) return
   if ((mode === 'password' || mode === 'delete') && !mobileUser.value) { requestLogin(); return }
   if (pending.value && (mode === 'password' || mode === 'delete')) { notify(text('请等当前问卜完成后再管理账号。', 'Finish the reading in progress before managing your account.')); return }
-  accountAccessOwner = owner.value; password.value = ''; accountMode.value = mode
+  accountAccessSequence++; accountAccessOwner = owner.value; password.value = ''; accountMode.value = mode
 }
 function closeAccountAccess() {
+  accountAccessSequence++
   accountMode.value = null
   if (loginOpen.value) void nextTick(() => loginDialog.value?.querySelector<HTMLInputElement>('input')?.focus())
 }
-function signInToAccount(value: string) {
+async function signInToAccount(value: string) {
+  const mode = accountMode.value, id = owner.value, accessOwner = accountAccessOwner, action = ++accountAccessSequence
+  let hintCleanupFailed = false
+  if (mode === 'forgot') {
+    if (id !== accessOwner) return
+    try { await consumeMobilePasswordReturn(id) }
+    catch { hintCleanupFailed = true }
+    if (disposed || action !== accountAccessSequence || owner.value !== id || accountAccessOwner !== accessOwner || accountMode.value !== mode) return
+  }
   closeAccountAccess(); identifier.value = value; password.value = ''; loginError.value = ''
   if (!loginOpen.value) requestLogin()
+  if (hintCleanupFailed) loginError.value = text('本机找回提示未能确认清理，请手动核对账号并输入密码。', 'The saved reset hint could not be confirmed removed. Check your account and enter your password manually.')
 }
 async function accountSessionEnded() {
   const deleted = accountMode.value === 'delete', id = accountAccessOwner
+  passwordReturnQueued = false; passwordReturnRecheck = null
   accountMode.value = null; loginOpen.value = false; tab.value = 'me'
-  if (deleted && id !== null) for (const name of ['draft','next-draft','ask-drafts','pending','last','history','completion','history-view','followup-drafts','task-feedback','daily-yesterday','reader-preference']) await privateWrite(name, null, id).catch(() => {})
-  notify(deleted ? text('账号已注销。', 'Your account has been deleted.') : text('密码已更新，请重新登录。', 'Password updated. Please sign in again.'))
+  const cleaned = !deleted || id === null || await cleanSignedOutAccount(id)
+  if (owner.value !== null) return
+  notify(deleted ? cleaned ? text('账号已注销，本机账号数据已清理。', 'Your account was deleted and its local data removed.')
+    : text('账号已注销，但部分本机数据未能清理，请重试清理。', 'Your account was deleted, but some local data could not be removed. Please retry cleanup.')
+    : text('密码已更新，请重新登录。', 'Password updated. Please sign in again.'))
   if (!deleted) requestLogin()
 }
 watch(loginOpen, async (login, wasLogin) => {
@@ -515,7 +612,7 @@ watch(loginOpen, async (login, wasLogin) => {
   }
 })
 function modalKeydown(event: KeyboardEvent) {
-  if (accountMode.value || nicknameOpen.value) return
+  if (accountMode.value || nicknameOpen.value || helpOpen.value) return
   const dialog = loginOpen.value ? loginDialog.value : null
   if (!dialog) return
   if (event.key === 'Escape') { event.preventDefault(); if (!loginBusy.value) { loginOpen.value = false; readersOpen.value = false } return }
@@ -536,6 +633,10 @@ async function signIn() {
     const preserveGuest = owner.value === null && (!!question.value.trim() || !!carried.value || !!selected.value.length)
     await loginMobile(identifier.value, password.value)
     const signedOwner = owner.value
+    await clearMobilePasswordReturn(null).catch(() => {
+      if (owner.value === signedOwner) storageError.value = text('已登录，但本机的找回提示暂未能清理。', 'You are signed in, but the saved password-return hint could not be removed.')
+    })
+    if (owner.value !== signedOwner) return
     password.value = ''; loginOpen.value = false
     const intent = afterLogin.value; afterLogin.value = null
     await hydratePrivate(intent === 'reading' || preserveGuest)
@@ -570,14 +671,15 @@ async function signOut() {
   const id = owner.value
   try {
     await logoutMobile()
-    for (const name of ['draft','next-draft','ask-drafts','pending','last','history','completion','history-view','followup-drafts','task-feedback','daily-yesterday']) await privateWrite(name, null, id).catch(() => {})
-    if (owner.value !== null) return
-    await privateWrite('draft', null, null).catch(() => {})
+    const cleaned = id === null || await cleanSignedOutAccount(id)
     if (owner.value !== null) return
     resetPrivate(); await hydratePrivate()
-    if (owner.value === null) tab.value = 'home'
+    if (owner.value === null) {
+      tab.value = 'home'
+      if (!cleaned) notify(text('已退出账号，但部分本机记录未能清理，请重试清理。', 'You are signed out, but some local data could not be removed. Please retry cleanup.'))
+    }
   } catch { notify(text('退出未完成，本机登录信息未能清理，请重试。', 'Sign-out could not finish. Your saved sign-in could not be removed. Please retry.')) }
-  finally { logoutBusy.value = false }
+  finally { logoutBusy.value = false; void processPasswordReturn() }
 }
 function resetPrivate() {
   reviewSequence++; reviewSaving.value = false; reviewError.value = ''; historyFilters.value = { type: '', from: '', to: '' }
@@ -764,6 +866,7 @@ function chooseCard(id: number) {
 function flip(id: number) { if (!revealed.value.includes(id)) { revealed.value = [...revealed.value, id]; tactile() } }
 function revealAll() { revealed.value = chosenCards.value.map(card => card.id); tactile() }
 function goBack() {
+  if (helpOpen.value) { closeHelp(); return }
   if (accountMode.value) { accountAccess.value?.requestClose(); return }
   if (membershipOpen.value) { closeMembership(); return }
   if (benefitsOpen.value) { closeBenefits(); return }
@@ -1144,7 +1247,7 @@ function onVisible() {
 }
 function applyForegroundState(active: boolean) {
   appInForeground = active
-  if (active) { refreshMembershipClock(); syncReviewClock(); void pollTask(); void refreshDailyFortune(); if (mobileUser.value) void refreshMobileProfile().catch(() => {}); void refreshMobileUpdater().then(quietlyCheckMobileUpdate) }
+  if (active) { refreshMembershipClock(); syncReviewClock(); void pollTask(); void refreshDailyFortune(); if (mobileUser.value) void refreshMobileProfile().catch(() => {}); void refreshMobileUpdater().then(quietlyCheckMobileUpdate); void processPasswordReturn() }
   else { stopReviewClock(); window.clearTimeout(pollTimer); void saveDraft().catch(() => {}) }
 }
 function viewportChanged() { if (!Capacitor.isNativePlatform() && window.visualViewport) keyboardOpen.value = window.innerHeight - window.visualViewport.height > 140 }
@@ -1153,6 +1256,10 @@ onMounted(async () => {
   window.addEventListener('online', onConnectivity); window.addEventListener('offline', onConnectivity); document.addEventListener('visibilitychange', onVisible)
   window.visualViewport?.addEventListener('resize', viewportChanged)
   window.addEventListener('keydown', modalKeydown)
+  if (Capacitor.isNativePlatform()) {
+    await trackNativeHandle(NativeApp.addListener('appUrlOpen', event => { receivePasswordReturn(event.url) })).catch(() => {})
+    await NativeApp.getLaunchUrl().then(launch => { receivePasswordReturn(launch?.url) }).catch(() => {})
+  }
   if (Capacitor.isNativePlatform()) { try { online.value = (await Network.getStatus()).connected } catch { /* browser connectivity remains available */ } }
   void loadReference()
   void initializeMobileUpdater()
@@ -1161,15 +1268,16 @@ onMounted(async () => {
   await hydratePrivate(false, true)
   if (disposed) return
   startupReady.value = true
+  void processPasswordReturn()
   void quietlyCheckMobileUpdate()
   if (online.value && mobileUser.value) void refreshMobileProfile().catch(() => {})
   if (!Capacitor.isNativePlatform() || disposed) return
-  const addHandle = async (promise: Promise<PluginListenerHandle>) => { const handle = await promise; if (disposed) await handle.remove(); else handles.push(handle) }
+  const addHandle = trackNativeHandle
   void addHandle(NativeApp.addListener('appStateChange', state => {
     applyForegroundState(state.isActive)
   })).catch(() => {})
   void addHandle(NativeApp.addListener('backButton', () => {
-    if (tab.value === 'home' && !accountMode.value && !loginOpen.value && !readersOpen.value && !yesterdayOpen.value && !membershipOpen.value && !benefitsOpen.value && !nicknameOpen.value) void NativeApp.exitApp()
+    if (tab.value === 'home' && !accountMode.value && !loginOpen.value && !readersOpen.value && !yesterdayOpen.value && !membershipOpen.value && !benefitsOpen.value && !nicknameOpen.value && !helpOpen.value) void NativeApp.exitApp()
     else goBack()
   })).catch(() => {})
   void addHandle(Network.addListener('networkStatusChange', status => { const reconnected = !online.value && status.connected; online.value = status.connected; if (reconnected) { void loadReference(); void pollTask(); refreshVisibleHistory() } })).catch(() => {})
@@ -1177,6 +1285,7 @@ onMounted(async () => {
   void addHandle(Keyboard.addListener('keyboardWillHide', () => { keyboardOpen.value = false })).catch(() => {})
 })
 onBeforeUnmount(() => {
+  passwordReturnQueued = false; passwordReturnRecheck = null
   stopReviewClock()
   disposeMobileUpdater()
   disposed = true; historySequence++; detailSequence++; window.clearTimeout(pollTimer); window.clearTimeout(draftTimer); window.clearTimeout(toastTimer); window.clearTimeout(membershipTimer)
@@ -1203,6 +1312,7 @@ onBeforeUnmount(() => {
     </header>
     <div v-if="!online || (referenceFailed && tab !== 'home')" class="mobile-offline" role="status">{{ tab === 'home' ? text('当前离线，可查看本机保存的今日运势。', 'You are offline. Saved daily fortunes remain available.') : text('离线牌库可用。问卜与云端同步需要网络。', 'Offline cards are ready. Readings and sync need a connection.') }}<button v-if="online" type="button" @click="loadReference">{{ text('重连', 'Retry') }}</button></div>
     <p v-if="storageError && tab !== 'home'" role="alert" class="mobile-error mobile-storage-error">{{ storageError }}</p>
+    <div v-if="showCleanupIssue" role="alert" class="mobile-error mobile-storage-error"><span>{{ text('已退出账号，但部分本机数据尚未清理。云端记录不受影响。', 'You are signed out, but some local account data still needs cleanup. Cloud readings are unchanged.') }}</span><button type="button" class="mobile-text-button" :disabled="cleanupBusy" @click="retryAccountCleanup">{{ cleanupBusy ? text('正在清理…', 'Cleaning…') : text('重试清理', 'Retry cleanup') }}</button></div>
     <div v-if="tab !== 'home' && !(tab === 'ask' && phase === 'question') && (pendingElsewhere || completionNotice || failedTaskElsewhere)" class="mobile-task-notices">
       <button v-if="pendingElsewhere" type="button" class="mobile-pending-link" @click="openPendingReading"><span>{{ text('正在解读', 'Reading in progress') }} · {{ pendingReadingQuestion }}</span><strong>{{ text('查看进度', 'View progress') }} →</strong></button>
       <button v-if="completionNotice" type="button" class="mobile-finished" @click="openCompletedReading"><span>{{ completionNotice.kind === 'followup' ? text('追问已完成', 'Your follow-up is ready') : text('解读已完成', 'Your reading is ready') }} · {{ completionNotice.question }}</span><strong>{{ text('点击查看', 'Open it') }} →</strong></button>
@@ -1306,8 +1416,9 @@ onBeforeUnmount(() => {
       </section>
 
       <section v-else :aria-label="text('我的','Me')" class="mobile-me">
-        <MobileAccountPanel :user="mobileUser" :active-vip="activeVip" :locale="String(locale)" :site="mobileSite" :session-ready="mobileSessionReady && startupReady" :logout-busy="logoutBusy" @login="requestLogin()" @logout="signOut" @update:locale="changeLanguage" @website="openWebsite" @avatar="openProfile('avatar')" @birth="openProfile('birth')" @nickname="openNickname" @history="changeTab('history')" @redeem="openMembership" @benefits="openBenefits" @security="openAccountAccess">
+        <MobileAccountPanel :user="mobileUser" :active-vip="activeVip" :locale="String(locale)" :site="mobileSite" :session-ready="mobileSessionReady && startupReady" :logout-busy="logoutBusy" @login="requestLogin()" @logout="signOut" @update:locale="changeLanguage" @website="openWebsite" @help="openHelp" @avatar="openProfile('avatar')" @birth="openProfile('birth')" @nickname="openNickname" @history="changeTab('history')" @redeem="openMembership" @benefits="openBenefits" @security="openAccountAccess">
           <template #updates><MobileUpdatePanel :english="english" /></template>
+          <template #storage><MobileStoragePanel :key="owner ?? 'guest'" :english="english" /></template>
         </MobileAccountPanel>
       </section>
     </main>
@@ -1315,10 +1426,11 @@ onBeforeUnmount(() => {
     <div v-if="toast" role="status" class="mobile-toast">{{ toast }}</div>
     <MobileYesterdayFortune :open="yesterdayOpen" :busy="yesterdayBusy" :error="yesterdayError" :english="english" :response="yesterdayResponse" :cached="yesterdayCached" @close="closeYesterday" @retry="retryYesterday" />
     <div v-if="loginOpen && !accountMode" class="mobile-modal-backdrop" @click.self="!loginBusy && (loginOpen = false)"><section ref="loginDialog" role="dialog" aria-modal="true" aria-labelledby="mobile-login-title" class="mobile-modal"><button type="button" class="mobile-close" :aria-label="text('关闭','Close')" :disabled="loginBusy" @click="loginOpen = false"><XIcon :size="20" /></button><p class="mobile-eyebrow">E-Tomd</p><h2 id="mobile-login-title">{{ text('欢迎回来。','Welcome back.') }}</h2><p>{{ afterLogin === 'daily' ? text('登录后查看并保存今日运势。', 'Sign in to reveal and save today’s fortune.') : text('使用对应地区的网站账号，你的问题和选牌会保留。','Use your regional website account. Your question and cards are kept.') }}</p><form @submit.prevent="signIn"><label for="mobile-identifier" class="mobile-label">{{ text('邮箱或用户名','Email or username') }}</label><input id="mobile-identifier" v-model="identifier" class="mobile-input" autocomplete="username" autocapitalize="none" :disabled="loginBusy" required><label for="mobile-password" class="mobile-label">{{ text('密码','Password') }}</label><input id="mobile-password" v-model="password" class="mobile-input" type="password" autocomplete="current-password" :disabled="loginBusy" required><p v-if="loginError" class="mobile-error" role="alert">{{ loginError }}</p><button type="submit" class="mobile-primary" :disabled="loginBusy">{{ loginBusy ? text('正在登录…','Signing in…') : text('登录并继续','Sign in and continue') }}</button></form><div class="mobile-auth-links"><button type="button" class="mobile-text-button" :disabled="loginBusy" @click="openAccountAccess('register')">{{ text('创建账号','Create an account') }}</button><button type="button" class="mobile-text-button" :disabled="loginBusy" @click="openAccountAccess('forgot')">{{ text('忘记密码','Forgot password') }}</button></div></section></div>
-    <MobileAccountAccess v-if="accountMode" ref="accountAccess" :key="accountMode" :mode="accountMode" :english="english" :online="online" :email="mobileUser?.email || identifier" @close="closeAccountAccess" @signin="signInToAccount" @session-ended="accountSessionEnded" />
+    <MobileAccountAccess v-if="accountMode" ref="accountAccess" :key="accountMode" :mode="accountMode" :owner="owner" :english="english" :online="online" :email="mobileUser?.email || identifier" @close="closeAccountAccess" @signin="signInToAccount" @session-ended="accountSessionEnded" />
     <MobileReaderPicker :open="readersOpen" :readers="availableReaders" :selected-id="readerId" :loading="referenceLoading" :error="readerLoadError" :unavailable-message="readerUnavailableMessage" :english="english" @select="selectReader" @close="readersOpen = false" @retry="loadReference" />
     <MobileProfileEditor v-if="profileMode && profileUser" :key="profileMode" :mode="profileMode" :user="profileUser" :english="english" :busy="profileBusy" :loading="profileLoading" :error="profileError" @close="closeProfile" @avatar="updateAvatar" @birth="updateBirth" @retry="loadBirthProfile" @change="profileError = ''" />
     <MobileNicknameEditor v-if="nicknameOpen" :nickname="nicknameInitial" :english="english" :busy="nicknameBusy" :error="nicknameError" @close="closeNickname" @save="updateNickname" @change="nicknameError = ''" />
+    <MobileHelpPanel v-if="helpOpen" ref="helpPanel" :key="owner ?? 'guest'" :owner="owner" :english="english" :online="online" @close="helpOpen = false" />
     <MobileMembershipBenefits v-if="benefitsOpen" :user="mobileUser" :active-vip="activeVip" :english="english" :online="online" @close="closeBenefits" @redeem="redeemFromBenefits" />
     <MobileMembershipRedeem v-if="membershipOpen" v-model:code="membershipCode" :english="english" :busy="redemptionBusy" :syncing="membershipSyncing" :error="redemptionError" :profile-error="membershipProfileError" :profile-updated="membershipProfileUpdated" :grant="membershipGrant" :return-to-benefits="membershipReturnsToBenefits" @close="closeMembership" @submit="redeemMembership" @refresh="syncMembership" />
   </div>

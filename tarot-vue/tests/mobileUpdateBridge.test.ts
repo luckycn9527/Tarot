@@ -26,9 +26,9 @@ function state(patch: Partial<UpdateState> = {}): UpdateState {
       downloadUrl: 'https://121.40.27.226:9443/downloads/E-Tomd-0.1.9-domestic-debug.apk',
       releaseNotes: ['更新说明'], publishedAt: '2026-10-29T12:00:00Z' }, ...patch }
 }
-function boot(getState: () => Promise<UpdateState>) {
+function boot(getState: () => Promise<UpdateState>, operations: Record<string, (...args: any[]) => unknown> = {}) {
   let notify!: (value: UpdateState) => void
-  const native = { getState, addListener: async (_: string, listener: typeof notify) => { notify = listener; return { remove: async () => {} } } }
+  const native = { getState, addListener: async (_: string, listener: typeof notify) => { notify = listener; return { remove: async () => {} } }, ...operations }
   const module = { exports: {} }
   new Function('require', 'module', 'exports', '__native', 'window', compiled.outputFiles[0]!.text)(
     require, module, module.exports, native, {},
@@ -74,5 +74,76 @@ test('a newer native recovery event wins over the pending older state read', asy
   assert.equal(fixture.updater.mobileUpdateState.value.errorCode, 'SETTINGS_FAILED')
   assert.equal(fixture.updater.mobileUpdateState.value.downloadReady, true)
   assert.equal(fixture.updater.mobileUpdateState.value.installPermissionGranted, false)
+  fixture.updater.disposeMobileUpdater()
+})
+
+const cache = { scope: 'update-cache', bytes: 136, files: 2, busy: false, canClear: true }
+const emptyCache = { scope: 'update-cache', bytes: 0, files: 0, busy: false, canClear: false }
+
+test('storage reads expose only the fixed update-cache statistics', async () => {
+  const fixture = boot(async () => state(), { getStorageInfo: async () => ({ ...cache, path: '/private/device/cache' }) })
+  await fixture.updater.initializeMobileUpdater()
+  assert.deepEqual(await fixture.updater.getMobileStorageInfo(), cache)
+  fixture.updater.disposeMobileUpdater()
+})
+
+test('a busy cleanup failure preserves the active updater and keeps native diagnostics private', async () => {
+  const fixture = boot(async () => state({ status: 'downloading', downloadReady: false, progress: 42 }), {
+    clearUpdateCache: async () => { throw { code: 'UPDATER_BUSY', message: 'private file and network details' } },
+  })
+  await fixture.updater.initializeMobileUpdater()
+  const before = JSON.parse(JSON.stringify(fixture.updater.mobileUpdateState.value))
+  await assert.rejects(fixture.updater.clearMobileUpdateCache(), error => {
+    assert.equal((error as any).code, 'UPDATER_BUSY')
+    assert.equal(String(error).includes('private'), false)
+    return true
+  })
+  assert.deepEqual(fixture.updater.mobileUpdateState.value, before)
+  fixture.updater.disposeMobileUpdater()
+})
+
+test('successful cleanup removes install readiness and returns the actual cleared byte count', async () => {
+  const fixture = boot(async () => state(), { clearUpdateCache: async () => ({ storage: emptyCache, clearedBytes: 136, removedFiles: 2,
+    updateState: state({ status: 'available', downloadReady: false, downloadedBytes: 0, progress: 0, errorCode: undefined }) }) })
+  await fixture.updater.initializeMobileUpdater()
+  assert.deepEqual(await fixture.updater.clearMobileUpdateCache(), { storage: emptyCache, clearedBytes: 136, removedFiles: 2 })
+  assert.equal(fixture.updater.mobileUpdateState.value.downloadReady, false)
+  assert.equal(fixture.updater.mobileUpdateState.value.status, 'available')
+  fixture.updater.disposeMobileUpdater()
+})
+
+test('a delayed cleanup response cannot replace a newer native download event', async () => {
+  const fixture = boot(async () => state(), { clearUpdateCache: async () => {
+    fixture.notify(state({ status: 'downloading', downloadReady: false, progress: 15, errorCode: undefined }))
+    return { storage: emptyCache, clearedBytes: 136, removedFiles: 2,
+      updateState: state({ status: 'available', downloadReady: false, downloadedBytes: 0, progress: 0, errorCode: undefined }) }
+  } })
+  await fixture.updater.initializeMobileUpdater()
+  await fixture.updater.clearMobileUpdateCache()
+  assert.equal(fixture.updater.mobileUpdateState.value.status, 'downloading')
+  assert.equal(fixture.updater.mobileUpdateState.value.progress, 15)
+  fixture.updater.disposeMobileUpdater()
+})
+
+test('partial cleanup failure does not advertise an APK that native already removed', async () => {
+  const remaining = { ...cache, bytes: 16, files: 1 }
+  const fixture = boot(async () => state(), { clearUpdateCache: async () => ({ storage: remaining, clearedBytes: 120, removedFiles: 1, errorCode: 'CACHE_IO_ERROR',
+    updateState: state({ status: 'available', downloadReady: false, downloadedBytes: 0, progress: 0, errorCode: undefined }) }) })
+  await fixture.updater.initializeMobileUpdater()
+  await assert.rejects(fixture.updater.clearMobileUpdateCache(), error => (error as any).code === 'CACHE_IO_ERROR')
+  assert.equal(fixture.updater.mobileUpdateState.value.downloadReady, false)
+  assert.equal(fixture.updater.mobileUpdateState.value.status, 'available')
+  fixture.updater.disposeMobileUpdater()
+})
+
+test('invalid or unavailable cache data is a panel error and never an updater error', async () => {
+  const fixture = boot(async () => state({ status: 'downloading', downloadReady: false }), {
+    getStorageInfo: async () => ({ ...cache, bytes: -1 }),
+    clearUpdateCache: async () => { throw { code: 'UNKNOWN_NATIVE_ERROR', message: 'private' } },
+  })
+  await fixture.updater.initializeMobileUpdater()
+  await assert.rejects(fixture.updater.getMobileStorageInfo(), error => (error as any).code === 'STORAGE_UNAVAILABLE')
+  await assert.rejects(fixture.updater.clearMobileUpdateCache(), error => (error as any).code === 'STORAGE_UNAVAILABLE')
+  assert.equal(fixture.updater.mobileUpdateState.value.status, 'downloading')
   fixture.updater.disposeMobileUpdater()
 })

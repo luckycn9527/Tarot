@@ -7,6 +7,9 @@ import android.content.pm.Signature;
 import android.net.Uri;
 import android.os.Build;
 import android.provider.Settings;
+import android.system.ErrnoException;
+import android.system.Os;
+import android.system.OsConstants;
 import androidx.core.content.FileProvider;
 import com.getcapacitor.JSObject;
 import com.getcapacitor.Plugin;
@@ -50,7 +53,7 @@ public class AppUpdaterPlugin extends Plugin {
     private long generation;
     private String status = "idle", errorCode, message, currentVersion = "";
     private long currentVersionCode, downloadedBytes, totalBytes;
-    private boolean downloadReady;
+    private boolean downloadReady, cacheClearing;
     private JSONObject latest;
     private File directory, partFile, apkFile, manifestFile;
 
@@ -74,6 +77,90 @@ public class AppUpdaterPlugin extends Plugin {
     }
 
     @PluginMethod public void getState(PluginCall call) { call.resolve(snapshot()); }
+
+    @PluginMethod public void getStorageInfo(PluginCall call) {
+        synchronized (lock) {
+            try {
+                rejectCacheLinks();
+                call.resolve(storageSnapshot(UpdateCacheStorage.inspect(getContext().getCacheDir())));
+            } catch (Exception error) { call.reject("Update cache could not be read", storageCode(error)); }
+        }
+    }
+
+    @PluginMethod public void clearUpdateCache(PluginCall call) {
+        final long token;
+        synchronized (lock) {
+            if (busy()) { call.reject("Wait for the current update operation", "UPDATER_BUSY"); return; }
+            token = ++generation;
+            cacheClearing = true;
+            emit();
+        }
+        // A cancelled download can still be closing its streams. Queue cleanup
+        // after that work, while the reservation prevents new transfers/installers.
+        try { worker.execute(() -> {
+            synchronized (lock) {
+                if (token != generation) { cacheClearing = false; call.reject("Update operation changed", "UPDATER_BUSY"); return; }
+                try {
+                    rejectCacheLinks();
+                    UpdateCacheStorage.Cleared cleared = UpdateCacheStorage.clear(getContext().getCacheDir());
+                    cacheClearing = false;
+                    discardCachedDownloadState();
+                    JSObject result = new JSObject();
+                    result.put("storage", storageSnapshot(cleared.remaining));
+                    result.put("clearedBytes", cleared.bytes);
+                    result.put("removedFiles", cleared.files);
+                    result.put("updateState", snapshot());
+                    if (!cleared.complete) result.put("errorCode", "CACHE_IO_ERROR");
+                    call.resolve(result);
+                } catch (Exception error) {
+                    cacheClearing = false;
+                    // A failed preflight removed nothing; retain the update state.
+                    // If a file was removed before a later I/O error, never claim
+                    // its cached APK is still ready to install.
+                    if (!apkFile.isFile()) discardCachedDownloadState();
+                    else emit();
+                    call.reject("Update cache could not be cleared", storageCode(error));
+                }
+            }
+        }); } catch (Exception error) {
+            synchronized (lock) { cacheClearing = false; emit(); }
+            call.reject("Update cache could not be cleared", "CACHE_IO_ERROR");
+        }
+    }
+
+    private void discardCachedDownloadState() {
+        downloadReady = false;
+        downloadedBytes = 0;
+        totalBytes = latest == null ? 0 : latest.optLong("bytes");
+        String next = latest == null ? "idle" : latest.optLong("versionCode") <= currentVersionCode ? "upToDate"
+            : latest.optInt("minSdk") <= Build.VERSION.SDK_INT ? "available" : "error";
+        change(next, "error".equals(next) ? "INCOMPATIBLE_SDK" : null, null);
+    }
+
+    private JSObject storageSnapshot(UpdateCacheStorage.Stats stats) {
+        JSObject result = new JSObject();
+        result.put("scope", "update-cache");
+        result.put("bytes", stats.bytes);
+        result.put("files", stats.files);
+        result.put("busy", busy());
+        result.put("canClear", !busy() && stats.files > 0);
+        return result;
+    }
+    private static String storageCode(Exception error) {
+        return error instanceof UpdateCacheStorage.Failure ? ((UpdateCacheStorage.Failure) error).code : "CACHE_IO_ERROR";
+    }
+    private void rejectCacheLinks() throws Exception {
+        File root = new File(getContext().getCacheDir().getCanonicalFile(), "updates");
+        rejectLink(root);
+        for (String name : UpdateCacheStorage.NAMES) rejectLink(new File(root, name));
+    }
+    private static void rejectLink(File file) throws Exception {
+        try {
+            if (OsConstants.S_ISLNK(Os.lstat(file.getAbsolutePath()).st_mode)) throw new UpdateCacheStorage.Failure("CACHE_UNSAFE_PATH");
+        } catch (ErrnoException error) {
+            if (error.errno != OsConstants.ENOENT) throw new UpdateCacheStorage.Failure("CACHE_IO_ERROR");
+        }
+    }
 
     @PluginMethod public void checkForUpdate(PluginCall call) {
         final long token;
@@ -245,7 +332,7 @@ public class AppUpdaterPlugin extends Plugin {
     }
 
     private boolean busy() {
-        return "checking".equals(status) || "downloading".equals(status) || "verifying".equals(status) || "installing".equals(status);
+        return cacheClearing || "checking".equals(status) || "downloading".equals(status) || "verifying".equals(status) || "installing".equals(status);
     }
     private boolean installPermission() {
         return Build.VERSION.SDK_INT < 26 || getContext().getPackageManager().canRequestPackageInstalls();
@@ -264,6 +351,7 @@ public class AppUpdaterPlugin extends Plugin {
             result.put("progress", totalBytes > 0 ? Math.min(100, Math.max(0, downloadedBytes * 100 / totalBytes)) : 0);
             result.put("installPermissionGranted", installPermission());
             result.put("downloadReady", downloadReady && latest != null && apkFile.isFile());
+            result.put("cacheClearing", cacheClearing);
             if (latest != null) result.put("latest", latest);
             if (errorCode != null) result.put("errorCode", errorCode);
             if (message != null) result.put("message", message);

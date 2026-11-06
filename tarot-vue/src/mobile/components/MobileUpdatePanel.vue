@@ -8,7 +8,7 @@ const props = defineProps<{ english: boolean }>()
 const t = (zh: string, en: string) => props.english ? en : zh
 const state = mobileUpdateState
 const working = ref(false)
-const busy = computed(() => isUpdateBusy(state.value.status))
+const busy = computed(() => !!state.value.cacheClearing || isUpdateBusy(state.value.status))
 const newer = computed(() => mobileUpdaterSupported && !!state.value.latest && classifyUpdate(state.value.latest, state.value.currentVersionCode, state.value.sdkInt) === 'available')
 const notes = computed(() => props.english ? state.value.latest?.releaseNotesEn || state.value.latest?.releaseNotes : state.value.latest?.releaseNotes)
 const size = computed(() => state.value.latest ? `${(state.value.latest.bytes / 1024 / 1024).toFixed(1)} MB` : '')
@@ -30,7 +30,7 @@ const statusText = computed(() => {
   if (status === 'error') return recovery.value.message
   return t('检查新版，查看更新内容并在这里下载安装。', 'Check what’s new and download updates here.')
 })
-async function act(action: () => Promise<void>) { if (working.value) return; working.value = true; try { await action() } finally { working.value = false } }
+async function act(action: () => Promise<void>) { if (working.value || state.value.cacheClearing) return; working.value = true; try { await action() } finally { working.value = false } }
 async function recover() {
   const actions = { install: installMobileUpdate, settings: openMobileInstallSettings, download: downloadMobileUpdate, refresh: refreshMobileUpdater, check: checkMobileUpdate }
   const action = recovery.value.action
@@ -52,10 +52,10 @@ async function recover() {
     </div>
     <div v-if="mobileUpdaterSupported" class="mobile-update-actions" :class="{ 'mobile-update-actions-expanded': newer || ['downloading', 'downloaded', 'permissionRequired', 'installing'].includes(state.status) }">
       <button v-if="state.status === 'downloading'" type="button" class="mobile-secondary" @click="cancelMobileUpdate">{{ t('取消下载', 'Cancel download') }}</button>
-      <button v-else-if="state.status === 'downloaded' || state.status === 'permissionRequired'" type="button" class="mobile-primary" :disabled="working" @click="act(state.installPermissionGranted ? installMobileUpdate : openMobileInstallSettings)">{{ state.installPermissionGranted ? t('安装更新', 'Install update') : t('允许安装此来源', 'Allow app updates') }}</button>
+      <button v-else-if="state.status === 'downloaded' || state.status === 'permissionRequired'" type="button" class="mobile-primary" :disabled="working || state.cacheClearing" @click="act(state.installPermissionGranted ? installMobileUpdate : openMobileInstallSettings)">{{ state.installPermissionGranted ? t('安装更新', 'Install update') : t('允许安装此来源', 'Allow app updates') }}</button>
       <button v-else-if="state.status === 'installing'" type="button" class="mobile-secondary" :disabled="working" @click="act(refreshMobileUpdater)">{{ t('返回后重试', 'Retry after returning') }}</button>
-      <button v-else-if="state.status === 'error' && recovery.action && recovery.action !== 'check'" type="button" class="mobile-primary" :disabled="working" @click="recover">{{ recovery.label }}</button>
-      <button v-else-if="newer && ['available', 'cancelled'].includes(state.status)" type="button" class="mobile-primary" :disabled="working" @click="act(downloadMobileUpdate)">{{ state.status === 'available' ? t('下载更新', 'Download update') : t('重新下载', 'Download again') }}</button>
+      <button v-else-if="state.status === 'error' && recovery.action && recovery.action !== 'check'" type="button" class="mobile-primary" :disabled="working || state.cacheClearing" @click="recover">{{ recovery.label }}</button>
+      <button v-else-if="newer && ['available', 'cancelled'].includes(state.status)" type="button" class="mobile-primary" :disabled="working || state.cacheClearing" @click="act(downloadMobileUpdate)">{{ state.status === 'available' ? t('下载更新', 'Download update') : t('重新下载', 'Download again') }}</button>
       <button type="button" class="mobile-update-check" :disabled="busy || working" @click="act(checkMobileUpdate)">{{ state.status === 'checking' ? t('正在检查…', 'Checking…') : t('检查更新', 'Check for updates') }}</button>
     </div>
   </section>

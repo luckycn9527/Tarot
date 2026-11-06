@@ -20,6 +20,12 @@ export async function readMobileValue<T>(key: string): Promise<T | null> {
   if (raw === null || raw === undefined) return null
   try { return (typeof raw === 'string' ? JSON.parse(raw) : raw) as T } catch { return null }
 }
+/** Verify selected cleanup targets without treating corrupt or JSON-null data as absent. */
+export async function verifyMobileValueRemoved(key: string): Promise<void> {
+  await initialize(); await writes.catch(() => {})
+  const raw = Capacitor.isNativePlatform() ? await SecureStorage.getItem(key) : sessionStorage.getItem(prefix + key)
+  if (raw !== null && raw !== undefined) throw new Error('Local data remains after removal')
+}
 export function writeMobileValue(key: string, value: unknown): Promise<void> {
   const operation = writes.catch(() => {}).then(async () => {
     await initialize()

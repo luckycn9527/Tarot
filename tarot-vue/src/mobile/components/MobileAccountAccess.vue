@@ -10,14 +10,15 @@ import {
   finishAccountAccessRequest, registrationAccountPayload, registrationCodeSeconds,
   type AccountAccessFields, type AccountAccessIssue, type MobileAccountAccessMode,
 } from '../mobileAccountAccessModel'
+import { rememberMobilePasswordReturn } from '../mobilePasswordReturn'
 
-const props = defineProps<{ mode: MobileAccountAccessMode; english: boolean; online: boolean; email?: string }>()
+const props = defineProps<{ mode: MobileAccountAccessMode; english: boolean; online: boolean; email?: string; owner?: number | null }>()
 const emit = defineEmits<{ close: []; signin: [identifier: string]; 'session-ended': [] }>()
 const t = (zh: string, en: string) => props.english ? en : zh
 const dialog = ref<HTMLElement | null>(null), resultPanel = ref<HTMLElement | null>(null)
 const fields = reactive<AccountAccessFields>({ email: props.email || '', emailCode: '', nickname: '', password: '', repeatPassword: '', oldPassword: '', deleteConfirmed: false })
 const state = reactive(createAccountAccessState())
-const issue = ref<AccountAccessIssue | null>(null), error = ref(''), codeNotice = ref(''), now = ref(Date.now())
+const issue = ref<AccountAccessIssue | null>(null), error = ref(''), codeNotice = ref(''), returnNotice = ref(''), now = ref(Date.now())
 const busy = computed(() => Boolean(state.pending))
 const completed = computed(() => state.result !== 'editing')
 const cooldown = computed(() => registrationCodeSeconds(state.codeAvailableAt, now.value))
@@ -77,8 +78,12 @@ async function submit() {
       fields.password = ''; fields.repeatPassword = ''; fields.emailCode = ''
       await showResult()
     } else if (props.mode === 'forgot') {
-      await requestMobilePasswordReset(fields.email.trim())
-      if (disposed) return
+      const email = fields.email.trim(), owner = props.owner ?? null
+      await requestMobilePasswordReset(email)
+      if (disposed || owner !== (props.owner ?? null)) return
+      try { await rememberMobilePasswordReturn(email, owner) }
+      catch { returnNotice.value = t('重置邮件请求已提交，但暂时无法记住返回信息。登录时请手动输入邮箱。', 'Your reset request was submitted, but this app could not remember the return details. Enter your email manually when signing in.') }
+      if (disposed || owner !== (props.owner ?? null)) return
       finishAccountAccessRequest(state, 'reset-sent'); await showResult()
     } else {
       if (props.mode === 'password') await changeMobilePassword(fields.oldPassword, fields.password)
@@ -92,7 +97,7 @@ async function submit() {
   } finally { if (!disposed) finishAccountAccessRequest(state) }
 }
 function signIn() {
-  if (state.result !== 'registered' || signinEmitted) return
+  if (!['registered', 'reset-sent'].includes(state.result) || signinEmitted) return
   signinEmitted = true; emit('signin', fields.email.trim())
 }
 function keydown(event: KeyboardEvent) {
@@ -134,9 +139,12 @@ onBeforeUnmount(() => {
         </template>
         <template v-else-if="state.result === 'reset-sent'">
           <h3>{{ t('请查看邮箱', 'Check your email') }}</h3>
-          <p>{{ t('如果该邮箱已注册，你将收到密码重置邮件。请查看收件箱和垃圾邮件，并在邮件打开的网站页面中设置新密码，然后返回 App 登录。', 'If this email is registered, you will receive a password reset email. Check your inbox and spam folder. Set a new password on the website opened by the email link, then return to this app to sign in.') }}</p>
+          <p>{{ t('重置请求已提交。若该邮箱已注册，请查看收件箱或垃圾邮件中的重置链接。', 'Your reset request has been submitted. If this email is registered, check your inbox and spam folder for the reset link.') }}</p>
           <p class="account-access-email">{{ fields.email.trim() }}</p>
-          <button class="account-access-primary" type="button" @click="close">{{ t('知道了', 'Done') }}</button>
+          <ol class="account-access-reset-steps"><li>{{ t('打开邮件里的安全重置链接。', 'Open the secure reset link in the email.') }}</li><li>{{ t('在网页中设置并确认新密码。', 'Set and confirm your new password on the website.') }}</li><li>{{ t('点击网页中的“返回安卓 APP”，或手动回到这里登录。', 'Tap “Return to Android app” on the website, or return here manually to sign in.') }}</li></ol>
+          <p v-if="returnNotice" class="account-access-hint" role="status">{{ returnNotice }}</p>
+          <button class="account-access-primary" type="button" @click="signIn">{{ t('返回登录', 'Return to sign in') }}</button>
+          <button class="account-access-reset-later" type="button" @click="close">{{ t('稍后再登录', 'Sign in later') }}</button>
         </template>
         <template v-else><p>{{ mode === 'delete' ? t('账号已注销。', 'Your account has been deleted.') : t('密码已修改，请重新登录。', 'Password changed. Please sign in again.') }}</p><button class="account-access-primary" type="button" @click="close">{{ t('关闭', 'Close') }}</button></template>
       </div>
@@ -207,6 +215,9 @@ onBeforeUnmount(() => {
 .account-access-result h3 { margin: 0 0 12px; font-size: 18px; font-weight: 500; }
 .account-access-result .account-access-email { color: var(--m-text, #f1ecf4); }
 .account-access-result > button { width: 100%; }
+.account-access-reset-steps { margin: 16px 0 20px; padding-left: 22px; color: var(--m-muted, #b6a8c6); font-size: 13px; line-height: 1.9; }
+.account-access-reset-steps li + li { margin-top: 7px; }
+.account-access-reset-later { margin-top: 10px; background: transparent; color: var(--m-text, #f1ecf4); }
 @media (max-height: 600px) { .account-access-backdrop { align-items: flex-start; padding-block: 12px; } .account-access { max-height: calc(100dvh - 24px); padding: 20px; } .account-access header { margin-bottom: 15px; } .account-access-note { margin-bottom: 14px; } }
 @media (prefers-reduced-motion: reduce) { .account-access-backdrop { backdrop-filter: none; } }
 </style>

@@ -3,6 +3,7 @@ import { Capacitor, registerPlugin, type PluginListenerHandle } from '@capacitor
 import version from '../../mobile-version.json'
 import { mobileSite } from './mobileStorage'
 import { classifyUpdate, isUpdateBusy, validateUpdateManifest, UPDATE_APPLICATION_ID, type UpdateState, type UpdateStatus } from './mobileUpdateModel'
+import { parseMobileStorageInfo, parseMobileStorageClearResult, type MobileStorageInfo, type MobileStorageClearResult } from './mobileStorageManagement'
 
 interface UpdaterPlugin {
   getState(): Promise<UpdateState>
@@ -11,6 +12,8 @@ interface UpdaterPlugin {
   cancelDownload(): Promise<UpdateState>
   installUpdate(): Promise<UpdateState>
   openInstallSettings(): Promise<UpdateState>
+  getStorageInfo(): Promise<MobileStorageInfo>
+  clearUpdateCache(): Promise<MobileStorageClearResult & { updateState?: UpdateState; errorCode?: string }>
   addListener(event: 'updateState', listener: (state: UpdateState) => void): Promise<PluginListenerHandle>
 }
 declare global { interface Window { __ETOMD_UPDATER_QA__?: UpdaterPlugin } }
@@ -55,6 +58,7 @@ function accept(value: UpdateState) {
     downloadedBytes: Math.max(0, Number(value.downloadedBytes) || 0), totalBytes: Math.max(0, Number(value.totalBytes) || 0),
     progress: Math.min(100, Math.max(0, Number(value.progress) || 0)), installPermissionGranted: value.installPermissionGranted === true,
     downloadReady: value.downloadReady === true,
+    cacheClearing: value.cacheClearing === true,
     ...(errorCode ? { errorCode } : {}) }
 }
 
@@ -95,11 +99,43 @@ export async function cancelMobileUpdate() { await invoke('cancelDownload') }
 export async function installMobileUpdate() { await invoke('installUpdate') }
 export async function openMobileInstallSettings() { await invoke('openInstallSettings') }
 
+const storageCodes = ['UPDATER_BUSY', 'CACHE_UNSAFE_PATH', 'CACHE_IO_ERROR', 'STORAGE_UNAVAILABLE'] as const
+export class MobileStorageOperationError extends Error {
+  readonly code: typeof storageCodes[number]
+  constructor(error: unknown) {
+    super('Update cache operation could not be completed')
+    const code = error && typeof error === 'object' ? (error as { code?: unknown }).code : undefined
+    this.code = storageCodes.find(value => value === code) || 'STORAGE_UNAVAILABLE'
+  }
+}
+export async function getMobileStorageInfo(): Promise<MobileStorageInfo> {
+  if (!plugin || !mobileUpdaterSupported) throw new MobileStorageOperationError(null)
+  try { return parseMobileStorageInfo(await plugin.getStorageInfo()) }
+  catch (error) { throw new MobileStorageOperationError(error) }
+}
+export async function clearMobileUpdateCache(): Promise<MobileStorageClearResult> {
+  if (!plugin || !mobileUpdaterSupported) throw new MobileStorageOperationError(null)
+  const generation = epoch, beforeEvents = events
+  try {
+    const result = await plugin.clearUpdateCache()
+    // The native cleanup emits the resulting updater snapshot. Never let an
+    // older clear callback overwrite a newer update operation's event.
+    if (result.updateState && generation === epoch && beforeEvents === events) accept(result.updateState)
+    const parsed = parseMobileStorageClearResult(result)
+    if (result.errorCode) throw { code: result.errorCode }
+    return parsed
+  } catch (error) {
+    // A storage operation failure is local to its panel. In particular, a busy
+    // rejection must not turn an active download into an updater error.
+    throw new MobileStorageOperationError(error)
+  }
+}
+
 export async function quietlyCheckMobileUpdate() {
   if (!mobileUpdaterSupported) return
   await initializeMobileUpdater()
   const state = mobileUpdateState.value
-  if (isUpdateBusy(state.status) || ['available', 'downloaded', 'permissionRequired'].includes(state.status)) return
+  if (state.cacheClearing || isUpdateBusy(state.status) || ['available', 'downloaded', 'permissionRequired'].includes(state.status)) return
   try { quietCheckedAt = Math.max(quietCheckedAt, Number(localStorage.getItem(quietKey)) || 0) } catch { /* memory throttle remains available */ }
   const now = Date.now()
   if (quietCheckedAt > now) quietCheckedAt = 0

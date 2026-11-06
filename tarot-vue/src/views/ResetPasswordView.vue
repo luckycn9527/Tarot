@@ -1,11 +1,12 @@
 <script setup lang="ts">
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, nextTick, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import Lock from '@icons/lock.vue'
 import Eye from '@icons/eye.vue'
 import EyeOff from '@icons/eye-off.vue'
 import { useAuth } from '@/composables/useAuth'
+import { MOBILE_PASSWORD_RETURN_URL, supportsAndroidPasswordReturn } from '@/mobile/mobilePasswordReturnModel'
 
 const route = useRoute()
 const router = useRouter()
@@ -19,10 +20,14 @@ const showPassword = ref(false)
 const submitting = ref(false)
 const error = ref('')
 const success = ref(false)
+const androidReturn = ref(false)
+const appReturnAttempted = ref(false)
+const successPanel = ref<HTMLElement | null>(null)
 
 onMounted(() => {
   const q = route.query.token
   token.value = typeof q === 'string' ? q : ''
+  androidReturn.value = supportsAndroidPasswordReturn(navigator.userAgent)
 })
 
 const canSubmit = computed(() => token.value.length >= 32 && newPassword.value.length >= 6 && newPassword.value === confirmPassword.value)
@@ -44,7 +49,11 @@ async function submit() {
     const r = await resetPasswordWithToken(token.value, newPassword.value)
     if (r.ok) {
       success.value = true
-      setTimeout(() => router.push('/login'), 2000)
+      // The token has been used. Do not retain it in the page or forward any
+      // part of this query to the app's parameter-free return signal.
+      token.value = ''; newPassword.value = ''; confirmPassword.value = ''
+      await router.replace({ path: '/reset-password', query: {} }).catch(() => {})
+      await nextTick(); successPanel.value?.focus()
     } else {
       error.value = r.message
     }
@@ -62,8 +71,12 @@ async function submit() {
         <p class="text-gray-400 text-sm">{{ t('pages.resetPassword.heroSub') }}</p>
       </div>
 
-      <div v-if="success" class="text-center text-green-400/90 text-sm py-4">
-        {{ t('pages.resetPassword.success') }}
+      <div v-if="success" ref="successPanel" class="reset-success text-center text-sm py-4" role="status" tabindex="-1">
+        <p class="text-green-400/90">{{ t('pages.resetPassword.success') }}</p>
+        <p class="reset-success-note">{{ t('pages.resetPassword.returnHint') }}</p>
+        <a v-if="androidReturn" :href="MOBILE_PASSWORD_RETURN_URL" rel="noreferrer" class="reset-app-return cta-button" @click="appReturnAttempted = true">{{ t('pages.resetPassword.returnApp') }}</a>
+        <p v-if="appReturnAttempted" class="reset-success-note">{{ t('pages.resetPassword.returnFallback') }}</p>
+        <RouterLink to="/login" class="reset-web-login">{{ t('pages.resetPassword.webLogin') }}</RouterLink>
       </div>
 
       <form v-else @submit.prevent="submit">
@@ -112,9 +125,17 @@ async function submit() {
         </button>
       </form>
 
-      <div class="mt-6 text-center">
+      <div v-if="!success" class="mt-6 text-center">
         <RouterLink to="/login" class="text-gold-400 hover:text-gold-300 text-sm">{{ t('pages.resetPassword.backLogin') }}</RouterLink>
       </div>
     </div>
   </div>
 </template>
+
+<style scoped>
+.reset-success-note { margin: 14px 0 0; color: #b6adbf; line-height: 1.8; overflow-wrap: anywhere; }
+.reset-success { outline: none; }
+.reset-app-return { display: flex; align-items: center; justify-content: center; min-height: 48px; margin-top: 22px; padding: 12px 16px; border-radius: 12px; color: #fff; font-weight: 600; line-height: 1.5; }
+.reset-web-login { display: flex; align-items: center; justify-content: center; min-height: 48px; margin-top: 12px; padding: 10px 14px; border: 1px solid #cbb0ed44; border-radius: 12px; color: #d5b8f0; line-height: 1.5; }
+.reset-success a:focus-visible { outline: 2px solid #cbb0ed; outline-offset: 4px; }
+</style>

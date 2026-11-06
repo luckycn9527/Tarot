@@ -1,8 +1,18 @@
 # E-Tomd 原生工程与内测构建
 
-当前 Android 体验版本：`0.1.23`，`versionCode=24`（仅国内 APK，已发布并通过公开 HTTPS 字节校验；交付目录 `output/app-foundations-0.1.23-20261106/`）。
+当前 Android 体验版本：`0.1.24`，`versionCode=25`（仅国内 APK，已封存发布并通过公开 HTTPS 全字节校验；交付目录 `output/app-foundations-0.1.24-20261106/`）。
 `0.1.0` / `0.1.1` 旧包和封存记录保留。
 iOS 源工程同步为 `0.1.21 / build 22`；Mac 操作见 [IOS_BUILD.md](./IOS_BUILD.md)。本轮没有进行 Xcode 编译、签名或 iPhone 真机验收。
+
+## 2026-11-06 APP 帮助、存储与密码找回衔接：0.1.24
+
+- APP 内增加「帮助与反馈」：常见问题、反馈草稿、失败后的手动重试，以及默认关闭的诊断信息选项；仅服务器明确确认后显示送达成功。
+- 个人中心显示更新缓存的实际占用，可确认清理；更新忙碌时禁止清理，保留账号、草稿与云端记录。退出及注销只物理移除当前账号的 15 类本机数据，保护其他账号、游客和全局偏好。
+- 邮件网页重置密码成功后可主动返回安卓 APP；冷启动、热启动和手动返回均可预填原邮箱，密码留空、登录仍需本人确认，重复返回不覆盖正在输入的内容，也不强退已登录的其他账号。
+- 国内网页及 `0.1.24 / versionCode 25` APK 已发布。网页完成 index 与构建元数据核验；应用内更新的 APK、校验文件、版本元数据和 feed 共 4 个公网文件均完成 HTTPS 全字节核验，旧下载保持不变。
+- 281 项前端测试、4 项发布器测试通过；原生 JVM 6 项通过、1 项 Windows 符号链接场景跳过，已在 Android API35 补充实际符号链接拒绝验证。最终 APK 覆盖安装与装机字节回读、浏览器及原生关键流程通过，模拟业务与隔离更新客户端的范围见 [RELEASE_20261106_APP_FOUNDATIONS_BATCH2.md](./RELEASE_20261106_APP_FOUNDATIONS_BATCH2.md)。
+- 可在「我的 → 版本更新」升级，或下载 [国内 APK](https://121.40.27.226:9443/downloads/E-Tomd-0.1.24-domestic-debug.apk)。封存与源码快照见 `output/app-foundations-0.1.24-20261106/verification.json`、`source-snapshot.json`，实际发布见同目录 `publication.json`。
+- 未修改后端、PM2、Nginx、数据库或服务器环境，未新增海外 APK；iOS 工程未升级为 0.1.24。生产 PM2 的邮件公共 origin 原已正确指向国内 HTTPS IP，本轮只读核实。
 
 ## 2026-11-06 APP 基础功能完善：0.1.23
 

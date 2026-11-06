@@ -40,6 +40,8 @@ export interface UpdateState extends InstalledAppInfo {
   installPermissionGranted: boolean
   /** Native confirms a complete, verified APK is still present; installation verifies it again. */
   downloadReady?: boolean
+  /** Cache cleanup reserves the same native updater queue without changing its status enum. */
+  cacheClearing?: boolean
   errorCode?: string
   message?: string
 }

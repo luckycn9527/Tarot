@@ -29,6 +29,7 @@ const emit = defineEmits<{
   redeem: []
   benefits: []
   security: [mode: 'password' | 'delete']
+  help: []
   'update:locale': [value: string]
   website: [path: string]
 }>()
@@ -68,11 +69,12 @@ const membershipDate = computed(() => {
 })
 const supportLinks = computed(() => [
   { path: '/privacy', label: t('隐私政策', 'Privacy policy') },
-  { path: '/feedback', label: t('问题反馈', 'Feedback') },
+  { path: null, label: t('帮助与反馈', 'Help & feedback') },
   { path: '/terms', label: t('使用条款', 'Terms of use') },
 ])
 function editAvatar() { if (props.user) emit('avatar'); else emit('login') }
 function editBirth() { if (props.user) emit('birth'); else emit('login') }
+function openSupport(path: string | null) { if (path) emit('website', path); else emit('help') }
 function toggleProfile() {
   if (!props.user) { emit('login'); return }
   profileExpanded.value = !profileExpanded.value
@@ -136,9 +138,10 @@ function showPreferences() {
     <section ref="preferences" class="account-group account-preferences" :aria-label="t('偏好设置', 'Preferences')">
       <div class="account-setting-row account-language-row"><Globe :size="23" :stroke-width="1.5" aria-hidden="true" /><label for="account-language" class="account-row-label">{{ t('语言', 'Language') }}</label><select id="account-language" ref="languageSelect" v-model="language" :disabled="unavailable"><option value="zh-CN">简体中文</option><option value="en-US">English</option></select><ChevronRight :size="18" :stroke-width="1.5" aria-hidden="true" /></div>
       <div v-if="$slots.updates" class="account-updates"><slot name="updates" /></div>
+      <div v-if="$slots.storage" class="account-updates"><slot name="storage" /></div>
     </section>
 
-    <nav class="account-support-links" :aria-label="t('支持与关于', 'Support & about')"><button v-for="link in supportLinks" :key="link.path" type="button" class="account-link" :disabled="unavailable" @click="emit('website', link.path)">{{ link.label }}</button></nav>
+    <nav class="account-support-links" :aria-label="t('支持与关于', 'Support & about')"><button v-for="link in supportLinks" :key="link.path || 'help'" type="button" class="account-link" :disabled="unavailable" @click="openSupport(link.path)">{{ link.label }}</button></nav>
     <button v-if="user" type="button" class="account-logout" :disabled="unavailable" @click="emit('logout')">{{ logoutBusy ? t('正在退出…', 'Signing out…') : t('退出登录', 'Sign out') }}</button>
     <p class="account-region">{{ t('服务地区', 'Service region') }} · {{ site === 'domestic' ? t('国内站', 'Mainland China') : t('海外站', 'Global') }}</p>
   </section>
