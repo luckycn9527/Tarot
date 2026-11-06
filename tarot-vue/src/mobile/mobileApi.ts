@@ -81,6 +81,33 @@ export async function loginMobile(identifier: string, password: string) {
   const response = await anonymous.post('/auth/native/login', { identifier: identifier.trim(), password })
   await acceptSession(response.data.data, generation)
 }
+function confirmedMutation(response: { data: { success?: boolean; message?: string } }) {
+  if (response.data?.success !== true) throw new Error(response.data?.message || 'The operation could not be confirmed')
+}
+export async function sendMobileRegistrationCode(email: string) {
+  confirmedMutation(await anonymous.post('/auth/send-register-code', { email: email.trim() }))
+}
+export async function registerMobileAccount(value: { email: string; emailCode: string; nickname: string; password: string }) {
+  confirmedMutation(await anonymous.post('/auth/register', { ...value, email: value.email.trim(), nickname: value.nickname.trim() }))
+}
+export async function requestMobilePasswordReset(email: string) {
+  confirmedMutation(await anonymous.post('/auth/forgot-password', { email: email.trim() }))
+}
+export async function changeMobilePassword(oldPassword: string, newPassword: string) {
+  const generation = epoch
+  confirmedMutation(await mobileApi.put('/user/password', { oldPassword, newPassword }))
+  if (generation !== epoch) throw new MobileSessionChangedError()
+  const token = session?.refreshToken
+  if (token) await mobileApi.post('/auth/native/logout', { refreshToken: token }).catch(() => {})
+  if (generation !== epoch) throw new MobileSessionChangedError()
+  await forgetMobileSession()
+}
+export async function deleteMobileAccount(password: string) {
+  const generation = epoch
+  confirmedMutation(await mobileApi.delete('/user/account', { data: { password } }))
+  if (generation !== epoch) throw new MobileSessionChangedError()
+  await forgetMobileSession()
+}
 export async function forgetMobileSession() {
   epoch++; session = null; mobileUser.value = null
   await writeMobileValue('session', null)
@@ -147,11 +174,14 @@ export async function redeemMobileInvitation(code: string): Promise<MobileRedemp
   return { type: response.data.data.type, value: response.data.data.value }
 }
 export async function fetchMobileReference() { return (await anonymous.get('/reference/core', { timeout: 10_000 })).data.data }
-export async function fetchMobileHistory(options: { page: number; search?: string }) {
+export async function fetchMobileHistory(options: { page: number; search?: string; type?: string; dateFrom?: string; dateTo?: string }) {
   return (await mobileApi.get('/readings/history', { params: { ...options, limit: 12 } })).data.data as HistoryPage
 }
 export async function fetchMobileReading(id: number) { return (await mobileApi.get(`/readings/history/${id}`)).data.data as ReadingHistoryEntry }
 export async function deleteMobileReading(id: number) { await mobileApi.delete(`/readings/history/${id}`) }
+export async function saveMobileReadingOutcome(id: number, rating: 'full' | 'partial' | 'none') {
+  confirmedMutation(await mobileApi.post(`/readings/history/${id}/outcome`, { rating }))
+}
 export async function postMobileTask(kind: 'reading' | 'followup', requestId: string, payload: MobileReadingPayload | MobileFollowupPayload) {
   return (await mobileApi.post(kind === 'reading' ? '/mobile/readings' : '/mobile/followups', { ...payload, requestId })).data.data as MobileTask
 }

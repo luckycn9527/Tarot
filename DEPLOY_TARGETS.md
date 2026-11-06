@@ -1,5 +1,7 @@
 # Deployment Targets
 
+> 2026-11-06: domestic frontend and Android 0.1.21/build 22 published; overseas frontend remains pending because its SSH entry closes before authentication. See [docs/RELEASE_20261106.md](./docs/RELEASE_20261106.md) for current evidence and rollback. Historical entries below retain their original verification dates.
+
 > 2026-11-05 repository handoff: the deployment entries below are historical snapshots from their stated verification dates. Current mobile source is version 0.1.20/build 21; iOS preparation is documented in [docs/IOS_BUILD.md](./docs/IOS_BUILD.md). This Git update does not deploy either site.
 
 Last verified: `2026-10-28`. Start with [MAINTENANCE_HANDOFF.md](./MAINTENANCE_HANDOFF.md)

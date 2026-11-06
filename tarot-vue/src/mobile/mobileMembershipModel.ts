@@ -16,6 +16,10 @@ export function mergeMobileQuota(user: User, value: unknown): User {
   if (!quota || typeof quota !== 'object') return user
   const next = { ...user }
   if (Number.isSafeInteger(quota.remaining) && Number(quota.remaining) >= 0) next.remainingFreeQuota = Number(quota.remaining)
+  if (typeof quota.resetsAt === 'string' && Number.isFinite(Date.parse(quota.resetsAt))) next.quotaResetsAt = quota.resetsAt
+  if (typeof quota.timeZone === 'string') {
+    try { new Intl.DateTimeFormat('en', { timeZone: quota.timeZone }); next.quotaTimeZone = quota.timeZone } catch { /* retain the last valid zone */ }
+  }
   if ((quota.membership === 'vip' || quota.membership === 'free') &&
       (quota.membershipExpiresAt === null || (typeof quota.membershipExpiresAt === 'string' && Number.isFinite(Date.parse(quota.membershipExpiresAt))))) {
     next.membership = quota.membership

@@ -148,7 +148,7 @@ export const pagesZh = {
     faqTitle: '常见问题',
     emailLabel: '邮箱地址',
     emailHint: '（选填，用于回复您的反馈）',
-    emailPlaceholder: 'your@email.com',
+    emailPlaceholder: "your{'@'}email.com",
     contentLabel: '反馈内容',
     contentHint: '（至少10个字）',
     contentPlaceholder: '请详细描述您的建议或遇到的问题...',

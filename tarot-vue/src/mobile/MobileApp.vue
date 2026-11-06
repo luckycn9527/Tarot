@@ -27,6 +27,9 @@ import MobileReaderPicker from './components/MobileReaderPicker.vue'
 import MobileReaderAvatar from './components/MobileReaderAvatar.vue'
 import MobileUpdatePanel from './components/MobileUpdatePanel.vue'
 import MobileAccountPanel from './components/MobileAccountPanel.vue'
+import MobileAccountAccess from './components/MobileAccountAccess.vue'
+import MobileReadingReview from './components/MobileReadingReview.vue'
+import { historyFilterError, normalizeMobileOutcome, type MobileHistoryFilters } from './mobileHistoryModel'
 import MobileProfileEditor from './components/MobileProfileEditor.vue'
 import MobileMembershipRedeem from './components/MobileMembershipRedeem.vue'
 import MobileMembershipBenefits from './components/MobileMembershipBenefits.vue'
@@ -44,7 +47,7 @@ import { mobileDeck, questionValid, followupValid, validDraft, validPendingTask,
 import { readMobileValue, writeMobileValue, mobileSite } from './mobileStorage'
 import { mobileUser, mobileSessionReady, initializeMobileSession, loginMobile, logoutMobile, refreshMobileProfile,
   fetchMobileReference, fetchMobileHistory, fetchMobileReading, deleteMobileReading, postMobileTask, fetchMobileTask,
-  mobileError, mobileHttpStatus, mobileRetryAfter, mobileWebsiteOrigin, uploadMobileAvatar, fetchMobileBirthInfo, saveMobileBirthInfo } from './mobileApi'
+  mobileError, mobileHttpStatus, mobileRetryAfter, mobileWebsiteOrigin, uploadMobileAvatar, fetchMobileBirthInfo, saveMobileBirthInfo, saveMobileReadingOutcome } from './mobileApi'
 import type { MobileCard, MobileReader, MobileSpread, MobileDraft, PendingMobileTask, MobileTask, MobileHistoryEntry, MobileReadingPayload, MobileFollowupPayload, MobileReaderPreference } from './types'
 import { availableMobileReaders, defaultMobileReaderId, restoredMobileReaderId, resolveReadingReader, validReaderPreference } from './mobileReaderModel'
 import type { ReaderReadingResult } from '@/services/tarotAiReading'
@@ -101,6 +104,25 @@ const activeReadingId = ref<number | null>(null), followupDrafts = ref<Record<nu
 const followup = ref(''), toast = ref(''), storageError = ref(''), operationError = ref('')
 const history = ref<MobileHistoryEntry[]>([]), historyLoading = ref(false), historyError = ref(''), historyPage = ref(1), historyPages = ref(1), historyTotal = ref(0), search = ref(''), historyCached = ref(false)
 const deletingId = ref<number | null>(null), logoutBusy = ref(false)
+const historyFilters = ref<MobileHistoryFilters>({ type: '', from: '', to: '' })
+const reviewSaving = ref(false), reviewError = ref('')
+const quotaRefreshing = ref(false)
+async function refreshQuota() {
+  if (quotaRefreshing.value || !mobileUser.value || !online.value) return
+  const id = owner.value; quotaRefreshing.value = true
+  try { await refreshMobileProfile() }
+  catch (error) { if (id === owner.value) notify(mobileError(error)) }
+  finally { quotaRefreshing.value = false }
+}
+let reviewSequence = 0
+const readingOutcome = computed(() => normalizeMobileOutcome((current.value?.resultData as { outcome?: unknown } | null)?.outcome))
+const reviewEligible = computed(() => {
+  const created = new Date(current.value?.createdAt || '')
+  return Number.isFinite(created.getTime()) && created.getTime() <= membershipNow.value && created.toDateString() !== new Date(membershipNow.value).toDateString()
+})
+const accountMode = ref<'register' | 'forgot' | 'password' | 'delete' | null>(null)
+const accountAccess = ref<{ requestClose: () => void } | null>(null)
+let accountAccessOwner: number | null = null
 let disposed = false, historySequence = 0, detailSequence = 0, hydrationSequence = 0, restoringPrivate = true
 let readerSelectionSequence = 0
 let drawIntentRevision = 0
@@ -407,6 +429,27 @@ function loadReference(): Promise<void> {
   return referenceRequest
 }
 function requestLogin(intent: typeof afterLogin.value = null) { if (!startupReady.value || logoutBusy.value) return; afterLogin.value = intent; loginError.value = ''; password.value = ''; loginOpen.value = true }
+function openAccountAccess(mode: NonNullable<typeof accountMode.value>) {
+  if (!startupReady.value || loginBusy.value || logoutBusy.value) return
+  if ((mode === 'password' || mode === 'delete') && !mobileUser.value) { requestLogin(); return }
+  if (pending.value && (mode === 'password' || mode === 'delete')) { notify(text('请等当前问卜完成后再管理账号。', 'Finish the reading in progress before managing your account.')); return }
+  accountAccessOwner = owner.value; password.value = ''; accountMode.value = mode
+}
+function closeAccountAccess() {
+  accountMode.value = null
+  if (loginOpen.value) void nextTick(() => loginDialog.value?.querySelector<HTMLInputElement>('input')?.focus())
+}
+function signInToAccount(value: string) {
+  closeAccountAccess(); identifier.value = value; password.value = ''; loginError.value = ''
+  if (!loginOpen.value) requestLogin()
+}
+async function accountSessionEnded() {
+  const deleted = accountMode.value === 'delete', id = accountAccessOwner
+  accountMode.value = null; loginOpen.value = false; tab.value = 'me'
+  if (deleted && id !== null) for (const name of ['draft','next-draft','ask-drafts','pending','last','history','completion','history-view','followup-drafts','task-feedback','daily-yesterday','reader-preference']) await privateWrite(name, null, id).catch(() => {})
+  notify(deleted ? text('账号已注销。', 'Your account has been deleted.') : text('密码已更新，请重新登录。', 'Password updated. Please sign in again.'))
+  if (!deleted) requestLogin()
+}
 watch(loginOpen, async (login, wasLogin) => {
   if (login && !wasLogin) focusBeforeDialog = document.activeElement instanceof HTMLElement ? document.activeElement : null
   const returnToBenefits = !login && wasLogin && afterLogin.value === 'benefits-redeem'
@@ -422,6 +465,7 @@ watch(loginOpen, async (login, wasLogin) => {
   }
 })
 function modalKeydown(event: KeyboardEvent) {
+  if (accountMode.value) return
   const dialog = loginOpen.value ? loginDialog.value : null
   if (!dialog) return
   if (event.key === 'Escape') { event.preventDefault(); if (!loginBusy.value) { loginOpen.value = false; readersOpen.value = false } return }
@@ -483,6 +527,7 @@ async function signOut() {
   }
 }
 function resetPrivate() {
+  reviewSequence++; reviewSaving.value = false; reviewError.value = ''; historyFilters.value = { type: '', from: '', to: '' }
   window.clearTimeout(pollTimer); window.clearTimeout(draftTimer); historySequence++; detailSequence++; hydrationSequence++; restoringPrivate = true; pollingRequest = null
   readingRefreshVersions.clear(); historyRefreshNeeded = false
   pending.value = null; failedTask.value = null; current.value = null; nextDraft.value = null; taskError.value = ''; currentError.value = ''; followup.value = ''
@@ -527,7 +572,7 @@ async function hydratePrivate(preserveCurrent = false, landingHome = false) {
       followupDrafts.value = Object.fromEntries(Object.entries(savedFollowupDrafts).filter(([readingId, value]) => Number.isSafeInteger(Number(readingId)) && Number(readingId) > 0 && typeof value === 'string' && value.length <= 200))
     }
     if (validCompletionNotice(notice, id)) completionNotice.value = notice
-    if (validHistoryReturn(historyView, id)) { historyReturn.value = historyView; historyPage.value = historyView.page; search.value = historyView.search }
+    if (validHistoryReturn(historyView, id)) { historyReturn.value = historyView; historyPage.value = historyView.page; search.value = historyView.search.slice(0, 100); historyFilters.value = historyView.filters || { type: '', from: '', to: '' } }
     const restoredDraft = !preserveCurrent && validDraft(draft, id) ? draft : null
     if (restoredDraft) applyDraft(restoredDraft)
     else if (!preserveCurrent) readerId.value = restoredMobileReaderId(undefined, readerPreference.value, referenceReaders.value)
@@ -559,7 +604,7 @@ async function hydratePrivate(preserveCurrent = false, landingHome = false) {
 }
 function rememberHistory() {
   if (owner.value === null || tab.value !== 'history') return
-  historyReturn.value = { schema: 1, owner: owner.value, page: historyPage.value, search: search.value, scrollY: Math.max(0, window.scrollY), savedAt: Date.now() }
+  historyReturn.value = { schema: 1, owner: owner.value, page: historyPage.value, search: search.value, filters: { ...historyFilters.value }, scrollY: Math.max(0, window.scrollY), savedAt: Date.now() }
   void privateWrite('history-view', historyReturn.value).catch(() => {})
 }
 async function returnToHistory() {
@@ -570,6 +615,7 @@ async function returnToHistory() {
   // Returning to a populated list must also pick up readings completed elsewhere.
   const needsLoad = online.value || !history.value.length || historyPage.value !== targetPage || search.value !== targetSearch
   search.value = targetSearch
+  if (state?.filters) historyFilters.value = { ...state.filters }
   const loading = id !== null && needsLoad ? loadHistory(targetPage) : Promise.resolve()
   const sequence = historySequence
   await loading
@@ -660,6 +706,7 @@ function chooseCard(id: number) {
 function flip(id: number) { if (!revealed.value.includes(id)) { revealed.value = [...revealed.value, id]; tactile() } }
 function revealAll() { revealed.value = chosenCards.value.map(card => card.id); tactile() }
 function goBack() {
+  if (accountMode.value) { accountAccess.value?.requestClose(); return }
   if (membershipOpen.value) { closeMembership(); return }
   if (benefitsOpen.value) { closeBenefits(); return }
   if (yesterdayOpen.value) { closeYesterday(); return }
@@ -904,21 +951,23 @@ async function openTaskReading(task: PendingMobileTask) {
 async function sendFollowup() {
   refreshMembershipClock()
   if (!current.value || !canFollowup.value || !followupValid(followup.value) || pending.value || !online.value) return
+  if (!activeVip.value && (mobileUser.value?.remainingFreeQuota ?? 0) <= 0) { notify(text('今日免费次数已用完，请查看会员与可用次数。', 'No free credits left. Check your membership and credits.')); return }
   await submitNewTask('followup', { readingId: current.value.id, question: followup.value.trim(), locale: readingLocale.value })
 }
 async function loadHistory(targetPage = 1) {
   if (!mobileUser.value) return
-  const id = owner.value, sequence = ++historySequence, query = search.value.trim()
+  const id = owner.value, sequence = ++historySequence, query = search.value.trim(), filters = { ...historyFilters.value }
+  const filtered = !!(query || filters.type || filters.from || filters.to)
   historyLoading.value = true; historyError.value = ''
   try {
-    const page = await fetchMobileHistory({ page: targetPage, search: query || undefined })
+    const page = await fetchMobileHistory({ page: targetPage, search: query || undefined, type: filters.type || undefined, dateFrom: filters.from || undefined, dateTo: filters.to || undefined })
     if (!responseScopeIsCurrent({ owner: id, sequence }, owner.value, historySequence, disposed)) return
     history.value = page.items; historyTotal.value = page.total; historyPage.value = page.page; historyPages.value = page.totalPages; historyCached.value = false
-    if (targetPage === 1 && !query) await privateWrite('history', page, id).catch(() => {})
+    if (targetPage === 1 && !filtered) await privateWrite('history', page, id).catch(() => {})
   } catch (error) {
     if (!responseScopeIsCurrent({ owner: id, sequence }, owner.value, historySequence, disposed)) return
     historyError.value = mobileError(error)
-    if (!history.value.length && !query && targetPage === 1) {
+    if (!history.value.length && !filtered && targetPage === 1) {
       const cache = await readMobileValue<{items: MobileHistoryEntry[]; total: number; page: number; totalPages: number}>(key('history', id)).catch(() => null)
       if (cache && !disposed && sequence === historySequence && id === owner.value && Array.isArray(cache.items)) { history.value = cache.items; historyTotal.value = cache.total; historyPages.value = cache.totalPages; historyPage.value = 1; historyCached.value = true }
     }
@@ -929,8 +978,31 @@ async function loadHistory(targetPage = 1) {
     }
   }
 }
-function historySearch(value: string) { search.value = value; void loadHistory(1) }
+function historySearch(value: string) { search.value = value.slice(0, 100); history.value = []; historyCached.value = false; void loadHistory(1) }
+function applyHistoryFilters(value: MobileHistoryFilters) {
+  if (historyFilterError(value, english.value)) return
+  historyFilters.value = { ...value }; history.value = []; historyCached.value = false; void loadHistory(1)
+}
+async function saveReadingReview(value: { rating: 'full' | 'partial' | 'none' }) {
+  if (!current.value || !mobileUser.value || reviewSaving.value || !online.value || cachedDetail.value || currentLoading.value || !reviewEligible.value) return
+  const id = current.value.id, userId = owner.value, sequence = ++reviewSequence
+  reviewSaving.value = true; reviewError.value = ''
+  try {
+    await saveMobileReadingOutcome(id, value.rating)
+    if (disposed || sequence !== reviewSequence || userId !== owner.value || current.value?.id !== id) return
+    // A confirmed write may be followed by a failed read; never resubmit it automatically.
+    const entry = await fetchMobileReading(id)
+    if (disposed || sequence !== reviewSequence || userId !== owner.value || current.value?.id !== id) return
+    current.value = entry; history.value = history.value.map(item => item.id === id ? entry : item)
+    await privateWrite('last', entry, userId).catch(() => {})
+    await privateWrite('history', null, userId).catch(() => {})
+    notify(text('回顾已保存。', 'Reflection saved.'))
+  } catch (error) {
+    if (!disposed && sequence === reviewSequence && userId === owner.value && current.value?.id === id) reviewError.value = mobileError(error, text('暂未能确认最新回顾，请重新加载这条记录查看。', 'Reload this reading to check the latest reflection.'))
+  } finally { if (sequence === reviewSequence && userId === owner.value) reviewSaving.value = false }
+}
 async function openReading(id: number, navigate = true) {
+  reviewSequence++; reviewSaving.value = false; reviewError.value = ''
   if (navigate && !startupReady.value) return
   const userId = owner.value
   if (userId === null) { requestLogin('history'); return }
@@ -1017,7 +1089,7 @@ onMounted(async () => {
     if (state.isActive) onVisible(); else { window.clearTimeout(pollTimer); void saveDraft().catch(() => {}) }
   })).catch(() => {})
   void addHandle(NativeApp.addListener('backButton', () => {
-    if (tab.value === 'home' && !loginOpen.value && !readersOpen.value && !yesterdayOpen.value && !membershipOpen.value && !benefitsOpen.value) void NativeApp.exitApp()
+    if (tab.value === 'home' && !accountMode.value && !loginOpen.value && !readersOpen.value && !yesterdayOpen.value && !membershipOpen.value && !benefitsOpen.value) void NativeApp.exitApp()
     else goBack()
   })).catch(() => {})
   void addHandle(Network.addListener('networkStatusChange', status => { const reconnected = !online.value && status.connected; online.value = status.connected; if (reconnected) { void loadReference(); void pollTask() } })).catch(() => {})
@@ -1091,7 +1163,7 @@ onBeforeUnmount(() => {
             <p v-if="carried && currentTaskError" class="mobile-error" role="alert">{{ currentTaskError }}</p>
             <p v-if="operationError" role="alert" class="mobile-error">{{ operationError }}</p>
             <button type="submit" class="mobile-primary" :disabled="!!readingPreparation || taskBusy || !!pending">{{ readingPreparation || taskBusy ? text('正在提交…', 'Submitting…') : carried ? text('开始占卜', 'Get this card’s reading') : text('开始抽牌', 'Choose your cards') }}<ArrowRight :size="22" /></button>
-            <p class="mobile-credit-note">{{ text('选牌和翻牌免费。生成解读或追问各消耗 1 次额度。', 'Choosing and revealing cards is free. Each interpretation or follow-up uses one credit.') }}</p>
+            <p class="mobile-credit-note">{{ activeVip ? text('会员解读与追问不消耗每日免费次数。', 'VIP readings and follow-ups do not use daily free credits.') : text('选牌和翻牌免费。免费账号的解读与追问各使用 1 次额度。', 'Choosing and revealing cards is free. Free accounts use one credit per reading or follow-up.') }}</p>
           </form>
         </template>
         <template v-else-if="phase === 'select'">
@@ -1137,7 +1209,8 @@ onBeforeUnmount(() => {
             <p v-if="currentTaskError" role="alert" class="mobile-error">{{ currentTaskError }}</p>
             <p v-if="followupUnavailableMessage" class="mobile-credit-note" role="status">{{ followupUnavailableMessage }}</p>
             <p v-else-if="current.type !== 'reader-reading'" class="mobile-credit-note">{{ text('这是一条旧版记录。可回看原文，开启新的问卜继续探索。','This is a legacy reading. You can review it or start a new question.') }}</p>
-            <MobileFollowupComposer v-if="canFollowup" v-model="followup" :key="current.id" :question="current.question || text('每日启发','Daily guidance')" :reader-name="readingReaderName" :english="english" :busy="!!pending" :pending-for-current="!!currentPendingFollowup" :online="online" @submit="sendFollowup" @open-pending="openPendingReading" />
+            <MobileReadingReview v-if="current.question" :key="`review-${current.id}`" :english="english" :value="readingOutcome" :loading="currentLoading" :saving="reviewSaving" :error="reviewError" :eligible="reviewEligible" :online="online && !cachedDetail" @save="saveReadingReview" @retry="openReading(current.id, false)" />
+            <MobileFollowupComposer v-if="canFollowup" v-model="followup" :key="current.id" :question="current.question || text('每日启发','Daily guidance')" :reader-name="readingReaderName" :english="english" :busy="!!pending" :pending-for-current="!!currentPendingFollowup" :online="online" :active-vip="activeVip" :remaining-quota="mobileUser?.remainingFreeQuota ?? null" :resets-at="mobileUser?.quotaResetsAt" :quota-refreshing="quotaRefreshing" @refresh-quota="refreshQuota" @submit="sendFollowup" @open-pending="openPendingReading" />
           </template>
           <div v-else-if="!currentLoading" class="mobile-empty"><h1>{{ text('从一个问题开始。','Begin with a question.') }}</h1><button type="button" class="mobile-primary" @click="startFreshQuestion">{{ text('开始问卜','Ask a question') }}</button></div>
         </template>
@@ -1145,12 +1218,12 @@ onBeforeUnmount(() => {
       </section>
 
       <section v-else-if="tab === 'history'" class="mobile-history-view" :aria-label="text('历史记录','Reading history')">
-        <template v-if="mobileUser"><p v-if="historyCached" class="mobile-cache-note">{{ text('正在显示本机缓存，联网后可刷新最新记录。','Showing cached readings. Reconnect to refresh.') }}</p><MobileHistory :entries="history" :readers="referenceReaders" :loading="historyLoading" :error="historyError" :page="historyPage" :total-pages="historyPages" :total="historyTotal" :search="search" :english="english" :deleting-id="deletingId" @search="historySearch" @page="loadHistory" @retry="loadHistory(historyPage)" @open="openReading" @delete="removeReading" /></template>
+        <template v-if="mobileUser"><p v-if="historyCached" class="mobile-cache-note">{{ text('正在显示本机缓存，联网后可刷新最新记录。','Showing cached readings. Reconnect to refresh.') }}</p><MobileHistory :entries="history" :readers="referenceReaders" :loading="historyLoading" :error="historyError" :page="historyPage" :total-pages="historyPages" :total="historyTotal" :search="search" :english="english" :deleting-id="deletingId" :filters="historyFilters" @filters="applyHistoryFilters" @search="historySearch" @page="loadHistory" @retry="loadHistory(historyPage)" @open="openReading" @delete="removeReading" /></template>
         <div v-else class="mobile-empty"><span class="mobile-empty-icon" aria-hidden="true"><HistoryIcon :size="30" /></span><h1>{{ text('把启发留在这里。','Keep your insights here.') }}</h1><p>{{ text('登录后，原问题、牌面和追问会同步到你的账号。','Sign in to keep your questions, cards and conversations together.') }}</p><button type="button" class="mobile-primary" :disabled="!mobileSessionReady" @click="requestLogin('history')">{{ text('登录查看记录','Sign in to view history') }}</button></div>
       </section>
 
       <section v-else :aria-label="text('我的','Me')" class="mobile-me">
-        <MobileAccountPanel :user="mobileUser" :active-vip="activeVip" :locale="String(locale)" :site="mobileSite" :session-ready="mobileSessionReady && startupReady" :logout-busy="logoutBusy" @login="requestLogin()" @logout="signOut" @update:locale="changeLanguage" @website="openWebsite" @avatar="openProfile('avatar')" @birth="openProfile('birth')" @history="changeTab('history')" @redeem="openMembership" @benefits="openBenefits">
+        <MobileAccountPanel :user="mobileUser" :active-vip="activeVip" :locale="String(locale)" :site="mobileSite" :session-ready="mobileSessionReady && startupReady" :logout-busy="logoutBusy" @login="requestLogin()" @logout="signOut" @update:locale="changeLanguage" @website="openWebsite" @avatar="openProfile('avatar')" @birth="openProfile('birth')" @history="changeTab('history')" @redeem="openMembership" @benefits="openBenefits" @security="openAccountAccess">
           <template #updates><MobileUpdatePanel :english="english" /></template>
         </MobileAccountPanel>
       </section>
@@ -1158,7 +1231,8 @@ onBeforeUnmount(() => {
     <nav v-show="!keyboardOpen" class="mobile-nav" :aria-label="text('主导航','Main navigation')"><button v-for="item in navItems" :key="item.key" type="button" :disabled="!startupReady" :aria-current="tab === item.key ? 'page' : undefined" @click="changeTab(item.key)"><component :is="item.icon" :size="22" /><span>{{ item.name }}</span><i v-if="item.key === 'ask' && pending" aria-hidden="true" /></button></nav>
     <div v-if="toast" role="status" class="mobile-toast">{{ toast }}</div>
     <MobileYesterdayFortune :open="yesterdayOpen" :busy="yesterdayBusy" :error="yesterdayError" :english="english" :response="yesterdayResponse" :cached="yesterdayCached" @close="closeYesterday" @retry="retryYesterday" />
-    <div v-if="loginOpen" class="mobile-modal-backdrop" @click.self="!loginBusy && (loginOpen = false)"><section ref="loginDialog" role="dialog" aria-modal="true" aria-labelledby="mobile-login-title" class="mobile-modal"><button type="button" class="mobile-close" :aria-label="text('关闭','Close')" :disabled="loginBusy" @click="loginOpen = false"><XIcon :size="20" /></button><p class="mobile-eyebrow">E-Tomd</p><h2 id="mobile-login-title">{{ text('欢迎回来。','Welcome back.') }}</h2><p>{{ afterLogin === 'daily' ? text('登录后查看并保存今日运势。', 'Sign in to reveal and save today’s fortune.') : text('使用对应地区的网站账号，你的问题和选牌会保留。','Use your regional website account. Your question and cards are kept.') }}</p><form @submit.prevent="signIn"><label for="mobile-identifier" class="mobile-label">{{ text('邮箱或用户名','Email or username') }}</label><input id="mobile-identifier" v-model="identifier" class="mobile-input" autocomplete="username" autocapitalize="none" :disabled="loginBusy" required><label for="mobile-password" class="mobile-label">{{ text('密码','Password') }}</label><input id="mobile-password" v-model="password" class="mobile-input" type="password" autocomplete="current-password" :disabled="loginBusy" required><p v-if="loginError" class="mobile-error" role="alert">{{ loginError }}</p><button type="submit" class="mobile-primary" :disabled="loginBusy">{{ loginBusy ? text('正在登录…','Signing in…') : text('登录并继续','Sign in and continue') }}</button></form><div class="mobile-auth-links"><button type="button" class="mobile-text-button" @click="openWebsite('/register')">{{ text('前往网站注册','Create a website account') }} ↗</button><button type="button" class="mobile-text-button" @click="openWebsite('/forgot-password')">{{ text('忘记密码','Forgot password') }} ↗</button></div></section></div>
+    <div v-if="loginOpen && !accountMode" class="mobile-modal-backdrop" @click.self="!loginBusy && (loginOpen = false)"><section ref="loginDialog" role="dialog" aria-modal="true" aria-labelledby="mobile-login-title" class="mobile-modal"><button type="button" class="mobile-close" :aria-label="text('关闭','Close')" :disabled="loginBusy" @click="loginOpen = false"><XIcon :size="20" /></button><p class="mobile-eyebrow">E-Tomd</p><h2 id="mobile-login-title">{{ text('欢迎回来。','Welcome back.') }}</h2><p>{{ afterLogin === 'daily' ? text('登录后查看并保存今日运势。', 'Sign in to reveal and save today’s fortune.') : text('使用对应地区的网站账号，你的问题和选牌会保留。','Use your regional website account. Your question and cards are kept.') }}</p><form @submit.prevent="signIn"><label for="mobile-identifier" class="mobile-label">{{ text('邮箱或用户名','Email or username') }}</label><input id="mobile-identifier" v-model="identifier" class="mobile-input" autocomplete="username" autocapitalize="none" :disabled="loginBusy" required><label for="mobile-password" class="mobile-label">{{ text('密码','Password') }}</label><input id="mobile-password" v-model="password" class="mobile-input" type="password" autocomplete="current-password" :disabled="loginBusy" required><p v-if="loginError" class="mobile-error" role="alert">{{ loginError }}</p><button type="submit" class="mobile-primary" :disabled="loginBusy">{{ loginBusy ? text('正在登录…','Signing in…') : text('登录并继续','Sign in and continue') }}</button></form><div class="mobile-auth-links"><button type="button" class="mobile-text-button" :disabled="loginBusy" @click="openAccountAccess('register')">{{ text('创建账号','Create an account') }}</button><button type="button" class="mobile-text-button" :disabled="loginBusy" @click="openAccountAccess('forgot')">{{ text('忘记密码','Forgot password') }}</button></div></section></div>
+    <MobileAccountAccess v-if="accountMode" ref="accountAccess" :key="accountMode" :mode="accountMode" :english="english" :online="online" :email="mobileUser?.email || identifier" @close="closeAccountAccess" @signin="signInToAccount" @session-ended="accountSessionEnded" />
     <MobileReaderPicker :open="readersOpen" :readers="availableReaders" :selected-id="readerId" :loading="referenceLoading" :error="readerLoadError" :unavailable-message="readerUnavailableMessage" :english="english" @select="selectReader" @close="readersOpen = false" @retry="loadReference" />
     <MobileProfileEditor v-if="profileMode && profileUser" :key="profileMode" :mode="profileMode" :user="profileUser" :english="english" :busy="profileBusy" :loading="profileLoading" :error="profileError" @close="closeProfile" @avatar="updateAvatar" @birth="updateBirth" @retry="loadBirthProfile" @change="profileError = ''" />
     <MobileMembershipBenefits v-if="benefitsOpen" :user="mobileUser" :active-vip="activeVip" :english="english" :online="online" @close="closeBenefits" @redeem="redeemFromBenefits" />

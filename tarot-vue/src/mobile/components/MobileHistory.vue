@@ -9,6 +9,7 @@ import MessageIcon from '@icons/message-circle.vue'
 import type { ReadingHistoryEntry } from '../../stores/readingHistory'
 import type { MobileReader } from '../types'
 import MobileReaderAvatar from './MobileReaderAvatar.vue'
+import { historyFilterError, type MobileHistoryFilters } from '../mobileHistoryModel'
 
 const props = withDefaults(defineProps<{
   entries: ReadingHistoryEntry[]
@@ -21,7 +22,8 @@ const props = withDefaults(defineProps<{
   english: boolean
   deletingId?: number | null
   readers?: MobileReader[]
-}>(), { deletingId: null, readers: () => [] })
+  filters?: MobileHistoryFilters
+}>(), { deletingId: null, readers: () => [], filters: () => ({ type: '', from: '', to: '' }) })
 
 const emit = defineEmits<{
   search: [value: string]
@@ -29,28 +31,53 @@ const emit = defineEmits<{
   retry: []
   open: [id: number]
   delete: [id: number]
+  filters: [value: MobileHistoryFilters]
 }>()
 
 const searchId = `mh-search-${useId()}`
 const headingId = `mh-heading-${useId()}`
+const filterId = `mh-filter-${useId()}`
+const filterErrorId = `${filterId}-error`
 const query = ref(props.search)
 watch(() => props.search, value => { query.value = value })
+const filterDraft = ref<MobileHistoryFilters>({ ...props.filters })
+const filterError = ref('')
+watch(() => props.filters, value => {
+  filterDraft.value = { ...value }
+  filterError.value = ''
+}, { deep: true })
+watch(filterDraft, () => { filterError.value = '' }, { deep: true })
 const pages = computed(() => Math.max(1, props.totalPages))
 const currentPage = computed(() => Math.min(Math.max(1, props.page), pages.value))
 const initialLoading = computed(() => props.loading && !props.entries.length)
 const hasSearch = computed(() => Boolean(props.search.trim()))
+const hasFilters = computed(() => Boolean(props.filters.type || props.filters.from || props.filters.to))
+const hasQuery = computed(() => hasSearch.value || hasFilters.value)
 const timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone
 const dateFormatter = computed(() => new Intl.DateTimeFormat(props.english ? 'en-US' : 'zh-CN', {
   year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit',
 }))
 
 function submitSearch() {
-  if (!props.loading) emit('search', query.value.trim())
+  if (!props.loading) emit('search', query.value.trim().slice(0, 100))
 }
 
 function clearSearch() {
   query.value = ''
   emit('search', '')
+}
+
+function applyFilters() {
+  if (props.loading) return
+  filterError.value = historyFilterError(filterDraft.value, props.english)
+  if (!filterError.value) emit('filters', { ...filterDraft.value })
+}
+
+function clearFilters() {
+  if (props.loading) return
+  filterDraft.value = { type: '', from: '', to: '' }
+  filterError.value = ''
+  emit('filters', { ...filterDraft.value })
 }
 
 function date(value: string) {
@@ -116,7 +143,7 @@ function readerAvatar(entry: ReadingHistoryEntry) {
           :id="searchId"
           v-model="query"
           type="search"
-          maxlength="200"
+          maxlength="100"
           autocomplete="off"
           enterkeyhint="search"
           :placeholder="english ? 'Search a question…' : '搜索你问过的问题…'"
@@ -126,8 +153,38 @@ function readerAvatar(entry: ReadingHistoryEntry) {
       <button type="submit" class="mh-search-submit" :disabled="loading">{{ english ? 'Search' : '搜索' }}</button>
     </form>
 
+    <form class="mh-filters" novalidate @submit.prevent="applyFilters">
+      <fieldset :disabled="loading" :aria-describedby="filterError ? filterErrorId : undefined">
+        <legend>{{ english ? 'Filter readings' : '筛选记录' }}<span v-if="hasFilters" class="mh-filter-applied">{{ english ? 'Applied' : '已应用' }}</span></legend>
+        <label class="mh-filter-type" :for="`${filterId}-type`">
+          <span>{{ english ? 'Reading type' : '占卜类型' }}</span>
+          <select :id="`${filterId}-type`" v-model="filterDraft.type">
+            <option value="">{{ english ? 'All types' : '全部类型' }}</option>
+            <option value="single">{{ english ? 'Single card' : '单卡占卜' }}</option>
+            <option value="three-card">{{ english ? 'Three cards' : '三卡占卜' }}</option>
+            <option value="reader-reading">{{ english ? 'Reader reading' : '塔罗师解读' }}</option>
+          </select>
+        </label>
+        <div class="mh-filter-dates">
+          <label :for="`${filterId}-from`">
+            <span>{{ english ? 'From date' : '开始日期' }}</span>
+            <input :id="`${filterId}-from`" v-model="filterDraft.from" type="date" :max="filterDraft.to || '9999-12-31'" :aria-invalid="Boolean(filterError)" :aria-describedby="filterError ? filterErrorId : undefined">
+          </label>
+          <label :for="`${filterId}-to`">
+            <span>{{ english ? 'To date' : '结束日期' }}</span>
+            <input :id="`${filterId}-to`" v-model="filterDraft.to" type="date" :min="filterDraft.from || undefined" max="9999-12-31" :aria-invalid="Boolean(filterError)" :aria-describedby="filterError ? filterErrorId : undefined">
+          </label>
+        </div>
+        <p v-if="filterError" :id="filterErrorId" class="mh-filter-error" role="alert">{{ filterError }}</p>
+        <div class="mh-filter-actions">
+          <button type="button" class="mh-text-button" @click="clearFilters">{{ english ? 'Clear filters' : '清除筛选' }}</button>
+          <button type="submit" class="mh-secondary">{{ english ? 'Apply filters' : '应用筛选' }}</button>
+        </div>
+      </fieldset>
+    </form>
+
     <div class="mh-list-meta">
-      <p>{{ english ? `${total} ${total === 1 ? 'reading' : 'readings'}${hasSearch ? ' found' : ''}` : `${hasSearch ? '找到' : '共'} ${total} 条记录` }}</p>
+      <p>{{ english ? `${total} ${total === 1 ? 'reading' : 'readings'}${hasQuery ? ' found' : ''}` : `${hasQuery ? '找到' : '共'} ${total} 条记录` }}</p>
       <button v-if="query || hasSearch" type="button" class="mh-text-button" :disabled="loading" @click="clearSearch">{{ english ? 'Clear search' : '清除搜索' }}</button>
     </div>
 
@@ -192,9 +249,10 @@ function readerAvatar(entry: ReadingHistoryEntry) {
     </template>
 
     <div v-else-if="!error" class="mh-empty" role="status">
-      <p class="mh-empty-title">{{ hasSearch ? (english ? 'No matching questions.' : '没有找到这个问题。') : (english ? 'Your story starts with a question.' : '从一个问题，开始记录。') }}</p>
-      <p>{{ hasSearch ? (english ? 'Try a shorter phrase or clear your search.' : '试试更短的关键词，或清除搜索。') : (english ? 'Completed readings will be saved here so you can revisit them.' : '完成问卜后，解读会保存在这里，方便随时回看。') }}</p>
-      <button v-if="hasSearch" type="button" class="mh-secondary" @click="clearSearch">{{ english ? 'Show all readings' : '查看全部记录' }}</button>
+      <p class="mh-empty-title">{{ hasQuery ? (english ? 'No matching readings.' : '没有找到符合条件的记录。') : (english ? 'Your story starts with a question.' : '从一个问题，开始记录。') }}</p>
+      <p>{{ hasQuery ? (english ? 'Try another keyword or adjust your filters.' : '试试其他关键词，或调整筛选条件。') : (english ? 'Completed readings will be saved here so you can revisit them.' : '完成问卜后，解读会保存在这里，方便随时回看。') }}</p>
+      <button v-if="hasFilters" type="button" class="mh-secondary" :disabled="loading" @click="clearFilters">{{ english ? 'Clear filters' : '清除筛选' }}</button>
+      <button v-else-if="hasSearch" type="button" class="mh-secondary" :disabled="loading" @click="clearSearch">{{ english ? 'Clear search' : '清除搜索' }}</button>
     </div>
 
     <nav v-if="total > 0" class="mh-pagination" :aria-label="english ? 'Reading pages' : '占卜记录分页'">
@@ -218,10 +276,10 @@ function readerAvatar(entry: ReadingHistoryEntry) {
 .mh-heading { margin-bottom: 22px; }
 .mh-heading h1 { margin: 0 0 10px; font-family: var(--m-body-font, -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', sans-serif); font-size: 25px; font-weight: 600; line-height: 1.4; letter-spacing: -.025em; }
 .mh-description { max-width: 36em; margin: 0; color: var(--m-muted, #b6a8c6); font-size: 14px; line-height: 1.75; }
-.mh-screen :where(button, input) { font: inherit; }
+.mh-screen :where(button, input, select) { font: inherit; }
 .mh-screen button { touch-action: manipulation; cursor: pointer; -webkit-tap-highlight-color: transparent; }
 .mh-screen button:disabled { cursor: not-allowed; opacity: .45; }
-.mh-screen :is(button, input):focus-visible { outline: 2px solid var(--mh-accent); outline-offset: 4px; }
+.mh-screen :is(button, input, select):focus-visible { outline: 2px solid var(--mh-accent); outline-offset: 4px; }
 .mh-search { display: flex; align-items: stretch; gap: 10px; min-width: 0; }
 .mh-search-field { flex: 1; min-width: 0; display: flex; align-items: center; gap: 10px; padding-left: 14px; border: 1px solid var(--m-line, #cbb0ed2b); border-radius: 12px; background: var(--m-bg, #151019); color: var(--m-muted, #b6a8c6); }
 .mh-search-field svg { flex-shrink: 0; }
@@ -229,6 +287,18 @@ function readerAvatar(entry: ReadingHistoryEntry) {
 .mh-search input::placeholder { color: var(--m-muted, #b6a8c6); opacity: .9; }
 .mh-search input::-webkit-search-cancel-button { display: none; }
 .mh-search-submit { flex-shrink: 0; min-width: 66px; min-height: 48px; padding: 10px 15px; border: 0; border-radius: 12px; background: var(--mh-accent); color: var(--mh-accent-ink); font-size: 14px; font-weight: 600; }
+.mh-filters { margin-top: 16px; }
+.mh-filters fieldset { min-width: 0; margin: 0; padding: 12px 14px 8px; border: 1px solid var(--m-line, #cbb0ed2b); border-radius: 16px; }
+.mh-filters legend { padding: 0 6px; color: var(--m-text, #f1ecf4); font-size: 13px; }
+.mh-filter-applied { margin-left: 9px; color: var(--mh-accent); font-size: 11px; }
+.mh-filters label { display: grid; min-width: 0; gap: 6px; color: var(--m-muted, #b6a8c6); font-size: 12px; }
+.mh-filters :is(input, select) { width: 100%; min-width: 0; max-width: 100%; min-height: 44px; padding: 9px; border: 1px solid var(--m-line, #cbb0ed2b); border-radius: 9px; background: var(--m-bg, #151019); color: var(--m-text, #f1ecf4); font-size: 14px; color-scheme: dark; }
+.mh-filters input[type="date"] { -webkit-appearance: none; appearance: none; }
+.mh-filter-dates { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 10px; margin-top: 12px; }
+.mh-filter-actions { display: flex; align-items: center; justify-content: flex-end; flex-wrap: wrap; gap: 12px; margin-top: 8px; }
+.mh-filter-actions .mh-secondary { border-color: var(--mh-accent); color: var(--mh-accent); }
+.mh-filter-actions .mh-text-button { padding-inline: 4px; color: var(--m-muted, #b6a8c6); }
+.mh-filter-error { margin: 10px 0 0; color: #f2d3c9; font-size: 13px; line-height: 1.6; overflow-wrap: anywhere; }
 .mh-list-meta { display: flex; align-items: center; justify-content: space-between; gap: 10px; min-height: 48px; margin: 5px 0 8px; }
 .mh-list-meta p { margin: 0; color: var(--m-muted, #b6a8c6); font-size: 13px; }
 .mh-text-button { min-height: 44px; padding: 9px 0 9px 10px; border: 0; background: transparent; color: var(--mh-accent); font-size: 14px; }

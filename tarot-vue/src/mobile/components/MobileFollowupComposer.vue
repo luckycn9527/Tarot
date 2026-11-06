@@ -2,6 +2,7 @@
 import { computed, ref, watch, nextTick, onMounted, onBeforeUnmount } from 'vue'
 import ArrowUp from '@icons/arrow-up.vue'
 import { followupValid } from '../mobileModel'
+import { followupQuotaNote } from '../mobileQuota'
 
 const props = withDefaults(defineProps<{
   modelValue: string
@@ -11,20 +12,24 @@ const props = withDefaults(defineProps<{
   pendingForCurrent: boolean
   online: boolean
   readerName?: string
-}>(), { readerName: '' })
-const emit = defineEmits<{ 'update:modelValue': [value: string]; submit: []; 'open-pending': [] }>()
+  activeVip?: boolean
+  remainingQuota?: number | null
+  resetsAt?: string
+  quotaRefreshing?: boolean
+}>(), { readerName: '', activeVip: false, remainingQuota: null, quotaRefreshing: false })
+const emit = defineEmits<{ 'update:modelValue': [value: string]; submit: []; 'open-pending': []; 'refresh-quota': [] }>()
 const panel = ref<HTMLElement | null>(null)
 const input = ref<HTMLTextAreaElement | null>(null)
 const panelHeight = ref(142)
 let observer: ResizeObserver | undefined
 const text = (zh: string, en: string) => props.english ? en : zh
-const sendDisabled = computed(() => props.busy || !props.online || !followupValid(props.modelValue))
+const sendDisabled = computed(() => props.busy || !props.online || (!props.activeVip && props.remainingQuota !== null && props.remainingQuota <= 0) || !followupValid(props.modelValue))
 const note = computed(() => {
   if (props.busy) return props.pendingForCurrent
     ? text('正在解读这条追问，完成后可继续。', 'This follow-up is being read. You can continue when it is ready.')
     : text('另一条问卜正在生成，完成后可发送。', 'Another reading is in progress. You can send when it is ready.')
   if (!props.online) return text('当前离线，可以先写下追问，联网后再发送。', 'You are offline. Write your question now and send when connected.')
-  return text('沿用原问题与牌面 · 发送后使用 1 次额度', 'Keeps your question and cards · Sending uses 1 credit')
+  return followupQuotaNote(props.activeVip, props.remainingQuota, props.resetsAt, props.english)
 })
 function measure() {
   if (panel.value) panelHeight.value = Math.ceil(panel.value.getBoundingClientRect().height)
@@ -40,7 +45,7 @@ function update(event: Event) {
   resizeInput()
 }
 function submit() { if (!sendDisabled.value) emit('submit') }
-watch(() => [props.modelValue, props.english, props.question, props.readerName, props.busy, props.pendingForCurrent, props.online], async () => {
+watch(() => [props.modelValue, props.english, props.question, props.readerName, props.busy, props.pendingForCurrent, props.online, props.activeVip, props.remainingQuota, props.resetsAt], async () => {
   await nextTick(); resizeInput()
 })
 onMounted(() => {
@@ -69,6 +74,7 @@ onBeforeUnmount(() => { observer?.disconnect(); window.removeEventListener('resi
       <button type="submit" class="mobile-send" :aria-label="text('发送追问', 'Send follow-up')" :disabled="sendDisabled"><ArrowUp :size="22" aria-hidden="true" /></button>
     </div>
     <p id="mobile-followup-note" class="mobile-composer-note" :role="busy || !online ? 'status' : undefined">{{ note }}</p>
+    <button v-if="!activeVip && remainingQuota !== null && remainingQuota <= 0" type="button" class="mobile-pending-shortcut" :disabled="busy || !online || quotaRefreshing" @click="emit('refresh-quota')">{{ quotaRefreshing ? text('正在刷新…', 'Refreshing…') : text('刷新可用次数', 'Refresh credits') }}</button>
   </form>
 </template>
 

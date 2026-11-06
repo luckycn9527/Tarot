@@ -1,6 +1,6 @@
 # 在 Mac 打包 E-Tomd iOS
 
-当前移动端版本以 `tarot-vue/mobile-version.json` 为准：`0.1.20`，build `21`。iOS 已有 Swift Package Manager（SPM）工程，Capacitor 固定为 `8.5.3`，最低运行系统为 iOS 15。
+当前移动端版本以 `tarot-vue/mobile-version.json` 为准：`0.1.21`，build `22`。iOS 已有 Swift Package Manager（SPM）工程，Capacitor 固定为 `8.5.3`，最低运行系统为 iOS 15。
 
 本次在 Windows 仅完成源码、脚本和静态校验；未进行 Xcode 编译、签名、真机安装或 IPA 验收。`mobile:ios` 负责准备最新原生工程；最终 Run、Archive 和签名在 Mac 的 Xcode 中完成。
 
@@ -54,7 +54,7 @@ npm run mobile:ios -- --site=domestic --check
 1. 打开 `tarot-vue/ios/App/App.xcodeproj`，等待 Swift Package 解析完成。选择项目中的 **App target**，进入 **Signing & Capabilities**。
 2. 启用 **Automatically manage signing**，选择你的 **Team**。仓库不包含 Team ID、证书或描述文件。
 3. 默认 **Bundle Identifier** 为 `cn.zaopic.etomd`。使用有权限的团队时可保留；如果 Xcode 提示该标识不可用，为自己的测试选择唯一标识。将改动保留在本机；若要正式替换项目标识，还需同步 `capacitor.config.ts` 的 `appId` 并重新核验相关服务配置。
-4. 在 General 中检查 Version `0.1.20`、Build `21`（以后以 `mobile-version.json` 为准）及 iOS 15 deployment target。
+4. 在 General 中检查 Version `0.1.21`、Build `22`（以后以 `mobile-version.json` 为准）及 iOS 15 deployment target。
 5. 连接并信任 iPhone，在手机中按提示启用 **Developer Mode**；在 Xcode 顶部选择该设备，点击 **Run**。模拟器也可以做界面初检，但不能代替真机验证。
 6. 安装后验证启动、国内/海外目标站点、登录、退出重启后的会话状态、头像选择/取消/上传、会员兑换与权益、生辰、主要占卜和历史流程。真实占卜和兑换可能消耗额度或改变账号数据，应使用你允许的测试账号及测试兑换码。
 

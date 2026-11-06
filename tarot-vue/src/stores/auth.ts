@@ -21,6 +21,8 @@ export interface User {
   membership: 'free' | 'vip'
   membershipExpiresAt: string | null
   remainingFreeQuota: number
+  quotaResetsAt?: string
+  quotaTimeZone?: string
   createdAt: string
 }
 

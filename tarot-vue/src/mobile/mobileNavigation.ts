@@ -1,4 +1,5 @@
 import type { MobileCard, MobileDraft, MobileFollowupPayload, MobileHistoryEntry, MobileTask, PendingMobileTask } from './types'
+import { historyFilterError, type MobileHistoryFilters } from './mobileHistoryModel'
 
 export interface MobileCompletionNotice {
   schema: 1; owner: number; requestId: string; kind: 'reading' | 'followup'; readingId: number
@@ -6,6 +7,7 @@ export interface MobileCompletionNotice {
 }
 export interface MobileHistoryReturn {
   schema: 1; owner: number; page: number; search: string; scrollY: number; savedAt: number
+  filters?: MobileHistoryFilters
 }
 export interface MobileTaskFeedback { schema: 1; task: PendingMobileTask; message: string }
 export interface MobileResponseScope { owner: number | null; sequence: number }
@@ -44,7 +46,8 @@ export function validHistoryReturn(value: unknown, owner: number | null): value 
   if (!value || typeof value !== 'object' || owner === null) return false
   const state = value as MobileHistoryReturn
   return state.schema === 1 && state.owner === owner && Number.isSafeInteger(state.page) && state.page > 0 &&
-    typeof state.search === 'string' && state.search.length <= 200 && Number.isFinite(state.scrollY) && state.scrollY >= 0 && Number.isFinite(state.savedAt)
+    typeof state.search === 'string' && state.search.length <= 200 && Number.isFinite(state.scrollY) && state.scrollY >= 0 && Number.isFinite(state.savedAt) &&
+    (state.filters === undefined || (!!state.filters && typeof state.filters === 'object' && !historyFilterError(state.filters)))
 }
 export function responseScopeIsCurrent(scope: MobileResponseScope, owner: number | null, sequence: number, disposed = false) {
   return !disposed && scope.owner === owner && scope.sequence === sequence

@@ -142,7 +142,7 @@ export const pagesEn = {
     faqTitle: 'FAQ',
     emailLabel: 'Email',
     emailHint: '(optional, for replies)',
-    emailPlaceholder: 'your@email.com',
+    emailPlaceholder: "your{'@'}email.com",
     contentLabel: 'Message',
     contentHint: '(at least 10 characters)',
     contentPlaceholder: 'Describe your idea or issue in detail…',
