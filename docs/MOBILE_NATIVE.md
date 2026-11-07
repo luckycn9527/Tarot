@@ -1,8 +1,16 @@
 # E-Tomd 原生工程与内测构建
 
-当前 Android 体验版本：`0.1.26`，`versionCode=27`（仅国内 APK，已封存发布并通过公开 HTTPS 全字节校验；交付目录 `output/app-ui-0.1.26-20261107/`）。
+当前 Android 体验版本：`0.1.27`，`versionCode=28`（仅国内 APK，已封存发布并通过公开 HTTPS 全字节校验；交付目录 `output/app-membership-entry-0.1.27-20261107/`）。
 `0.1.0` / `0.1.1` 旧包和封存记录保留。
 iOS 源工程同步为 `0.1.21 / build 22`；Mac 操作见 [IOS_BUILD.md](./IOS_BUILD.md)。本轮没有进行 Xcode 编译、签名或 iPhone 真机验收。
+
+## 2026-11-07 会员兑换入口：0.1.27
+
+- 访客、免费及已过期会员在会员卡内直接看到醒目的「兑换会员」，「查看权益」降为次级入口；有效 VIP 保持原有权益及兑换入口。
+- 保留同一个主按钮节点，兑换成功切换为权益入口后可恢复焦点。沿用既有游客登录续接、兑换请求和资料 GET 刷新逻辑。
+- 最终本地候选的 300 项前端测试、4 项发布器测试、类型检查、国内 Android 构建及静态核验通过，生产源码哈希一致。静态脚本适配了共用按钮 CSS 类名，原失败属于旧校验前提，不是产品缺陷。
+- 最终包的浏览器 216 个资源逐字节绑定，20 种布局、23 项流程及 18 组错误场景的 98 项断言通过。Android API35 完成 0.1.26 覆盖安装、装机 SHA 和运行 index 回读、访客登录续接、实际键盘输入假码、365 天模拟兑换及 VIP 日期/焦点恢复；业务均为本地 fixture，真实年卡只生成未兑换。测试数据、自身 fixture、端口转发和模拟器已清理，网络恢复原状态。
+- 国内 APK 及应用内更新已封存发布，4 个公网文件 HTTP 200，HTTPS 全字节及 SHA 与封存内容一致，旧下载保持不变。可在「我的 → 版本更新」升级，或下载 [国内 APK](https://121.40.27.226:9443/downloads/E-Tomd-0.1.27-domestic-debug.apk)；封存、2027 个文件的源码快照与发布回执见交付目录。详情及证据见 [RELEASE_20261107_APP_MEMBERSHIP_ENTRY.md](./RELEASE_20261107_APP_MEMBERSHIP_ENTRY.md)。
 
 ## 2026-11-07 每日暗纹与问卜操作层级：0.1.26
 
@@ -257,7 +265,7 @@ Capacitor 同步及 Gradle 构建，并校验原生/网页版本一致、API 地
 | Android | SDK 36，最低 API 24；最低版本是工程声明，实际设备覆盖需单独记录 |
 | Android 国内包名 | `cn.zaopic.etomd` |
 | Android 海外包名 | `cn.zaopic.etomd.global` |
-| Android 版本 | `versionName=0.1.26`，`versionCode=27`，已发布；统一读取 `mobile-version.json` |
+| Android 版本 | `versionName=0.1.27`，`versionCode=28`，已发布；统一读取 `mobile-version.json` |
 | Android 调试包 | 默认开发证书签名，仅供内测；不能作为正式商店签名配置 |
 | Android 原生页面来源 | `https://localhost` |
 | iOS 原生页面来源 | `capacitor://localhost` |
