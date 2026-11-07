@@ -1,8 +1,17 @@
 # E-Tomd 原生工程与内测构建
 
-当前 Android 体验版本：`0.1.25`，`versionCode=26`（仅国内 APK，已封存发布并通过公开 HTTPS 全字节校验；交付目录 `output/app-recovery-0.1.25-20261106/`）。
+当前 Android 体验版本：`0.1.26`，`versionCode=27`（仅国内 APK，已封存发布并通过公开 HTTPS 全字节校验；交付目录 `output/app-ui-0.1.26-20261107/`）。
 `0.1.0` / `0.1.1` 旧包和封存记录保留。
 iOS 源工程同步为 `0.1.21 / build 22`；Mac 操作见 [IOS_BUILD.md](./IOS_BUILD.md)。本轮没有进行 Xcode 编译、签名或 iPhone 真机验收。
+
+## 2026-11-07 每日暗纹与问卜操作层级：0.1.26
+
+- 每日页增加本地深色天体暗纹背景，沿用现有牌背、牌面、布局和交互。素材由内置 image_gen 生成，移动 WebP 为 `10,886` 字节；来源和转换记录见 `output/app-daily-atmosphere-20261106/generation.json`。
+- 问题页将「开始抽牌」或「解读原牌」保留为唯一主操作，首屏和真实键盘展开时均可见、可点击；错误提示与输入保留。页头「新问卜」改为透明次级按钮，保留触摸区域；选牌、解读、追问和历史页不显示问题操作栏。
+- 最终国内 `0.1.26 / versionCode 27` 的 300 项前端测试、4 项发布器测试、类型检查、国内构建及 APK 静态核验通过；构建前后源码哈希一致。浏览器在 216 个逐字节匹配最终 APK 的文件上完成 26 种布局及 39 项流程、恢复与错误断言。
+- Android API35 最终包覆盖安装并回读装机 APK，哈希与交付候选一致。实际触摸和原生键盘验证主操作、错误提示、抽牌、原牌及方向保留、登录后续接解读、追问、历史重开和新问卜；API 和 AI 使用本地隔离 fixture，未做真实 AI 或实体手机验收。
+- 最终包为 `14,413,545` 字节，SHA256 `f0906508419d35ab94a502c3dd0045adb257562badf2b28c48f19dacfa0f02cd`。国内 APK 及应用内更新已封存发布，4 个公网文件均返回 200，HTTPS 全字节及 SHA 与封存内容一致，旧下载保持不变；可在「我的 → 版本更新」升级，或下载 [国内 APK](https://121.40.27.226:9443/downloads/E-Tomd-0.1.26-domestic-debug.apk)。封存、2027 个文件的源码快照及发布回执见 `output/app-ui-0.1.26-20261107/`。
+- 11 月 6 日的旧 `0.1.26` 候选与设计比较仅作历史证据，未封存、未发布，不代表本次最终包。本轮仅发布国内 APK，不部署网页、后端、iOS 或海外版本；变更、最终原生每日截图、验证边界和证据见 [RELEASE_20261107_APP_ACTIONS.md](./RELEASE_20261107_APP_ACTIONS.md)。
 
 ## 2026-11-06 头像资料合并与失联追问恢复：0.1.25
 
@@ -248,7 +257,7 @@ Capacitor 同步及 Gradle 构建，并校验原生/网页版本一致、API 地
 | Android | SDK 36，最低 API 24；最低版本是工程声明，实际设备覆盖需单独记录 |
 | Android 国内包名 | `cn.zaopic.etomd` |
 | Android 海外包名 | `cn.zaopic.etomd.global` |
-| Android 版本 | `versionName=0.1.23`，`versionCode=24`，已发布；统一读取 `mobile-version.json` |
+| Android 版本 | `versionName=0.1.26`，`versionCode=27`，已发布；统一读取 `mobile-version.json` |
 | Android 调试包 | 默认开发证书签名，仅供内测；不能作为正式商店签名配置 |
 | Android 原生页面来源 | `https://localhost` |
 | iOS 原生页面来源 | `capacitor://localhost` |

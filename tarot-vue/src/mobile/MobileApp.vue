@@ -69,6 +69,7 @@ import './mobileLunar.css'
 import './mobileAsk.css'
 import './mobileAccount.css'
 import './mobileTheme.css'
+import './mobileDailyAtmosphere.css'
 
 const { locale } = useI18n()
 const english = computed(() => String(locale.value).startsWith('en'))
@@ -853,7 +854,7 @@ async function openDailyDraw() {
 }
 function startSelection() {
   operationError.value = ''
-  if (!questionValid(question.value)) { operationError.value = text('请用 5–200 个字描述你的问题。', 'Describe your question in 5–200 characters.'); return }
+  if (!questionValid(question.value)) { operationError.value = text('请用 5–200 个字描述你的问题。', 'Describe your question in 5–200 characters.'); document.getElementById('mobile-question')?.focus(); return }
   if (pending.value) return
   if (drawLocked.value) {
     if (allRevealed.value) void beginReading()
@@ -1380,9 +1381,9 @@ onBeforeUnmount(() => {
         <template v-if="phase === 'question'">
           <div class="mobile-question-intro"><h1>{{ text('你想问什么？', 'What is on your mind?') }}</h1><p class="mobile-subtitle">{{ text('从一个具体的问题开始。', 'Begin with one clear question.') }}</p></div>
           <p v-if="pending" class="mobile-ask-pending-note" role="status">{{ text('上一次解读仍在进行，可以先写新问题，完成后继续抽牌。', 'Your previous reading is still running. You can write a new question now and draw once it finishes.') }}</p>
-          <form @submit.prevent="startSelection">
+          <form class="mobile-ask-form" :class="{ 'mobile-ask-form-error': operationError }" @submit.prevent="startSelection">
             <label class="mobile-label" for="mobile-question">{{ text('你的问题', 'Your question') }}<span>{{ question.trim().length }} / 200</span></label>
-            <textarea id="mobile-question" :aria-label="text('你的问题','Your question')" v-model="question" maxlength="200" rows="4" :placeholder="text('例如：面对新的工作机会，我应该关注什么？', 'For example: What should I consider about a new job opportunity?')" class="mobile-input mobile-question" />
+            <textarea id="mobile-question" :aria-label="text('你的问题','Your question')" :aria-invalid="operationError && !questionValid(question) ? true : undefined" :aria-describedby="operationError ? 'mobile-ask-action-error' : undefined" v-model="question" maxlength="200" rows="4" :placeholder="text('例如：面对新的工作机会，我应该关注什么？', 'For example: What should I consider about a new job opportunity?')" class="mobile-input mobile-question" />
             <div class="mobile-examples">
               <button type="button" :aria-pressed="question === text('面对新的工作机会，我应该关注什么？', 'What should I consider about this new job opportunity?')" @click="question = text('面对新的工作机会，我应该关注什么？', 'What should I consider about this new job opportunity?')">{{ text('工作选择', 'Career') }}</button>
               <button type="button" :aria-pressed="question === text('怎样改善我们最近的沟通方式？', 'How can I improve our communication?')" @click="question = text('怎样改善我们最近的沟通方式？', 'How can I improve our communication?')">{{ text('关系沟通', 'Relationships') }}</button>
@@ -1397,12 +1398,14 @@ onBeforeUnmount(() => {
                 <button type="button" :aria-pressed="count === 3" @click="count = 3"><span class="mobile-spread-heading"><span class="mobile-spread-icon" aria-hidden="true"><Layers :size="24" /></span><strong>{{ text('三卡', 'Three cards') }}</strong></span><span class="mobile-spread-copy">{{ threeCardPositions.join(english ? ', ' : '、') }}</span></button>
               </div>
             </fieldset>
-            <div class="mobile-reader"><MobileReaderAvatar :reader="selectedReaderAvatar" :name="readerEntryName" /><div class="mobile-reader-copy"><span>{{ text('本次塔罗师', 'Reader for this question') }}</span><strong>{{ readerEntryName }}</strong></div><button type="button" class="mobile-text-button" @click="openReaderPicker">{{ readerId ? text('更换', 'Change') : text('选择', 'Choose') }}<ArrowUpRight :size="17" /></button></div>
+            <div class="mobile-reader"><MobileReaderAvatar :reader="selectedReaderAvatar" :name="readerEntryName" :size="40" /><div class="mobile-reader-copy"><span>{{ text('本次塔罗师', 'Reader for this question') }}</span><strong>{{ readerEntryName }}</strong></div><button type="button" class="mobile-text-button" @click="openReaderPicker">{{ readerId ? text('更换', 'Change') : text('选择', 'Choose') }}<ArrowUpRight :size="17" /></button></div>
             <p v-if="readerUnavailableMessage || readerLoadError" class="mobile-error" role="status">{{ readerUnavailableMessage || readerLoadError }}</p>
             <p v-if="drawLocked && currentTaskError" class="mobile-error" role="alert">{{ currentTaskError }}</p>
-            <p v-if="operationError" role="alert" class="mobile-error">{{ operationError }}</p>
-            <button type="submit" class="mobile-primary" :disabled="!!readingPreparation || taskBusy || !!pending">{{ readingPreparation || taskBusy ? text('正在提交…', 'Submitting…') : drawLocked ? allRevealed ? text('解读原牌', 'Read these cards') : text('继续翻开原牌', 'Continue revealing') : text('开始抽牌', 'Choose your cards') }}<ArrowRight :size="22" /></button>
-            <p class="mobile-credit-note">{{ activeVip ? text('会员解读与追问不消耗每日免费次数。', 'VIP readings and follow-ups do not use daily free credits.') : text('选牌和翻牌免费。免费账号的解读与追问各使用 1 次额度。', 'Choosing and revealing cards is free. Free accounts use one credit per reading or follow-up.') }}</p>
+            <div class="mobile-ask-action-dock">
+              <p v-if="operationError" id="mobile-ask-action-error" role="alert" class="mobile-error mobile-ask-action-error">{{ operationError }}</p>
+              <button type="submit" class="mobile-primary" :disabled="!!readingPreparation || taskBusy || !!pending">{{ readingPreparation || taskBusy ? text('正在提交…', 'Submitting…') : drawLocked ? allRevealed ? text('解读原牌', 'Read these cards') : text('继续翻开原牌', 'Continue revealing') : text('开始抽牌', 'Choose your cards') }}<ArrowRight :size="22" /></button>
+              <p class="mobile-credit-note">{{ activeVip ? text('会员解读与追问不消耗每日免费次数。', 'VIP readings and follow-ups do not use daily free credits.') : text('选牌和翻牌免费。免费账号的解读与追问各使用 1 次额度。', 'Choosing and revealing cards is free. Free accounts use one credit per reading or follow-up.') }}</p>
+            </div>
           </form>
         </template>
         <template v-else-if="phase === 'select'">

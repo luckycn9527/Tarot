@@ -7,10 +7,34 @@
 }
 .mobile-shell.mobile-tab-ask .mobile-header-back { margin:0 0 0 -6px; flex:none; }
 .mobile-shell.mobile-tab-ask .mobile-header-title { font-size:21px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
-.mobile-header-new { flex:none; min-height:var(--m-tool-height); padding:9px 13px; border:1px solid var(--m-line-strong); border-radius:var(--m-control-radius); background:var(--m-accent); color:var(--m-accent-ink); font:inherit; font-size:14px; font-weight:600; white-space:nowrap; cursor:pointer; }
+.mobile-header-new { flex:none; min-height:var(--m-tool-height); padding:9px 13px; border:1px solid transparent; border-radius:var(--m-control-radius); background:transparent; color:var(--m-muted); font:inherit; font-size:14px; font-weight:500; white-space:nowrap; cursor:pointer; }
 .mobile-header-new:focus-visible { outline:2px solid var(--m-text); outline-offset:3px; }
 .mobile-header-new:disabled { opacity:.6; cursor:default; }
 .mobile-shell.mobile-tab-ask .mobile-task-notices { top:calc(76px + env(safe-area-inset-top,0px)); }
 .mobile-ask-opening { min-height:180px; display:grid; place-items:center; color:var(--m-muted); font-size:14px; text-align:center; }
 .mobile-ask-pending-note { margin:0 0 18px; padding:12px 14px; border-left:2px solid var(--m-accent); border-radius:0 10px 10px 0; background:var(--m-accent-soft); color:var(--m-muted); font-size:12px; line-height:1.8; }
+.mobile-tab-ask.mobile-phase-question { --m-ask-dock-bottom:calc(var(--m-nav-height) + env(safe-area-inset-bottom,0px)); }
+.mobile-tab-ask.mobile-phase-question .mobile-ask-form { padding-bottom:144px; }
+.mobile-tab-ask.mobile-phase-question .mobile-ask-form-error { padding-bottom:216px; }
+.mobile-tab-ask.mobile-phase-question .mobile-question { scroll-margin-top:calc(var(--m-header-height) + env(safe-area-inset-top,0px) + 16px); }
+.mobile-tab-ask.mobile-phase-question .mobile-spread-options button { min-height:84px; gap:6px; padding:11px 14px; }
+.mobile-tab-ask.mobile-phase-question .mobile-spread-options button[aria-pressed=true] { padding:10px 13px; }
+.mobile-tab-ask.mobile-phase-question .mobile-reader { min-height:60px; margin:12px 0 14px; padding:8px 14px; gap:10px; }
+.mobile-tab-ask.mobile-phase-question .mobile-ask-action-dock {
+  position:fixed; z-index:25; bottom:var(--m-ask-dock-bottom); left:50%; transform:translateX(-50%);
+  width:100%; max-width:540px; padding:12px 22px 10px; border-top:1px solid var(--m-line); background:var(--m-bg);
+  max-height:calc(100dvh - var(--m-header-height) - env(safe-area-inset-top,0px) - var(--m-ask-dock-bottom) - 12px); overflow-y:auto; overscroll-behavior:contain;
+}
+.mobile-tab-ask.mobile-phase-question .mobile-ask-action-dock .mobile-credit-note { margin:8px 0 0; font-size:12px; line-height:1.5; }
+.mobile-tab-ask.mobile-phase-question .mobile-ask-action-error { max-height:4.8em; margin:0 0 8px; overflow-y:auto; font-size:12px; line-height:1.6; }
+.mobile-tab-ask.mobile-phase-question.mobile-keyboard { --m-ask-dock-bottom:0px; }
+.mobile-tab-ask.mobile-phase-question.mobile-keyboard .mobile-ask-action-dock { padding-bottom:calc(8px + env(safe-area-inset-bottom,0px)); }
+.mobile-tab-ask.mobile-phase-question.mobile-keyboard .mobile-ask-action-dock .mobile-credit-note { margin-top:6px; font-size:11px; line-height:1.45; }
+@media(max-height:460px) {
+  .mobile-tab-ask.mobile-phase-question .mobile-ask-action-dock { padding-top:8px; padding-bottom:8px; }
+  .mobile-tab-ask.mobile-phase-question .mobile-ask-action-dock .mobile-primary { min-height:44px; padding-block:10px; }
+  .mobile-tab-ask.mobile-phase-question .mobile-ask-action-dock .mobile-credit-note { margin-top:6px; font-size:11px; line-height:1.45; }
+  .mobile-tab-ask.mobile-phase-question .mobile-ask-action-error { max-height:3.2em; margin-bottom:6px; }
+}
 @media(max-width:360px) { .mobile-shell.mobile-tab-ask .mobile-header { padding-inline:18px; gap:7px; } .mobile-header-new { padding-inline:11px; font-size:14px; } .mobile-shell.mobile-tab-ask .mobile-header-title { font-size:21px; } }
+@media(max-width:360px) { .mobile-tab-ask.mobile-phase-question .mobile-ask-action-dock { padding-inline:18px; } }
